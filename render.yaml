@@ -1,0 +1,21 @@
+# ─────────────────────────────────────────────────────────────
+# AI深度量化 · Render 部署配置（Infrastructure as Code）
+# 用法：Render 控制台 → New → Blueprint → 选择本仓库 → Render 自动读取本文件
+# 或：render.yaml 所在目录推送到 GitHub 后，Blueprint 一键部署
+#
+# ⚠️ 部署后须知：
+#   · 免费实例 15 分钟无访问会休眠（唤醒约 10-15 秒）；
+#   · 免费实例无持久磁盘（无 SQLite 缓存，每次请求直连 Baostock）；
+#   · 实例位于海外，访问 Baostock 国内服务器稳定性请以 /health 实测为准。
+# ─────────────────────────────────────────────────────────────
+services:
+  - type: web
+    name: ai-deep-quant-baostock
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0

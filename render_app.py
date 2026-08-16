@@ -15,6 +15,7 @@ import datetime
 import os
 import socket
 import threading
+import time
 
 # 强制 IPv4 解析（部分网络下 IPv6 不可达会导致每次请求超时回退）
 _orig_getaddrinfo = socket.getaddrinfo
@@ -32,6 +33,23 @@ from flask_cors import CORS  # noqa: E402
 
 app = Flask(__name__)
 CORS(app)
+
+
+# ── 请求日志（便于 Render 部署后排障） ──
+@app.before_request
+def _log_start():
+    request.environ["_start_ts"] = time.time()
+
+
+@app.after_request
+def _log_end(resp):
+    dt = (time.time() - request.environ.get("_start_ts", time.time())) * 1000
+    print(
+        f"[req] {time.strftime('%H:%M:%S')} {request.remote_addr} "
+        f"{request.method} {request.path} -> {resp.status_code} ({dt:.0f}ms)",
+        flush=True,
+    )
+    return resp
 
 _connected = False
 _lock = threading.Lock()

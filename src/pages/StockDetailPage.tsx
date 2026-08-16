@@ -1679,7 +1679,7 @@ export default function StockDetailPage() {
             <b>不构成任何投资建议</b>，亦不涉及荐股、预测及实盘交易。
           </p>
           <p style={{ margin: '0 0 6px' }}>
-            📊 数据源：Baostock（历史K线/技术指标，版权归 Baostock 所有）· Ashare（新浪/腾讯公开接口，实时行情）·
+            📊 数据源：Baostock（历史K线，版权归 Baostock 所有）· 新浪/腾讯公开接口（实时行情）·
             仅用于历史回测展示 · 请勿据此操作
           </p>
           <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>

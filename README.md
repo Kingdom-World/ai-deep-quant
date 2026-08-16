@@ -25,13 +25,34 @@
 
 | 方式 | 操作 |
 | --- | --- |
-| 双击图标 | 双击 **`AI深度量化-打开网站.bat`**（服务未运行时自动启动；已运行时直接打开浏览器）或 **`AI深度量化-打开网站.url`**（服务已运行时） |
-| 一键启动 | 双击 **`start.bat`**：自动检查/安装依赖 → 构建 → 启动 → 打开浏览器 |
-| 手机/平板 | 同一 WiFi 下，浏览器输入 `http://本机IP:3001`（启动服务时会打印本机 IP） |
-| 开机自启（可选） | 双击 **`注册开机自启.bat`**，登录 Windows 后网站服务自动后台运行 |
+| Python 版（推荐本地/服务器） | 双击 **`start_py.bat`**（默认生产模式：构建 + Baostock/Ashare 双源后端 + 单端口 5000）；`start_py.bat dev` 为热更新开发模式 |
+| 双击图标（Node 版） | **`AI深度量化-打开网站.bat`** / **`AI深度量化-打开网站.url`**（服务 http://127.0.0.1:3001） |
+| 手机/平板 | 同一 WiFi 下，浏览器输入 `http://本机IP:端口` |
+| 开机自启（可选） | 双击 **`注册开机自启.bat`** |
 
-> 一个命令、一个端口、一个网址：**http://127.0.0.1:3001**。页面与全部 API 都由
-> `server/index.cjs` 提供，不依赖任何第三方服务、不依赖 Python/MCP、不需要 API Key。
+> 一个命令、一个端口、一个网址。页面与全部 API 都由后端提供，
+> 不依赖任何第三方服务、不依赖 MCP、不需要 API Key。
+
+---
+
+## 🐍 Python 版后端（Baostock 主源 + Ashare 辅助源）
+
+```
+python_backend/
+├── app.py               # Flask 应用（--serve-dist 生产托管 / 默认 API 模式）
+├── baostock_source.py   # Baostock 历史K线主源（日/周/月/分钟，会话复用）
+├── ashare_compat.py     # Ashare 兼容层（实时行情辅助源，新浪/腾讯公开接口）
+├── database.py          # SQLite 持久化缓存（历史 24h / 报价 8s / 指数 15s）
+├── rate_limit.py        # 单用户限流（每分钟 10 次，超限 429）
+├── scheduler.py         # 每日 16:00 定时刷新热门股票缓存（python -m scheduler --once 手动触发）
+├── services.py          # 聚合服务（历史/报价/指数/搜索/分钟K线/回测/推荐/AI问答）
+└── requirements.txt     # flask / flask-cors / baostock / pandas / requests
+```
+
+- **数据源架构**：历史K线/技术指标 → Baostock（主源）；实时行情/指数 → Ashare（辅助源）。前端只接收聚合数据，不感知数据来源，也不暴露原始行情接口。
+- **合规特性**：SQLite 24h 缓存（再次访问不调数据源）、单用户 10 次/分钟限流（429 + Retry-After）、每日 16:00 自动更新、健康检查 `/api/health`、缓存状态 `/api/cache/status`。
+- **前端路由**：环境变量 `VITE_BACKEND=python` 时自动使用服务端聚合接口（推荐 `/api/recommend`、批量报价 `/api/quotes`），其余接口路径与 Node 版完全一致。
+- 部署到香港/自有服务器：`pip install -r python_backend/requirements.txt && python python_backend/app.py --serve-dist`。
 
 ### Mac / Linux
 

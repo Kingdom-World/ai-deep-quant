@@ -4,9 +4,12 @@ import {
   getDataSourceStatus,
   getHistory,
   getIndices,
+  getQuotesBatch,
   getQuote,
   getRecommendations,
+  type UnifiedQuote,
 } from '../api/dataService';
+import { BACKEND_MODE } from '../config';
 import { DataSourceIndicator } from '../components/DataSourceIndicator';
 import {
   getFavorites,
@@ -125,14 +128,21 @@ export default function HomePage() {
       }
       setFavLoading(true);
       const items: FavoriteItem[] = [];
+      // python 后端模式：批量报价一次聚合（单用户限流 10 次/分钟，需节约请求）
+      const pyBatch = new Map<string, UnifiedQuote>();
+      if (BACKEND_MODE === 'python') {
+        const qs = await getQuotesBatch(list.map((f) => f.symbol), 'CN', true);
+        qs.forEach((q) => pyBatch.set(q.symbol.toUpperCase(), q));
+      }
       // 并发获取每只收藏股票的数据与 AI 评分（独立后端数据）
       await Promise.all(
         list.map(async (f) => {
           try {
-            const [rows, quote] = await Promise.all([
-              getHistory(f.symbol, f.market, 'day', 300, true),
-              getQuote(f.symbol, f.market, true),
-            ]);
+            const rows = await getHistory(f.symbol, f.market, 'day', 300, true);
+            const quote =
+              BACKEND_MODE === 'python'
+                ? pyBatch.get(f.symbol.toUpperCase())
+                : await getQuote(f.symbol, f.market, true);
             const points = rows.map((r) => ({
               date: r.date,
               open: r.open,
@@ -142,15 +152,15 @@ export default function HomePage() {
               volume: r.volume,
             }));
             const report = analyzeStockPotential(f.symbol, points, {
-              price: quote.price,
-              changePercent: quote.changePercent ?? 0,
+              price: quote?.price ?? points[points.length - 1]?.close ?? 0,
+              changePercent: quote?.changePercent ?? 0,
             });
             items.push({
               symbol: f.symbol,
               market: f.market,
-              name: quote.name || f.name || f.symbol,
-              price: quote.price,
-              changePercent: quote.changePercent,
+              name: quote?.name || f.name || f.symbol,
+              price: quote?.price ?? null,
+              changePercent: quote?.changePercent ?? null,
               score: report?.total ?? null,
               rating: report?.rating ?? '数据不足',
             });
@@ -979,7 +989,8 @@ export default function HomePage() {
           <b>不构成任何投资建议</b>，亦不涉及荐股、预测及实盘交易。
         </p>
         <p style={{ margin: '0 0 6px' }}>
-          📊 数据源：Ashare（新浪/腾讯公开财经接口） · 仅用于历史回测展示 · 请勿据此操作
+          📊 数据源：Baostock（历史K线/技术指标，版权归 Baostock 所有）· Ashare（新浪/腾讯公开接口，实时行情）·
+          仅用于历史回测展示 · 请勿据此操作
         </p>
         <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>
           🌐 当前为公网演示版，国内部分网络可能无法访问，请使用代理或后续等待自定义域名上线。

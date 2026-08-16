@@ -21,10 +21,10 @@ export default defineConfig({
     }),
   ],
   server: {
-    // 前端 /api 请求代理到独立数据服务（解决跨域 + 局域网统一入口）
+    // 前端 /api 请求代理到后端（Node: 3001 / Python-Flask: 5000，由 VITE_API_TARGET 控制）
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3001',
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:3001',
         changeOrigin: true,
       },
     },

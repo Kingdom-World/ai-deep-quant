@@ -2,8 +2,18 @@
 // 全局配置（集中管理环境变量与常量）
 // ─────────────────────────────────────────────────────────────
 
-/** 后端数据服务地址（同源 /api：生产模式由 server/index.cjs 直接提供，开发模式经 vite proxy 转发） */
+/** 后端数据服务地址（同源 /api：生产模式由 server/index.cjs 或 Python 后端直接提供，开发模式经 vite proxy 转发） */
 export const API_BASE_PATH: string = (import.meta.env.VITE_API_BASE_PATH as string) || '/api';
+
+/**
+ * 后端模式（数据源架构）：
+ *   · node   —— Node/Express 后端（本地自托管 / Vercel 公网演示版）
+ *   · python —— Python+Flask 后端（历史=Baostock 主源，实时=Ashare 辅助源，
+ *               SQLite 24h 缓存 + 单用户限流 + 定时更新；本地/服务器部署推荐）
+ * 前端不感知具体数据源，仅按模式选择聚合接口。
+ */
+export const BACKEND_MODE: 'python' | 'node' =
+  (import.meta.env.VITE_BACKEND as 'python' | 'node') === 'python' ? 'python' : 'node';
 
 /** 实时轮询间隔（毫秒） */
 export const POLL_INTERVAL: number = Number(import.meta.env.VITE_POLL_INTERVAL) || 10_000;

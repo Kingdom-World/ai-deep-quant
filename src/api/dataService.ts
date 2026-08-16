@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 import type { Market } from '../lib/stock';
 import {
+  BACKEND_MODE,
   CACHE_TTL_QUOTE,
   CACHE_TTL_INDICES,
   CACHE_TTL_HISTORY,
@@ -166,13 +167,43 @@ export const getQuote = async (
   return result;
 };
 
-/** 2. 批量获取报价（后端批量接口：逐个调用，缓存合并） */
+/** Python+Flask 后端模式：推荐/批量报价走服务端聚合接口（限流友好） */
+const PYTHON = BACKEND_MODE === 'python';
+
+/** 2. 批量获取报价（python 模式：后端 /api/quotes 一次聚合；node 模式：逐个调用） */
 export const getQuotesBatch = async (
   symbols: string[],
   market: Market = 'CN',
   forceRefresh = false,
 ): Promise<UnifiedQuote[]> => {
   if (symbols.length === 0) return [];
+  if (PYTHON) {
+    const key = getCacheKey('quotes', { symbols, forceRefresh });
+    if (!forceRefresh) {
+      const cached = getCached<UnifiedQuote[]>(key, CACHE_TTL_QUOTE);
+      if (cached !== null) return cached;
+    }
+    const raw = await apiGetCached<BackendQuote[]>(
+      forceRefresh ? `${key}:fresh` : key,
+      `/quotes?symbols=${encodeURIComponent(symbols.join(','))}`,
+      CACHE_TTL_QUOTE,
+    );
+    const items = (raw || []).map((it) => ({
+      symbol: it.symbol,
+      name: it.name ?? undefined,
+      price: it.price,
+      changePercent: it.changePercent ?? 0,
+      open: it.open,
+      high: it.high,
+      low: it.low,
+      volume: it.volume,
+      prevClose: it.prevClose,
+      timestamp: Date.now(),
+      _source: 'backend' as const,
+    }));
+    setCached(key, items);
+    return items;
+  }
   return Promise.all(
     symbols.map((s) => getQuote(s, market, forceRefresh).catch(() => null)),
   ).then((list) => list.filter((q): q is UnifiedQuote => q !== null));
@@ -347,11 +378,17 @@ export const getMinuteSeries = async (
   return points;
 };
 
-/** 5d. AI 推荐评分（后端数据 + lib 评分算法） */
+/** 5d. AI 推荐评分（python 模式：后端 Baostock 数据+评分一次聚合；node 模式：前端 lib 评分） */
 export const getRecommendations = async (
   codes: { symbol: string; market: Market; name: string }[],
   count = 6,
 ): Promise<{ symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[]> => {
+  if (PYTHON) {
+    const raw = await apiGet<
+      { symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[]
+    >(`/recommend?count=${count}`);
+    return raw || [];
+  }
   const { analyzeStockPotential } = await import('../lib/stock');
   const results: { symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[] = [];
   const queue = [...codes];

@@ -1,0 +1,7 @@
+# AI深度量化 Python 后端依赖
+# 安装：pip install -r requirements.txt
+flask>=3.0
+flask-cors>=4.0
+baostock>=0.8.9
+pandas>=1.5
+requests>=2.28

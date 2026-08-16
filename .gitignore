@@ -20,6 +20,9 @@ dist-ssr
 # 自检报告
 reports/
 
+# SQLite 缓存数据库（本地 Baostock 缓存，不入库）
+python_backend/data/
+
 # Vercel
 .vercel
 

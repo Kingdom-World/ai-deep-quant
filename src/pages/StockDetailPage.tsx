@@ -6,7 +6,9 @@ import {
   getHistory,
   getMinuteKline,
   getMinuteSeries,
+  getPeriodPolicy,
   getQuote,
+  type PeriodPolicy,
 } from '../api/dataService';
 import {
   aggregateData,
@@ -132,8 +134,14 @@ export default function StockDetailPage() {
   const [allPoints, setAllPoints] = useState<KlinePoint[]>([]);
   /** 周期切换提示（如：新股暂无季线/年线数据） */
   const [periodNotice, setPeriodNotice] = useState<string | null>(null);
+  /** 后端周期可用性策略（新上市股票自动适配；未加载时回退本地跨度计算） */
+  const [periodPolicy, setPeriodPolicy] = useState<PeriodPolicy | null>(null);
+  const currentSymbolRef = useRef(symbol);
+  useEffect(() => {
+    currentSymbolRef.current = symbol;
+  }, [symbol]);
 
-  /** 历史数据覆盖跨度（天）：用于季线/年线数据量校验 */
+  /** 历史数据覆盖跨度（天）：用于季线/年线数据量校验（后端策略未加载时的回退） */
   const historySpanDays = useMemo(() => {
     const first = allPoints[0]?.date;
     const last = allPoints[allPoints.length - 1]?.date;
@@ -141,23 +149,29 @@ export default function StockDetailPage() {
     return (Date.parse(last) - Date.parse(first)) / 86400000;
   }, [allPoints]);
 
+  /** 周期是否可用：优先采用后端策略（自动适配新上市股票），失败回退本地跨度计算 */
+  const isPeriodAvailable = (period: Period): boolean => {
+    if (period !== 'quarter' && period !== 'year') return true;
+    if (periodPolicy) return periodPolicy.periods[period] === true;
+    return period === 'quarter' ? historySpanDays >= 365 : historySpanDays >= 1000;
+  };
+
+  /** 数据覆盖天数（后端策略优先） */
+  const coverageDays = periodPolicy?.coverageDays ?? Math.round(historySpanDays);
+
   /**
    * 周期选择（含数据量校验）：
    * 季线/年线需要足够长的历史跨度；数据不足时按钮置灰，点击给出提示（参考主流行情软件做法）
    */
   const handlePeriodSelect = (period: Period) => {
     setPeriodNotice(null);
-    if (period === 'quarter' || period === 'year') {
-      // 季线至少约 1 年（4 根以上），年线至少约 3 年（3 根以上）
-      const minDays = period === 'quarter' ? 365 : 1000;
-      if (historySpanDays < minDays) {
-        setPeriodNotice(
-          period === 'quarter'
-            ? `📌 历史数据约 ${Math.max(1, Math.round(historySpanDays / 30))} 个月，不足 1 年，暂无足够季度K线数据`
-            : `📌 历史数据约 ${Math.max(1, Math.round(historySpanDays / 365))} 年，不足 3 年，暂无足够年度K线数据`,
-        );
-        return;
-      }
+    if (!isPeriodAvailable(period)) {
+      setPeriodNotice(
+        period === 'quarter'
+          ? `📌 历史数据约 ${Math.max(1, Math.round(coverageDays / 30))} 个月，不足 1 年，暂无足够季度K线数据`
+          : `📌 历史数据约 ${Math.max(1, Math.round(coverageDays / 365))} 年，不足 3 年，暂无足够年度K线数据`,
+      );
+      return;
     }
     setSelectedPeriod(period);
   };
@@ -188,6 +202,7 @@ export default function StockDetailPage() {
     setMinuteTrace([]);
     setLiveTrace([]);
     setPeriodNotice(null);
+    setPeriodPolicy(null);
     setAggregatedData([]);
     setLatestPrice(null);
     setChangePercent(null);
@@ -232,6 +247,15 @@ export default function StockDetailPage() {
 
       // 完整历史（聚合数据源，供周期切换使用）
       setAllPoints(points);
+
+      // 后端周期可用性策略（异步加载，自动适配新上市股票；失败时前端回退本地计算）
+      getPeriodPolicy(sym)
+        .then((p) => {
+          if (currentSymbolRef.current === sym) setPeriodPolicy(p);
+        })
+        .catch(() => {
+          /* 策略获取失败不影响主流程 */
+        });
 
       // 图表窗口数据：最近 HISTORY_COUNT 个交易日（技术指标/统计用）
       const chartPoints = points.slice(-HISTORY_COUNT);
@@ -1460,10 +1484,8 @@ export default function StockDetailPage() {
         >
           {PERIODS.map((p) => {
             const active = selectedPeriod === p.key;
-            // 季线/年线：历史跨度不足时按钮置灰（点击仍提示原因）
-            const insufficient =
-              (p.key === 'quarter' && historySpanDays < 365) ||
-              (p.key === 'year' && historySpanDays < 1000);
+            // 季线/年线：后端周期策略判定数据不足时按钮置灰（点击仍提示原因）
+            const insufficient = !isPeriodAvailable(p.key);
             return (
               <button
                 key={p.key}

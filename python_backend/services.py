@@ -257,8 +257,14 @@ def get_mkline(symbol, period="5", count=320):
         return cached
     klines, source = None, None
     if sym.isdigit() and len(sym) == 6:
+        # Baostock 分钟线保留期短（60分钟线约 10 天）→ 数据量不足时回退腾讯 mkline（约 10 个月）
         klines = baostock_source.query_minute(sym, period, count)
         source = "baostock"
+        if not klines or len(klines) < min(count, 100):
+            klines2 = _tencent_mkline(sym, period, count)
+            if klines2 and (not klines or len(klines2) > len(klines)):
+                klines = klines2
+                source = "tencent-mkline"
     if not klines and sym.isalpha() and len(sym) <= 6:
         klines, source = _sina_us_minute(sym, period)
     if not klines and (sym.isdigit() and len(sym) == 5):
@@ -267,7 +273,7 @@ def get_mkline(symbol, period="5", count=320):
         # 最后回退：腾讯当日分时聚合
         points = get_minute(sym)
         if points:
-            klines = _agg_points(points, int(period))
+            klines = _agg_points(points["points"], int(period))
             source = "tencent-minute"
     if not klines:
         return None
@@ -279,6 +285,37 @@ def get_mkline(symbol, period="5", count=320):
     }
     database.set_misc(key, payload)
     return payload
+
+
+def _tencent_mkline(symbol, period, count):
+    """腾讯 mkline（ifzq.gtimg.cn）：A股多日分钟K线，60分钟线约保留 10 个月"""
+    try:
+        code = ("sh" if symbol[0] in "69" else "sz") + symbol
+        url = f"https://ifzq.gtimg.cn/appstock/app/kline/mkline?param={code},m{period},,{min(count, 800)}"
+        r = requests.get(
+            url, headers={"User-Agent": UA, "Referer": "http://finance.qq.com"}, timeout=8
+        )
+        j = r.json()
+        rows = ((j.get("data") or {}).get(code) or {}).get(f"m{period}") or []
+        out = []
+        for x in rows:
+            raw = str(x[0])
+            y, mo, d, hh, mm = raw[:4], raw[4:6], raw[6:8], raw[8:10], raw[10:12]
+            out.append(
+                {
+                    "date": f"{y}-{mo}-{d} {hh}:{mm}",
+                    "open": _f(x[1]),
+                    "close": _f(x[2]),
+                    "high": _f(x[3]),
+                    "low": _f(x[4]),
+                    "volume": _f(x[5]),
+                }
+            )
+        out = [k for k in out if k["close"] is not None and k["open"] is not None]
+        out.sort(key=lambda x: x["date"])
+        return out or None
+    except Exception:
+        return None
 
 
 def _sina_us_minute(symbol, period):
@@ -774,6 +811,36 @@ def _extract_symbol(q):
         if name in q:
             return code
     return None
+
+
+def period_policy(symbol, count=2400):
+    """周期可用性策略：按实际历史覆盖动态生成（新上市股票自动适配，前端据此置灰/提示）"""
+    sym = str(symbol).strip().upper()
+    data = get_history(sym, count)
+    if not data:
+        return None
+    klines = data["klines"]
+    first, last = klines[0]["date"], klines[-1]["date"]
+    span_days = (
+        datetime.date.fromisoformat(last) - datetime.date.fromisoformat(first)
+    ).days
+    return {
+        "symbol": sym,
+        "source": data["source"],
+        "dataStart": first,
+        "dataEnd": last,
+        "barCount": len(klines),
+        "coverageDays": span_days,
+        "periods": {
+            "day": True,
+            "3day": True,
+            "week": True,
+            "month": True,
+            "quarter": span_days >= 365,
+            "year": span_days >= 1000,
+        },
+        "recommended": "day" if span_days < 365 else "month" if span_days < 1000 else "year",
+    }
 
 
 def _analyze(symbol):

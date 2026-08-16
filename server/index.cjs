@@ -184,11 +184,13 @@ function parseTencentKlines(json, symbol, unit = 'day') {
 
 /** 获取日 K 原始行（美股自动探测交易所后缀；供 history/backtest/qa 复用） */
 async function fetchDailyRows(code, count = 500) {
+  // 腾讯/新浪日K单次上限 2000 根，超限会导致接口返回空
+  const c = Math.min(Number(count) || 500, 2000);
   const candidates = /^us/i.test(code) ? [`${code}.OQ`, `${code}.N`, code] : [code];
   let best = [];
   for (const cand of candidates) {
     try {
-      const url = `http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${cand},day,,,${count},qfq`;
+      const url = `http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${cand},day,,,${c},qfq`;
       const text = await fetchText(url, { 'User-Agent': UA, Referer: 'http://finance.qq.com' });
       const json = JSON.parse(text);
       if (json.code !== 0) continue;
@@ -204,9 +206,9 @@ async function fetchDailyRows(code, count = 500) {
   }
   // A股 qfq 复权数据量受限（如贵州茅台仅约 640 根 ≈ 2.6 年）→
   // 用新浪长历史补充（不复权，约 8 年），保证季线/年线可绘制
-  if (best.length < 800 && /^(sh|sz)/i.test(code) && count > 800) {
+  if (best.length < 800 && /^(sh|sz)/i.test(code) && c > 800) {
     try {
-      const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${code}&scale=240&ma=no&datalen=${Math.min(count, 2000)}`;
+      const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${code}&scale=240&ma=no&datalen=${c}`;
       const text = await fetchText(url, {
         'User-Agent': UA,
         Referer: 'https://finance.sina.com.cn',
@@ -232,6 +234,45 @@ async function fetchDailyRows(code, count = 500) {
   }
   return best;
 }
+
+// ───────────── 2a. 周期可用性策略（后端按数据覆盖动态生成，新上市股票自动适配） ─────────────
+app.get('/api/period-policy/:symbol', async (req, res) => {
+  const symbol = req.params.symbol;
+  const code = toTencentCode(symbol);
+  const cacheKey = `period-policy:${code}`;
+  const cached = getCached(cacheKey, HISTORY_TTL);
+  if (cached) return res.json(cached);
+
+  try {
+    const klines = await fetchDailyRows(code, 2400);
+    if (!klines.length) throw new Error('K 线数据为空');
+    const first = klines[0].date;
+    const last = klines[klines.length - 1].date;
+    const spanDays = (Date.parse(last) - Date.parse(first)) / 86400000;
+    const policy = {
+      symbol,
+      source: 'baostock-or-tencent',
+      dataStart: first,
+      dataEnd: last,
+      barCount: klines.length,
+      coverageDays: Math.round(spanDays),
+      // 周期可用性：季线需 ≥1 年数据，年线需 ≥3 年数据（参考主流软件，数据不足置灰提示）
+      periods: {
+        day: true,
+        '3day': true,
+        week: true,
+        month: true,
+        quarter: spanDays >= 365,
+        year: spanDays >= 1000,
+      },
+      recommended: spanDays < 365 ? 'day' : spanDays < 1000 ? 'month' : 'year',
+    };
+    setCache(cacheKey, policy);
+    res.json(policy);
+  } catch (e) {
+    res.status(500).json({ error: `周期策略计算失败: ${e.message?.slice(0, 80)}` });
+  }
+});
 
 app.get('/api/history/:symbol', async (req, res) => {
   const symbol = req.params.symbol;

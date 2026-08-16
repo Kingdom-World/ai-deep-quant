@@ -288,6 +288,34 @@ export const getHistory = async (
   return klines;
 };
 
+/** 周期可用性策略（后端按历史覆盖动态生成，新上市股票自动适配） */
+export interface PeriodPolicy {
+  symbol: string;
+  source: string;
+  dataStart: string;
+  dataEnd: string;
+  barCount: number;
+  coverageDays: number;
+  periods: {
+    day: boolean;
+    '3day': boolean;
+    week: boolean;
+    month: boolean;
+    quarter: boolean;
+    year: boolean;
+  };
+  recommended: string;
+}
+
+/** 3b. 获取周期可用性策略（失败返回 null，前端回退本地计算） */
+export const getPeriodPolicy = async (symbol: string): Promise<PeriodPolicy | null> => {
+  try {
+    return await apiGet<PeriodPolicy>(`/period-policy/${encodeURIComponent(symbol)}`);
+  } catch {
+    return null;
+  }
+};
+
 /** 4. 获取大盘指数 */
 export const getIndices = async (forceRefresh = false): Promise<UnifiedQuote[]> => {
   const cacheKey = getCacheKey('indices', {});
@@ -377,12 +405,14 @@ export const getMinuteKline = async (
   const cacheKey = getCacheKey('mkline', { symbol, market, step, minutePeriod });
   const cached = getCached<MinuteKline[]>(cacheKey, CACHE_TTL_MKLINE);
   if (cached !== null) return cached;
+  // 120 分 = 2 根 60 分合并 → 需 640 根 60 分数据才能得到 320 根 120 分线
+  const reqCount = minutePeriod === '120' ? 640 : 320;
   const raw = await apiGetCached<{
     symbol: string;
     period: string;
     source: string;
     klines: { date: string; open: number | null; close: number | null; high: number | null; low: number | null; volume: number | null }[];
-  }>(cacheKey, `/mkline/${encodeURIComponent(symbol)}?period=m${step}&count=320`, CACHE_TTL_MKLINE);
+  }>(cacheKey, `/mkline/${encodeURIComponent(symbol)}?period=m${step}&count=${reqCount}`, CACHE_TTL_MKLINE);
   const klines: MinuteKline[] = (raw.klines || []).map((k) => ({
     date: String(k.date),
     open: k.open ?? 0,
@@ -576,6 +606,7 @@ export default {
   searchSymbol,
   getMinuteKline,
   getMinuteSeries,
+  getPeriodPolicy,
   getRecommendations,
   runBacktest,
   askAssistant,

@@ -151,6 +151,15 @@ def api_qa():
     return jsonify(services.qa(q))
 
 
+# ── 周期可用性策略（新上市股票自动适配：季/年线数据不足时前端置灰提示） ──
+@app.route("/api/period-policy/<symbol>")
+def api_period_policy(symbol):
+    policy = services.period_policy(symbol)
+    if not policy:
+        return jsonify(error=f"未获取到 {symbol} 的历史数据"), 500
+    return jsonify(policy)
+
+
 # ── 健康检查 ──
 @app.route("/api/health")
 def api_health():

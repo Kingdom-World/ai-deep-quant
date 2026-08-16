@@ -1,0 +1,5 @@
+dist
+node_modules
+ashare-mcp
+server
+package-lock.json

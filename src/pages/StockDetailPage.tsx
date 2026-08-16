@@ -133,12 +133,14 @@ export default function StockDetailPage() {
   const [allPoints, setAllPoints] = useState<KlinePoint[]>([]);
 
   // ── 实时走势（分时历史 + 实时跟踪） ──
-  /** 当日分时全量（分钟粒度，进入页面即完整拉取，供前20分钟/前2小时展示） */
-  const [minuteTrace, setMinuteTrace] = useState<{ time: string; price: number }[]>([]);
+  /** 当日分时全量（分钟粒度，进入页面即完整拉取，供前20分钟/前2小时展示；date 为交易日） */
+  const [minuteTrace, setMinuteTrace] = useState<{ date?: string; time: string; price: number }[]>([]);
   /** 实时高频点（10 秒轮询追加，供实时跟踪模式） */
   const [liveTrace, setLiveTrace] = useState<number[]>([]);
   /** 实时走势窗口模式：20m=前20分钟 / 2h=前2小时 / live=实时跟踪 */
   const [traceMode, setTraceMode] = useState<'20m' | '2h' | 'live'>('20m');
+  /** 时间窗口真实起止（以最新数据时间为基准向前推，供说明文字展示） */
+  const [traceWindow, setTraceWindow] = useState<{ start: string; end: string } | null>(null);
 
   // ── 分钟副图（1/5/15/30 分钟 K 线） ──
   const [minutePeriod, setMinutePeriod] = useState<MinutePeriod>('5');
@@ -817,29 +819,61 @@ export default function StockDetailPage() {
     const chart = realtimeChartInstance.current;
     if (!chart || loading) return;
 
+    // 时间工具：HH:mm <-> 当日分钟数
+    const toMin = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    const fmtMin = (v: number) =>
+      `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+
     // 模式数据源：
-    //   · 20m/2h —— 当日分时全量按窗口截取（进入页面即完整展示），尾部拼接最新实时价
+    //   · 20m/2h —— 以最新数据时间为基准（盘中≈当前时间，盘后=收盘整点），
+    //              按真实时间窗口向前推 20 分钟/2 小时过滤同日分时点制图
     //   · live   —— 10 秒高频实时点（滚动窗口）
     let data: number[] = [];
     let labels: string[] = [];
+    let windowStart = '';
+    let windowEnd = '';
     if (traceMode === 'live') {
       data = liveTrace;
     } else {
-      const limit = traceMode === '2h' ? 120 : 20;
-      const base = minuteTrace.slice(-limit);
-      data = base.map((p) => p.price);
-      labels = base.map((p) => p.time);
-      if (latestPrice !== null && Number.isFinite(latestPrice)) {
-        data = [...data, latestPrice];
-        labels = [...labels, ''];
+      const windowMin = traceMode === '2h' ? 120 : 20;
+      const last = minuteTrace[minuteTrace.length - 1];
+      if (last) {
+        const baseDate = last.date ?? '';
+        const endMin = toMin(last.time);
+        const startMin = endMin - windowMin;
+        const window = minuteTrace.filter((p) => {
+          if (baseDate !== '' && (p.date ?? '') !== baseDate) return false; // 仅同一交易日
+          const m = toMin(p.time);
+          return m >= startMin && m <= endMin;
+        });
+        data = window.map((p) => p.price);
+        labels = window.map((p) => p.time);
+        windowStart = labels[0] ?? '';
+        windowEnd = labels[labels.length - 1] ?? '';
+        // 尾部拼接最新实时价（时间=当前时间，盘中会落在窗口内）
+        if (latestPrice !== null && Number.isFinite(latestPrice)) {
+          const now = new Date();
+          const nowT = fmtMin(now.getHours() * 60 + now.getMinutes());
+          data = [...data, latestPrice];
+          labels = [...labels, nowT];
+          windowEnd = nowT;
+        }
+        setTraceWindow({ start: windowStart, end: windowEnd });
       }
     }
     const first = data[0];
-    const last = data[data.length - 1];
+    const lastV = data[data.length - 1];
     const changePct =
-      first !== undefined && last !== undefined && first > 0 ? ((last - first) / first) * 100 : 0;
+      first !== undefined && lastV !== undefined && first > 0
+        ? ((lastV - first) / first) * 100
+        : 0;
     const upNow = changePct >= 0;
     const showTimeAxis = traceMode !== 'live';
+    const axisInterval =
+      labels.length > 12 ? Math.max(0, Math.ceil(labels.length / 6) - 1) : 0;
 
     chart.setOption({
       grid: { left: 8, right: 8, top: 12, bottom: showTimeAxis ? 18 : 6 },
@@ -858,7 +892,7 @@ export default function StockDetailPage() {
         data: showTimeAxis ? labels : data.map((_, i) => i),
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 9, color: '#64748b', interval: 'auto', hideOverlap: true },
+        axisLabel: { fontSize: 9, color: '#64748b', interval: axisInterval, hideOverlap: true },
       },
       yAxis: {
         type: 'value',
@@ -1343,12 +1377,12 @@ export default function StockDetailPage() {
             }}
           >
             {traceMode === '20m' &&
-              (minuteTrace.length > 0
-                ? `当日分时 · 最近 20 分钟（${minuteTrace.slice(-20)[0]?.time ?? '--'} ~ ${minuteTrace.slice(-1)[0]?.time ?? '--'}）· 尾部实时更新`
+              (traceWindow
+                ? `⏱ 以 ${traceWindow.end} 为基准向前 20 分钟（${traceWindow.start} ~ ${traceWindow.end}）· 真实时间轴 · 尾部实时更新`
                 : '正在获取分时数据...')}
             {traceMode === '2h' &&
-              (minuteTrace.length > 0
-                ? `当日分时 · 最近 2 小时（${minuteTrace.slice(-120)[0]?.time ?? '--'} ~ ${minuteTrace.slice(-1)[0]?.time ?? '--'}）· 尾部实时更新`
+              (traceWindow
+                ? `⏱ 以 ${traceWindow.end} 为基准向前 2 小时（${traceWindow.start} ~ ${traceWindow.end}）· 真实时间轴 · 尾部实时更新`
                 : '正在获取分时数据...')}
             {traceMode === 'live' &&
               (liveTrace.length > 0

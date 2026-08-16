@@ -170,6 +170,10 @@ export const getQuote = async (
 /** Python+Flask 后端模式：推荐/批量报价走服务端聚合接口（限流友好） */
 const PYTHON = BACKEND_MODE === 'python';
 
+/** 最近一次评分快照时间（python 模式来自后端每日 16:00 定时任务） */
+let lastComputedAt: string | null = null;
+export const getLastComputedAt = (): string | null => lastComputedAt;
+
 /** 2. 批量获取报价（python 模式：后端 /api/quotes 一次聚合；node 模式：逐个调用） */
 export const getQuotesBatch = async (
   symbols: string[],
@@ -357,18 +361,18 @@ export const getMinuteKline = async (
   return out;
 };
 
-/** 5c. 当日分时序列（后端真实分时） */
+/** 5c. 当日分时序列（后端真实分时；date 为交易日日期，供前端按时间窗口制图） */
 export const getMinuteSeries = async (
   symbol: string,
   market: Market = 'CN',
-): Promise<{ time: string; price: number; volume: number }[]> => {
+): Promise<{ date?: string; time: string; price: number; volume: number }[]> => {
   const cacheKey = getCacheKey('minute', { symbol, market });
-  const cached = getCached<{ time: string; price: number; volume: number }[]>(
+  const cached = getCached<{ date?: string; time: string; price: number; volume: number }[]>(
     cacheKey,
     CACHE_TTL_QUOTE,
   );
   if (cached !== null) return cached;
-  const raw = await apiGetCached<{ symbol: string; points: { time: string; price: number; volume: number }[] }>(
+  const raw = await apiGetCached<{ symbol: string; points: { date?: string; time: string; price: number; volume: number }[] }>(
     cacheKey,
     `/minute/${encodeURIComponent(symbol)}`,
     CACHE_TTL_QUOTE,
@@ -385,9 +389,13 @@ export const getRecommendations = async (
 ): Promise<{ symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[]> => {
   if (PYTHON) {
     const raw = await apiGet<
-      { symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[]
+      {
+        items: { symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[];
+        computedAt?: string;
+      }
     >(`/recommend?count=${count}`);
-    return raw || [];
+    if (raw?.computedAt) lastComputedAt = raw.computedAt;
+    return raw?.items || [];
   }
   const { analyzeStockPotential } = await import('../lib/stock');
   const results: { symbol: string; market: Market; name: string; price: number; changePercent: number; score: number; rating: string }[] = [];

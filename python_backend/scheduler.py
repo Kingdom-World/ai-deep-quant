@@ -40,6 +40,29 @@ def refresh_hot_stocks(verbose=True):
     return {"updated": updated, "failed": failed, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
 
 
+def compute_daily_scores(verbose=True):
+    """每日量化评分：对股票池评分并写入 SQLite 快照（主页"今日观察"展示）"""
+    import services  # 延迟导入，避免与 services 模块循环依赖
+
+    try:
+        items = services.recommend(len(services.STOCK_POOL))
+        if not items:
+            if verbose:
+                print("[scheduler] 评分快照生成失败：无评分结果")
+            return None
+        computed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        database.set_daily_scores(items, computed_at)
+        if verbose:
+            print(
+                f"[scheduler] 每日量化评分快照已生成：{len(items)} 只股票 @ {computed_at}"
+            )
+        return {"count": len(items), "computedAt": computed_at}
+    except Exception as e:
+        if verbose:
+            print(f"[scheduler] 评分快照生成失败: {e}")
+        return None
+
+
 def _loop():
     global _last_run_date
     while True:
@@ -51,8 +74,9 @@ def _loop():
                     _last_run_date = today
                     try:
                         refresh_hot_stocks()
+                        compute_daily_scores()
                     except Exception as e:
-                        print(f"[scheduler] 刷新失败: {e}")
+                        print(f"[scheduler] 每日任务失败: {e}")
         time.sleep(20)
 
 

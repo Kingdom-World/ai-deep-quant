@@ -452,17 +452,27 @@ app.get('/api/minute/:symbol', async (req, res) => {
       });
       const klines = parseSinaUSMinute(text);
       points = klines.map((k) => ({
+        date: String(k.date).slice(0, 10), // 完整日期，供前端按交易日窗口制图
         time: String(k.date).slice(11, 16), // YYYY-MM-DD HH:MM -> HH:MM
         price: k.close,
         volume: k.volume ?? 0,
       }));
       source = 'sina-us';
     } else {
-      // ── A股/港股：腾讯当日分时 ──
+      // ── A股/港股：腾讯当日分时（补北京时间日期） ──
       const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`;
       const text = await fetchText(url, { 'User-Agent': UA, Referer: 'http://finance.qq.com' });
       const json = JSON.parse(text);
-      points = parseTencentMinute(json, code);
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+        .format(new Date())
+        .split('-')
+        .join('-');
+      points = parseTencentMinute(json, code).map((p) => ({ ...p, date: today }));
     }
     if (!points.length) throw new Error('分时数据为空');
     const result = { symbol: code, source, points };

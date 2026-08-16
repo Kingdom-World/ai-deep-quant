@@ -59,6 +59,17 @@ def init_db():
                 data       TEXT NOT NULL,
                 updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS daily_scores (
+                symbol         TEXT PRIMARY KEY,
+                name           TEXT,
+                market         TEXT,
+                price          REAL,
+                change_percent REAL,
+                score          INTEGER,
+                rating         TEXT,
+                computed_at    TEXT,
+                updated_at     REAL NOT NULL
+            );
             """
         )
 
@@ -141,6 +152,54 @@ def get_misc(key, ttl):
 
 def set_misc(key, data):
     _set("misc_cache", "key", key, data)
+
+
+# ── 每日量化评分快照（16:00 定时任务生成，主页"今日观察"展示） ──
+def set_daily_scores(items, computed_at):
+    with _lock, _conn() as conn:
+        for it in items:
+            conn.execute(
+                "INSERT INTO daily_scores (symbol, name, market, price, change_percent, score, rating, computed_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(symbol) DO UPDATE SET name=excluded.name, market=excluded.market, "
+                "price=excluded.price, change_percent=excluded.change_percent, score=excluded.score, "
+                "rating=excluded.rating, computed_at=excluded.computed_at, updated_at=excluded.updated_at",
+                (
+                    it["symbol"],
+                    it.get("name"),
+                    it.get("market"),
+                    it.get("price"),
+                    it.get("changePercent"),
+                    it.get("score"),
+                    it.get("rating"),
+                    computed_at,
+                    time.time(),
+                ),
+            )
+
+
+def get_daily_scores():
+    """返回最新一次评分快照（含 computed_at 时间戳）"""
+    with _lock, _conn() as conn:
+        rows = conn.execute(
+            "SELECT symbol, name, market, price, change_percent, score, rating, computed_at "
+            "FROM daily_scores ORDER BY updated_at DESC LIMIT 20"
+        ).fetchall()
+    if not rows:
+        return None
+    items = [
+        {
+            "symbol": r[0],
+            "name": r[1],
+            "market": r[2],
+            "price": r[3],
+            "changePercent": r[4],
+            "score": r[5],
+            "rating": r[6],
+        }
+        for r in rows
+    ]
+    return {"items": items, "computedAt": rows[0][7]}
 
 
 # ── 缓存状态（/api/cache/status） ──

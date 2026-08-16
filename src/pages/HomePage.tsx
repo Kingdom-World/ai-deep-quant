@@ -4,6 +4,7 @@ import {
   getDataSourceStatus,
   getHistory,
   getIndices,
+  getLastComputedAt,
   getQuotesBatch,
   getQuote,
   getRecommendations,
@@ -104,6 +105,8 @@ export default function HomePage() {
   const [recommends, setRecommends] = useState<RecommendItem[]>([]);
   const [recLoading, setRecLoading] = useState(true);
   const [recError, setRecError] = useState<string | null>(null);
+  /** 本次评分时间（python 模式来自后端每日 16:00 定时快照） */
+  const [scoreTime, setScoreTime] = useState<string | null>(null);
   // 我的收藏（localStorage 持久化，可增删）
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [favLoading, setFavLoading] = useState(false);
@@ -285,6 +288,11 @@ export default function HomePage() {
         );
         if (!aliveRef.current) return;
         setRecommends(rec);
+        // 评分时间：python 模式取后端每日快照时间；node 模式取本次计算时间
+        setScoreTime(
+          getLastComputedAt() ??
+            new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        );
         setRecError(null);
       } catch (err: any) {
         console.error('因子评分加载失败:', err);
@@ -802,7 +810,21 @@ export default function HomePage() {
               📊 今日观察 · 量化因子评分
             </h2>
             <span style={{ fontSize: '12px', color: '#475569', marginBottom: '16px' }}>
-              基于趋势/动量/量能/波动/位置五因子模型，每日对股票池进行量化评分展示
+              基于趋势/动量/量能/波动/位置五因子模型，每日自动量化评分
+              {scoreTime && (
+                <span
+                  style={{
+                    marginLeft: '8px',
+                    color: '#60a5fa',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    padding: '2px 10px',
+                    borderRadius: '999px',
+                    fontSize: '11px',
+                  }}
+                >
+                  ⏱ 评分时间 {scoreTime}
+                </span>
+              )}
             </span>
           </div>
 

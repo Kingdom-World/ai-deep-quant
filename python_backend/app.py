@@ -132,11 +132,16 @@ def api_backtest():
     return jsonify(result)
 
 
-# ── 今日观察（后端聚合评分） ──
+# ── 今日观察（后端聚合评分；优先返回每日 16:00 定时生成的快照） ──
 @app.route("/api/recommend")
 def api_recommend():
     count = min(int(request.args.get("count", 6)), 10)
-    return jsonify(services.recommend(count))
+    snapshot = database.get_daily_scores()
+    if snapshot and snapshot["items"]:
+        items = snapshot["items"][:count]
+        return jsonify({"items": items, "computedAt": snapshot["computedAt"]})
+    items = services.recommend(count)
+    return jsonify({"items": items, "computedAt": time.strftime("%Y-%m-%d %H:%M:%S")})
 
 
 # ── 网站 AI 问答 ──

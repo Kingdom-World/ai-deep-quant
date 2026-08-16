@@ -378,25 +378,37 @@ def _agg_points(points, step):
     return out
 
 
+def _beijing_today():
+    import datetime as _dt
+
+    return _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=8))).strftime("%Y-%m-%d")
+
+
 def get_minute(symbol):
-    """当日分时（聚合数据，仅供前端实时走势展示）
+    """当日分时（聚合数据，仅供前端实时走势展示；带日期字段供前端按交易日窗口制图）
     A股/港股：腾讯当日分时；美股：新浪 1 分钟 K 线（腾讯对美股仅返回当前点）"""
     sym = str(symbol).strip().upper()
     cached = database.get_misc(f"minute:{sym}", MINUTE_CACHE_TTL)
     if cached:
         return cached
+    today = _beijing_today()
     if sym.isdigit() and len(sym) == 6:
         code = ("sh" if sym[0] in "69" else "sz") + sym
-        points = _tencent_minute_points(code)
+        points = [dict(p, date=today) for p in _tencent_minute_points(code)]
     elif sym.isdigit() and len(sym) == 5:
         code = "hk" + sym
-        points = _tencent_minute_points(code)
+        points = [dict(p, date=today) for p in _tencent_minute_points(code)]
     else:
         # 美股：新浪 1 分钟 K 线
         klines, _ = _sina_us_minute(sym, "1")
         points = (
             [
-                {"time": str(k["date"])[11:16], "price": k["close"], "volume": k["volume"] or 0}
+                {
+                    "date": str(k["date"])[:10],
+                    "time": str(k["date"])[11:16],
+                    "price": k["close"],
+                    "volume": k["volume"] or 0,
+                }
                 for k in klines
             ]
             if klines

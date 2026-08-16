@@ -102,3 +102,15 @@ ai-deep-quant/
 ## ⚠️ 免责声明
 
 本平台数据来自公开行情接口，所有分析与回测仅供学习研究，**不构成投资建议**。
+
+---
+
+## 🌐 部署到公网（Vercel）
+
+想让朋友通过浏览器直接访问（无需任何本地环境）？项目已适配 Vercel Serverless 部署：
+
+- 部署入口：`api/index.js`（复用 `server/index.cjs` 后端）
+- 配置：`vercel.json` + `"vercel-build"` 脚本 + Node 20 engines
+- 完整图文步骤（GitHub 推送 + Vercel 导入 + 验证清单 + 常见问题）：**见 [`DEPLOY.md`](DEPLOY.md)**
+
+预期 URL 格式：`https://ai-deep-quant.vercel.app`（免费版 100GB 流量/月，足够少量朋友使用）

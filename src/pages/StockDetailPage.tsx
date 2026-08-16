@@ -133,26 +133,28 @@ export default function StockDetailPage() {
   /** 周期切换提示（如：新股暂无季线/年线数据） */
   const [periodNotice, setPeriodNotice] = useState<string | null>(null);
 
+  /** 历史数据覆盖跨度（天）：用于季线/年线数据量校验 */
+  const historySpanDays = useMemo(() => {
+    const first = allPoints[0]?.date;
+    const last = allPoints[allPoints.length - 1]?.date;
+    if (!first || !last) return 0;
+    return (Date.parse(last) - Date.parse(first)) / 86400000;
+  }, [allPoints]);
+
   /**
    * 周期选择（含数据量校验）：
-   * 季线/年线需要足够长的历史跨度；上市较短的新股不满足时给出提示（参考主流行情软件做法）
+   * 季线/年线需要足够长的历史跨度；数据不足时按钮置灰，点击给出提示（参考主流行情软件做法）
    */
   const handlePeriodSelect = (period: Period) => {
     setPeriodNotice(null);
     if (period === 'quarter' || period === 'year') {
-      const first = allPoints[0]?.date;
-      const last = allPoints[allPoints.length - 1]?.date;
-      let spanDays = 0;
-      if (first && last) {
-        spanDays = (Date.parse(last) - Date.parse(first)) / 86400000;
-      }
       // 季线至少约 1 年（4 根以上），年线至少约 3 年（3 根以上）
       const minDays = period === 'quarter' ? 365 : 1000;
-      if (spanDays < minDays) {
+      if (historySpanDays < minDays) {
         setPeriodNotice(
           period === 'quarter'
-            ? `📌 历史数据约 ${Math.max(1, Math.round(spanDays / 30))} 个月，不足 1 年，暂无足够季度K线数据`
-            : `📌 历史数据约 ${Math.max(1, Math.round(spanDays / 365))} 年，不足 3 年，暂无足够年度K线数据`,
+            ? `📌 历史数据约 ${Math.max(1, Math.round(historySpanDays / 30))} 个月，不足 1 年，暂无足够季度K线数据`
+            : `📌 历史数据约 ${Math.max(1, Math.round(historySpanDays / 365))} 年，不足 3 年，暂无足够年度K线数据`,
         );
         return;
       }
@@ -213,8 +215,8 @@ export default function StockDetailPage() {
   // 1. 获取历史日线数据（用于初始化图表 + 计算全部量化指标）
   const fetchHistoricalData = async (sym: string, m: Market) => {
     try {
-      // 走统一数据服务（独立后端，带缓存）；请求 2000 根支撑 MA250/季线/年线（≈8年）
-      const rows = await getHistory(sym, m, 'day', 2000);
+      // 走统一数据服务（独立后端，带缓存）；请求 2400 根支撑 MA250/季线(30根)/年线(10根)（约 9 年）
+      const rows = await getHistory(sym, m, 'day', 2400);
       const points: KlinePoint[] = rows.map((r) => ({
         date: r.date,
         open: r.open,
@@ -1458,23 +1460,34 @@ export default function StockDetailPage() {
         >
           {PERIODS.map((p) => {
             const active = selectedPeriod === p.key;
+            // 季线/年线：历史跨度不足时按钮置灰（点击仍提示原因）
+            const insufficient =
+              (p.key === 'quarter' && historySpanDays < 365) ||
+              (p.key === 'year' && historySpanDays < 1000);
             return (
               <button
                 key={p.key}
                 onClick={() => handlePeriodSelect(p.key)}
+                title={insufficient ? '历史数据不足' : undefined}
                 style={{
                   padding: '6px 14px',
                   fontSize: '13px',
                   fontWeight: active ? '700' : '500',
-                  color: active ? '#ffffff' : '#94a3b8',
-                  backgroundColor: active ? '#2563eb' : '#1e293b',
-                  border: active ? '1px solid #2563eb' : '1px solid #334155',
+                  color: active ? '#ffffff' : insufficient ? '#475569' : '#94a3b8',
+                  backgroundColor: active ? '#2563eb' : insufficient ? '#0d1322' : '#1e293b',
+                  border: active
+                    ? '1px solid #2563eb'
+                    : insufficient
+                      ? '1px dashed #334155'
+                      : '1px solid #334155',
                   borderRadius: '8px',
-                  cursor: 'pointer',
+                  cursor: insufficient && !active ? 'not-allowed' : 'pointer',
+                  opacity: insufficient && !active ? 0.65 : 1,
                   transition: 'all 0.2s',
                 }}
               >
                 {p.label}
+                {insufficient && !active && <span style={{ marginLeft: '4px', fontSize: '10px' }}>·数据不足</span>}
               </button>
             );
           })}

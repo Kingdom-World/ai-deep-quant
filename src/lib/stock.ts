@@ -72,10 +72,10 @@ export type Period = 'day' | '3day' | 'week' | 'month' | 'quarter' | 'year';
 export const PERIODS: { key: Period; label: string; title: string; limit: number; tick: string }[] =
   [
     { key: 'day', label: '日', title: '日线', limit: 250, tick: 'MM-DD' },
-    { key: '3day', label: '3日', title: '3日线', limit: 60, tick: 'MM-DD' },
-    { key: 'week', label: '周', title: '周线', limit: 60, tick: 'MM-DD(周)' },
+    { key: '3day', label: '3日', title: '3日线', limit: 160, tick: 'MM-DD' },
+    { key: 'week', label: '周', title: '周线', limit: 120, tick: 'MM-DD(周)' },
     { key: 'month', label: '月', title: '月线', limit: 60, tick: 'YYYY-MM' },
-    { key: 'quarter', label: '季', title: '季线', limit: 20, tick: 'YYYY-Qn' },
+    { key: 'quarter', label: '季', title: '季线', limit: 30, tick: 'YYYY-Qn' },
     { key: 'year', label: '年', title: '年线', limit: 10, tick: 'YYYY' },
   ];
 

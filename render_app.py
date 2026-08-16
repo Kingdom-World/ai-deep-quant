@@ -110,7 +110,7 @@ def get_history():
     """历史K线（响应格式与前端 stockDataService 兼容）
     参数兼容：symbol（前端）/ code（手动测试）均可；count（根数）/ start_date+end_date 均可"""
     symbol = request.args.get("symbol") or request.args.get("code", "600519")
-    count = min(int(request.args.get("count", 500)), 2000)
+    count = min(int(request.args.get("count", 500)), 3000)
     freq = request.args.get("frequency", "1d")
     freq_map = {"1d": "d", "1w": "w", "1M": "m"}
     frequency = freq_map.get(freq, "d")

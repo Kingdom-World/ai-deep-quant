@@ -47,7 +47,7 @@ def _rate_limit():
 # ── 历史 K 线（Baostock 主源 + 24h SQLite 缓存） ──
 @app.route("/api/history/<symbol>")
 def api_history(symbol):
-    count = min(int(request.args.get("count", 500)), 2000)
+    count = min(int(request.args.get("count", 500)), 3000)
     data = services.get_history(symbol, count)
     if not data:
         return jsonify(error=f"未获取到 {symbol} 的历史数据"), 500

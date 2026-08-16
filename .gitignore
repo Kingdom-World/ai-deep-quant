@@ -33,3 +33,5 @@ reports/
 *.njsproj
 *.sln
 *.sw?
+
+.vercel

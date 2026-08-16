@@ -1,0 +1,4 @@
+# AI深度量化 · Render 部署依赖（根目录 requirements.txt，供 Render 构建使用）
+flask>=3.0
+flask-cors>=4.0
+baostock>=0.8.9

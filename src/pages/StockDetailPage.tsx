@@ -8,7 +8,6 @@ import {
   getMinuteSeries,
   getQuote,
 } from '../api/dataService';
-import { DataSourceIndicator } from '../components/DataSourceIndicator';
 import {
   aggregateData,
   aggregatePoints,
@@ -1236,7 +1235,6 @@ export default function StockDetailPage() {
           >
             {fav ? '★ 已收藏' : '☆ 收藏'}
           </button>
-          <DataSourceIndicator />
         </div>
       </nav>
 

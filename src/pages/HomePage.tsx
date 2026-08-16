@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  getDataSourceStatus,
   getHistory,
   getIndices,
   getLastComputedAt,
@@ -11,7 +10,6 @@ import {
   type UnifiedQuote,
 } from '../api/dataService';
 import { BACKEND_MODE } from '../config';
-import { DataSourceIndicator } from '../components/DataSourceIndicator';
 import {
   getFavorites,
   addFavorite as addFavoriteEntry,
@@ -113,8 +111,6 @@ export default function HomePage() {
   const [favInput, setFavInput] = useState('');
   const [favMsg, setFavMsg] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
-  // 数据源状态（独立后端）
-  const [dsStatus] = useState(getDataSourceStatus());
   // 全局 store（大盘指数写入，供跨页共享）
   const storeSetIndices = useQuantStore((s) => s.setIndices);
   const storeSetIndicesUpdatedAt = useQuantStore((s) => s.setIndicesUpdatedAt);
@@ -548,7 +544,6 @@ export default function HomePage() {
           >
             🔍 量化看板
           </button>
-          <DataSourceIndicator />
         </div>
       </nav>
 
@@ -590,7 +585,9 @@ export default function HomePage() {
                 borderRadius: '999px',
               }}
             >
-              数据源：Ashare（新浪/腾讯公开接口）· 模拟延时
+              {BACKEND_MODE === 'python'
+                ? '数据源：Baostock（历史K线）· 新浪/腾讯（实时行情）'
+                : '数据源：新浪/腾讯公开接口'}
             </span>
             {indicesUpdatedAt && (
               <span style={{ fontSize: '12px', color: '#475569', marginBottom: '16px' }}>
@@ -961,37 +958,6 @@ export default function HomePage() {
           </div>
         </section>
       </main>
-
-      {/* ── 数据源状态条 ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '16px',
-          flexWrap: 'wrap',
-          padding: '14px 24px',
-          borderTop: '1px solid #1e293b',
-          backgroundColor: '#0d1322',
-          fontSize: '12px',
-          color: '#94a3b8',
-        }}
-      >
-        <span>
-          数据源：<b style={{ color: '#22c55e' }}>AI深度量化数据服务</b>
-          <span style={{ color: '#475569' }}>（新浪 / 腾讯公开数据，无需 API Key）</span>
-        </span>
-        <span style={{ color: '#475569' }}>|</span>
-        <span>
-          数据服务：
-          <b style={{ color: dsStatus.primaryHealthy ? '#22c55e' : '#f59e0b' }}>
-            {dsStatus.primaryHealthy ? '运行中' : '未启动'}
-          </b>
-          <span style={{ color: '#475569' }}>（启动: npm start，单端口 3001）</span>
-        </span>
-        <span style={{ color: '#475569' }}>|</span>
-        <span>缓存 {dsStatus.cacheSize} 项</span>
-      </div>
 
       {/* ── 页脚免责声明 ── */}
       <footer

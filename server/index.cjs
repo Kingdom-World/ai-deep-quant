@@ -170,13 +170,15 @@ function parseTencentKlines(json, symbol, unit = 'day') {
   const data = json?.data?.[symbol];
   if (!data) return [];
   const rows = data?.[`qfq${unit}`] || data?.[unit] || [];
+  // A股成交量单位为手（×100 = 股），与 Baostock 等源统一为股
+  const isCN = /^(sh|sz)/.test(String(symbol).toLowerCase());
   return rows.map((r) => ({
     date: String(r[0]).slice(0, 10),
     open: num(r[1]),
     close: num(r[2]),
     high: num(r[3]),
     low: num(r[4]),
-    volume: num(r[5]),
+    volume: isCN ? (num(r[5]) ?? 0) * 100 : num(r[5]),
   }));
 }
 

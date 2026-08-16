@@ -440,12 +440,32 @@ app.get('/api/minute/:symbol', async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`;
-    const text = await fetchText(url, { 'User-Agent': UA, Referer: 'http://finance.qq.com' });
-    const json = JSON.parse(text);
-    const points = parseTencentMinute(json, code);
+    let points = [];
+    let source = 'tencent-minute';
+    if (/^us/i.test(code)) {
+      // ── 美股：新浪 1 分钟 K 线（腾讯分时接口对美股仅返回当前 1 个点） ──
+      const bare = code.replace(/^us/i, '').toLowerCase();
+      const url = `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var%20_=/US_MinKService.getMinK?symbol=${bare}&type=1`;
+      const text = await fetchText(url, {
+        'User-Agent': UA,
+        Referer: 'https://finance.sina.com.cn',
+      });
+      const klines = parseSinaUSMinute(text);
+      points = klines.map((k) => ({
+        time: String(k.date).slice(11, 16), // YYYY-MM-DD HH:MM -> HH:MM
+        price: k.close,
+        volume: k.volume ?? 0,
+      }));
+      source = 'sina-us';
+    } else {
+      // ── A股/港股：腾讯当日分时 ──
+      const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`;
+      const text = await fetchText(url, { 'User-Agent': UA, Referer: 'http://finance.qq.com' });
+      const json = JSON.parse(text);
+      points = parseTencentMinute(json, code);
+    }
     if (!points.length) throw new Error('分时数据为空');
-    const result = { symbol: code, points };
+    const result = { symbol: code, source, points };
     setCache(cacheKey, result);
     res.json(result);
   } catch (e) {

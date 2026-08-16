@@ -234,13 +234,14 @@ export default function StockDetailPage() {
       });
 
       // ── 实时走势初始化：拉取当日分时全量（前20分钟/前2小时模式进入页面即可完整展示），
-      //    分时不可用则回退为最近 2 个真实收盘价起步 ──
+      //    分时不可用则回退为最近 2 个真实收盘价起步，并自动切换到实时跟踪模式 ──
       const minute = await getMinuteSeries(sym, m).catch(() => []);
       if (minute.length > 0) {
         setMinuteTrace(minute);
         setLiveTrace(minute.slice(-2).map((p) => p.price));
       } else {
         setLiveTrace(prices.length >= 2 ? prices.slice(-2) : []);
+        setTraceMode('live');
       }
 
       // 历史数据就绪后立即拉一次实时报价（避免等待首个 10 秒窗口；实时数据强制刷新绕过缓存）

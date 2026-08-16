@@ -379,18 +379,29 @@ def _agg_points(points, step):
 
 
 def get_minute(symbol):
-    """当日分时（聚合数据，仅供前端实时走势展示）"""
+    """当日分时（聚合数据，仅供前端实时走势展示）
+    A股/港股：腾讯当日分时；美股：新浪 1 分钟 K 线（腾讯对美股仅返回当前点）"""
     sym = str(symbol).strip().upper()
     cached = database.get_misc(f"minute:{sym}", MINUTE_CACHE_TTL)
     if cached:
         return cached
     if sym.isdigit() and len(sym) == 6:
         code = ("sh" if sym[0] in "69" else "sz") + sym
+        points = _tencent_minute_points(code)
     elif sym.isdigit() and len(sym) == 5:
         code = "hk" + sym
+        points = _tencent_minute_points(code)
     else:
-        code = "us" + sym
-    points = _tencent_minute_points(code)
+        # 美股：新浪 1 分钟 K 线
+        klines, _ = _sina_us_minute(sym, "1")
+        points = (
+            [
+                {"time": str(k["date"])[11:16], "price": k["close"], "volume": k["volume"] or 0}
+                for k in klines
+            ]
+            if klines
+            else []
+        )
     if not points:
         return None
     payload = {"symbol": sym, "points": points}

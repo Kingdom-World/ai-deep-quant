@@ -213,7 +213,10 @@ export const getQuotesBatch = async (
   ).then((list) => list.filter((q): q is UnifiedQuote => q !== null));
 };
 
-/** 3. 获取历史 K 线（直连后端，缓存 5 分钟在后端层） */
+/** 可选：本地/Render Baostock 历史后端地址（.env 配置 VITE_HISTORY_API） */
+const HISTORY_API = (import.meta.env.VITE_HISTORY_API as string) || '';
+
+/** 3. 获取历史 K 线（优先 Baostock 后端；未配置或失败时回退轻量后端，缓存 5 分钟） */
 export const getHistory = async (
   symbol: string,
   market: Market = 'CN',
@@ -236,6 +239,36 @@ export const getHistory = async (
     const cached = getCached<UnifiedKline[]>(cacheKey, CACHE_TTL_HISTORY);
     if (cached !== null) return cached;
   }
+
+  // ── Baostock 后端（VITE_HISTORY_API 配置时优先；失败自动回退轻量后端） ──
+  if (HISTORY_API) {
+    try {
+      const url = `${HISTORY_API}/api/history?symbol=${encodeURIComponent(symbol)}&count=${count}&frequency=${frequency}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      if (res.ok) {
+        const j = await res.json();
+        const rows: { date: string; open: number; close: number; high: number; low: number; volume: number }[] =
+          j?.klines || j?.data || [];
+        if (rows.length > 0) {
+          const klines: UnifiedKline[] = rows.map((k) => ({
+            time: new Date(`${String(k.date).slice(0, 10)}T00:00:00`).getTime(),
+            date: String(k.date).slice(0, 10),
+            open: Number(k.open),
+            close: Number(k.close),
+            high: Number(k.high),
+            low: Number(k.low),
+            volume: Number(k.volume),
+            _source: 'backend' as const,
+          }));
+          setCached(cacheKey, klines);
+          return klines;
+        }
+      }
+    } catch (e) {
+      console.warn('[History] Baostock 后端不可用，回退轻量后端:', (e as Error)?.message);
+    }
+  }
+
   const raw = await apiGetCached<BackendHistory>(
     forceRefresh ? `${cacheKey}:fresh` : cacheKey,
     `/history/${encodeURIComponent(symbol)}?frequency=${frequency}&count=${count}`,

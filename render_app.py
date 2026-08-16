@@ -76,8 +76,10 @@ def _query(fn):
 
 
 def to_baostock_code(symbol):
-    """A股 6 位数字 → Baostock 格式（600519 -> sh.600519）"""
+    """统一为 Baostock 格式：600519 -> sh.600519；sh.600519 / sh600519 原样归一"""
     s = str(symbol).strip().lower()
+    if s.startswith(("sh.", "sz.", "bj.")):
+        return s  # 已是 Baostock 格式
     if s.startswith(("sh", "sz", "bj")):
         return s[:2] + "." + s[2:]
     if s.isdigit() and len(s) == 6:
@@ -87,8 +89,9 @@ def to_baostock_code(symbol):
 
 @app.route("/api/history", methods=["GET"])
 def get_history():
-    """历史K线（响应格式与前端 stockDataService 兼容）"""
-    symbol = request.args.get("symbol", "600519")
+    """历史K线（响应格式与前端 stockDataService 兼容）
+    参数兼容：symbol（前端）/ code（手动测试）均可；count（根数）/ start_date+end_date 均可"""
+    symbol = request.args.get("symbol") or request.args.get("code", "600519")
     count = min(int(request.args.get("count", 500)), 2000)
     freq = request.args.get("frequency", "1d")
     freq_map = {"1d": "d", "1w": "w", "1M": "m"}
@@ -99,15 +102,18 @@ def get_history():
             jsonify({"error": "Render-Baostock 后端仅支持 A 股，请使用轻量后端"}),
             400,
         )
-    start = (
-        datetime.date.today() - datetime.timedelta(days=int(count * 1.6) + 120)
-    ).strftime("%Y-%m-%d")
-    end = datetime.date.today().strftime("%Y-%m-%d")
+    start = request.args.get(
+        "start_date",
+        (
+            datetime.date.today() - datetime.timedelta(days=int(count * 1.6) + 120)
+        ).strftime("%Y-%m-%d"),
+    )
+    end = request.args.get("end_date", datetime.date.today().strftime("%Y-%m-%d"))
 
     def run():
         rs = bs.query_history_k_data_plus(
             code,
-            "date,open,high,low,close,volume",
+            "date,code,open,high,low,close,volume",
             start_date=start,
             end_date=end,
             frequency=frequency,
@@ -121,11 +127,12 @@ def get_history():
             rows.append(
                 {
                     "date": r[0],
-                    "open": float(r[1]),
-                    "close": float(r[2]),
-                    "high": float(r[3]),
-                    "low": float(r[4]),
-                    "volume": float(r[5]),
+                    "code": r[1],
+                    "open": float(r[2]),
+                    "close": float(r[3]),
+                    "high": float(r[4]),
+                    "low": float(r[5]),
+                    "volume": float(r[6]),
                 }
             )
         return rows or None
@@ -140,6 +147,7 @@ def get_history():
             "frequency": freq,
             "source": "baostock",
             "fromCache": False,
+            "count": len(klines),
             "klines": klines,
         }
     )

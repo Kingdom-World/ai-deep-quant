@@ -54,8 +54,10 @@ def _query(fn):
 
 
 def to_baostock_code(symbol):
-    """A股 6 位数字 → Baostock 格式（600519 -> sh.600519、000001 -> sz.000001）"""
+    """统一为 Baostock 格式：600519 -> sh.600519；sh.600519 / sh600519 原样归一"""
     s = str(symbol).strip().lower()
+    if s.startswith(("sh.", "sz.", "bj.")):
+        return s  # 已是 Baostock 格式
     if s.startswith(("sh", "sz", "bj")):
         return s[:2] + "." + s[2:]
     if s.isdigit() and len(s) == 6:

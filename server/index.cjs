@@ -432,6 +432,33 @@ function parseTencentMinute(json, symbol) {
     .filter(Boolean);
 }
 
+/** 判断美东日期是否为夏令时（3月第2个周日 02:00 ~ 11月第1个周日 02:00） */
+function isUSDST(y, m, d) {
+  // 3月第二个周日
+  const mar1 = new Date(Date.UTC(y, 2, 1));
+  const secondSun = 8 + ((7 - mar1.getUTCDay()) % 7);
+  // 11月第一个周日
+  const nov1 = new Date(Date.UTC(y, 10, 1));
+  const firstSun = 1 + ((7 - nov1.getUTCDay()) % 7);
+  const ts = Date.UTC(y, m - 1, d);
+  const dstStart = Date.UTC(y, 2, secondSun);
+  const dstEnd = Date.UTC(y, 10, firstSun);
+  return ts >= dstStart && ts < dstEnd;
+}
+
+/** 美东时间(EDT/EST) → 北京时间（EDT +12h / EST +13h），用于美股分时按当前时间窗口制图 */
+function usTimeToBeijing(dateStr, timeStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const [hh, mm] = String(timeStr).split(':').map(Number);
+  const offsetHours = isUSDST(y, m, d) ? 12 : 13;
+  const bj = new Date(Date.UTC(y, m - 1, d, hh, mm) + offsetHours * 3600 * 1000);
+  const pad = (v) => String(v).padStart(2, '0');
+  return {
+    date: `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())}`,
+    time: `${pad(bj.getUTCHours())}:${pad(bj.getUTCMinutes())}`,
+  };
+}
+
 app.get('/api/minute/:symbol', async (req, res) => {
   const symbol = req.params.symbol;
   const code = toTencentCode(symbol);
@@ -451,12 +478,16 @@ app.get('/api/minute/:symbol', async (req, res) => {
         Referer: 'https://finance.sina.com.cn',
       });
       const klines = parseSinaUSMinute(text);
-      points = klines.map((k) => ({
-        date: String(k.date).slice(0, 10), // 完整日期，供前端按交易日窗口制图
-        time: String(k.date).slice(11, 16), // YYYY-MM-DD HH:MM -> HH:MM
-        price: k.close,
-        volume: k.volume ?? 0,
-      }));
+      points = klines.map((k) => {
+        // 新浪美股时间为美东时区 → 统一转为北京时间（前端按当前时间窗口制图）
+        const bj = usTimeToBeijing(String(k.date).slice(0, 10), String(k.date).slice(11, 16));
+        return {
+          date: bj.date,
+          time: bj.time,
+          price: k.close,
+          volume: k.volume ?? 0,
+        };
+      });
       source = 'sina-us';
     } else {
       // ── A股/港股：腾讯当日分时（补北京时间日期） ──

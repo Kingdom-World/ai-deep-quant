@@ -384,6 +384,27 @@ def _beijing_today():
     return _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=8))).strftime("%Y-%m-%d")
 
 
+def _us_time_to_beijing(date_str, time_str):
+    """美东时间(EDT/EST) → 北京时间（EDT+12h / EST+13h），美股分时按当前时间窗口制图用"""
+    import calendar
+
+    y, m, d = (int(x) for x in date_str.split("-"))
+    hh, mm = (int(x) for x in time_str.split(":"))
+    # 美东夏令时：3月第2个周日 ~ 11月第1个周日
+    mar1 = datetime.date(y, 3, 1)
+    second_sun = 8 + (7 - mar1.weekday()) % 7  # weekday(): Mon=0
+    nov1 = datetime.date(y, 11, 1)
+    first_sun = 1 + (7 - nov1.weekday()) % 7
+    ts = datetime.date(y, m, d)
+    dst = datetime.date(y, 3, second_sun) <= ts < datetime.date(y, 11, first_sun)
+    offset = 12 if dst else 13
+    total = y * 10000 + m * 100 + d
+    import time as _t
+
+    bj = _t.gmtime(calendar.timegm((y, m, d, hh, mm, 0)) + offset * 3600)
+    return "%04d-%02d-%02d" % (bj.tm_year, bj.tm_mon, bj.tm_mday), "%02d:%02d" % (bj.tm_hour, bj.tm_min)
+
+
 def get_minute(symbol):
     """当日分时（聚合数据，仅供前端实时走势展示；带日期字段供前端按交易日窗口制图）
     A股/港股：腾讯当日分时；美股：新浪 1 分钟 K 线（腾讯对美股仅返回当前点）"""
@@ -399,21 +420,19 @@ def get_minute(symbol):
         code = "hk" + sym
         points = [dict(p, date=today) for p in _tencent_minute_points(code)]
     else:
-        # 美股：新浪 1 分钟 K 线
+        # 美股：新浪 1 分钟 K 线（美东时间 → 统一转北京时间）
         klines, _ = _sina_us_minute(sym, "1")
-        points = (
-            [
+        points = []
+        for k in klines or []:
+            bj_date, bj_time = _us_time_to_beijing(str(k["date"])[:10], str(k["date"])[11:16])
+            points.append(
                 {
-                    "date": str(k["date"])[:10],
-                    "time": str(k["date"])[11:16],
+                    "date": bj_date,
+                    "time": bj_time,
                     "price": k["close"],
                     "volume": k["volume"] or 0,
                 }
-                for k in klines
-            ]
-            if klines
-            else []
-        )
+            )
     if not points:
         return None
     payload = {"symbol": sym, "points": points}

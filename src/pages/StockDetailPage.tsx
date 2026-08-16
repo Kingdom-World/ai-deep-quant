@@ -139,8 +139,12 @@ export default function StockDetailPage() {
   const [liveTrace, setLiveTrace] = useState<number[]>([]);
   /** 实时走势窗口模式：20m=前20分钟 / 2h=前2小时 / live=实时跟踪 */
   const [traceMode, setTraceMode] = useState<'20m' | '2h' | 'live'>('20m');
-  /** 时间窗口真实起止（以最新数据时间为基准向前推，供说明文字展示） */
-  const [traceWindow, setTraceWindow] = useState<{ start: string; end: string } | null>(null);
+  /** 时间窗口真实起止（以当前时间为基准向前推，供说明文字展示；fallback=非交易时段兜底） */
+  const [traceWindow, setTraceWindow] = useState<{
+    start: string;
+    end: string;
+    fallback?: boolean;
+  } | null>(null);
 
   // ── 分钟副图（1/5/15/30 分钟 K 线） ──
   const [minutePeriod, setMinutePeriod] = useState<MinutePeriod>('5');
@@ -828,41 +832,51 @@ export default function StockDetailPage() {
       `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
 
     // 模式数据源：
-    //   · 20m/2h —— 以最新数据时间为基准（盘中≈当前时间，盘后=收盘整点），
-    //              按真实时间窗口向前推 20 分钟/2 小时过滤同日分时点制图
+    //   · 20m/2h —— 以【当前真实时间】为基准向前推 20 分钟/2 小时制图
+    //               （数据时间已统一为北京时间；盘中窗口内为实时交易数据，
+    //                 非交易时段窗口内无数据时兜底展示最近交易数据并提示）
     //   · live   —— 10 秒高频实时点（滚动窗口）
     let data: number[] = [];
     let labels: string[] = [];
     let windowStart = '';
     let windowEnd = '';
+    let fallback = false;
     if (traceMode === 'live') {
       data = liveTrace;
     } else {
       const windowMin = traceMode === '2h' ? 120 : 20;
-      const last = minuteTrace[minuteTrace.length - 1];
-      if (last) {
-        const baseDate = last.date ?? '';
-        const endMin = toMin(last.time);
-        const startMin = endMin - windowMin;
-        const window = minuteTrace.filter((p) => {
-          if (baseDate !== '' && (p.date ?? '') !== baseDate) return false; // 仅同一交易日
-          const m = toMin(p.time);
-          return m >= startMin && m <= endMin;
-        });
-        data = window.map((p) => p.price);
-        labels = window.map((p) => p.time);
-        windowStart = labels[0] ?? '';
-        windowEnd = labels[labels.length - 1] ?? '';
-        // 尾部拼接最新实时价（时间=当前时间，盘中会落在窗口内）
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const pad = (v: number) => String(v).padStart(2, '0');
+      const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const startMin = nowMin - windowMin;
+      // 按当前时间窗口过滤（仅同一交易日 + 时间落在 [当前-窗口, 当前]）
+      const inWindow = minuteTrace.filter((p) => {
+        if ((p.date ?? today) !== today) return false;
+        const m = toMin(p.time);
+        return m >= startMin && m <= nowMin;
+      });
+      if (inWindow.length > 0) {
+        data = inWindow.map((p) => p.price);
+        labels = inWindow.map((p) => p.time);
+        windowStart = fmtMin(startMin);
+        windowEnd = fmtMin(nowMin);
+        // 尾部拼接最新实时价（时间=当前）
         if (latestPrice !== null && Number.isFinite(latestPrice)) {
-          const now = new Date();
           const nowT = fmtMin(now.getHours() * 60 + now.getMinutes());
           data = [...data, latestPrice];
           labels = [...labels, nowT];
-          windowEnd = nowT;
         }
-        setTraceWindow({ start: windowStart, end: windowEnd });
+      } else {
+        // 非交易时段兜底：展示最近 windowMin 个交易数据点（轴按数据真实时间）
+        fallback = true;
+        const base = minuteTrace.slice(-windowMin);
+        data = base.map((p) => p.price);
+        labels = base.map((p) => p.time);
+        windowStart = labels[0] ?? '';
+        windowEnd = labels[labels.length - 1] ?? '';
       }
+      setTraceWindow({ start: windowStart, end: windowEnd, fallback });
     }
     const first = data[0];
     const lastV = data[data.length - 1];
@@ -1378,11 +1392,15 @@ export default function StockDetailPage() {
           >
             {traceMode === '20m' &&
               (traceWindow
-                ? `⏱ 以 ${traceWindow.end} 为基准向前 20 分钟（${traceWindow.start} ~ ${traceWindow.end}）· 真实时间轴 · 尾部实时更新`
+                ? traceWindow.fallback
+                  ? `🌙 当前时段无交易数据 · 最近 20 分钟交易数据（${traceWindow.start} ~ ${traceWindow.end}）`
+                  : `⏱ 以当前时间 ${traceWindow.end} 为基准向前 20 分钟（${traceWindow.start} ~ ${traceWindow.end}）· 真实时间轴 · 尾部实时更新`
                 : '正在获取分时数据...')}
             {traceMode === '2h' &&
               (traceWindow
-                ? `⏱ 以 ${traceWindow.end} 为基准向前 2 小时（${traceWindow.start} ~ ${traceWindow.end}）· 真实时间轴 · 尾部实时更新`
+                ? traceWindow.fallback
+                  ? `🌙 当前时段无交易数据 · 最近 2 小时交易数据（${traceWindow.start} ~ ${traceWindow.end}）`
+                  : `⏱ 以当前时间 ${traceWindow.end} 为基准向前 2 小时（${traceWindow.start} ~ ${traceWindow.end}）· 真实时间轴 · 尾部实时更新`
                 : '正在获取分时数据...')}
             {traceMode === 'live' &&
               (liveTrace.length > 0

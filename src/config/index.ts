@@ -14,8 +14,23 @@ export const INDEX_REFRESH_MS: number = Number(import.meta.env.VITE_INDEX_REFRES
 /** 实时小图窗口点数 */
 export const REALTIME_MAX_POINTS: number = Number(import.meta.env.VITE_REALTIME_MAX_POINTS) || 120;
 
-/** 数据缓存 TTL（毫秒） */
+/** 数据缓存 TTL（毫秒）——按数据类型分级限流（合规：降低数据源请求压力） */
 export const CACHE_TTL: number = Number(import.meta.env.VITE_CACHE_TTL) || 30_000;
+
+/** 实时报价缓存 10 秒（10s 内重复请求同一股票直接返回缓存） */
+export const CACHE_TTL_QUOTE: number = Number(import.meta.env.VITE_CACHE_TTL_QUOTE) || 10_000;
+
+/** 大盘指数缓存 15 秒 */
+export const CACHE_TTL_INDICES: number = Number(import.meta.env.VITE_CACHE_TTL_INDICES) || 15_000;
+
+/** 历史 K 线缓存 5 分钟（切换股票或强制刷新时更新） */
+export const CACHE_TTL_HISTORY: number = Number(import.meta.env.VITE_CACHE_TTL_HISTORY) || 300_000;
+
+/** 分钟 K 线缓存 60 秒 */
+export const CACHE_TTL_MKLINE: number = Number(import.meta.env.VITE_CACHE_TTL_MKLINE) || 60_000;
+
+/** 搜索缓存 60 秒 */
+export const CACHE_TTL_SEARCH: number = Number(import.meta.env.VITE_CACHE_TTL_SEARCH) || 60_000;
 
 /** 请求超时（毫秒） */
 export const REQUEST_TIMEOUT: number = Number(import.meta.env.VITE_REQUEST_TIMEOUT) || 30_000;

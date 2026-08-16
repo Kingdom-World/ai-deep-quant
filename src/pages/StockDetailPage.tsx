@@ -987,6 +987,20 @@ export default function StockDetailPage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
+      {/* ── 顶部提示条（学术研究定位） ── */}
+      <div
+        style={{
+          textAlign: 'center',
+          padding: '8px 16px',
+          fontSize: '12px',
+          color: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
+        }}
+      >
+        📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
+      </div>
+
       {/* ── 顶部：导航栏 + 搜索框 ── */}
       <nav
         style={{
@@ -1476,9 +1490,32 @@ export default function StockDetailPage() {
           </span>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#475569', fontSize: '12px', marginTop: '4px' }}>
-          📊 数据仅供参考，不构成投资建议 · 技术指标为本地计算 · 仅用于学习演示
-        </p>
+        {/* ── 页脚免责声明 ── */}
+        <footer
+          style={{
+            textAlign: 'center',
+            fontSize: '12px',
+            color: '#94a3b8',
+            borderTop: '1px solid #334155',
+            padding: '16px 24px 24px',
+            marginTop: '24px',
+            lineHeight: '1.8',
+          }}
+        >
+          <p style={{ margin: '0 0 6px' }}>
+            ⚠️ 本平台为<b>学生学术研究演示</b>，数据来源于公开财经网站（新浪/腾讯），
+            <b>不构成任何投资建议</b>，亦不涉及荐股、预测及实盘交易。
+          </p>
+          <p style={{ margin: '0 0 6px' }}>
+            📊 数据源：Ashare（新浪/腾讯公开财经接口） · 仅用于历史回测展示 · 请勿据此操作
+          </p>
+          <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>
+            🌐 当前为公网演示版，国内部分网络可能无法访问，请使用代理或后续等待自定义域名上线。
+          </p>
+          <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
+            © 2026 AI深度量化 · 仅供学习参考
+          </p>
+        </footer>
       </main>
     </div>
   );

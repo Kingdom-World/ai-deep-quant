@@ -416,6 +416,20 @@ export default function HomePage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
+      {/* ── 顶部提示条（学术研究定位） ── */}
+      <div
+        style={{
+          textAlign: 'center',
+          padding: '8px 16px',
+          fontSize: '12px',
+          color: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
+        }}
+      >
+        📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
+      </div>
+
       {/* ── 顶部导航栏 ── */}
       <nav
         style={{
@@ -548,6 +562,18 @@ export default function HomePage() {
             >
               📈 市场概况
             </h2>
+            <span
+              style={{
+                fontSize: '11px',
+                color: '#64748b',
+                backgroundColor: '#111827',
+                border: '1px solid #1e293b',
+                padding: '3px 10px',
+                borderRadius: '999px',
+              }}
+            >
+              数据源：Ashare（新浪/腾讯公开接口）· 模拟延时
+            </span>
             {indicesUpdatedAt && (
               <span style={{ fontSize: '12px', color: '#475569', marginBottom: '16px' }}>
                 ● 每 {INDEX_REFRESH_MS / 1000} 秒自动刷新 · 更新于 {indicesUpdatedAt}
@@ -935,18 +961,32 @@ export default function HomePage() {
         <span>缓存 {dsStatus.cacheSize} 项</span>
       </div>
 
-      {/* ── 页脚 ── */}
+      {/* ── 页脚免责声明 ── */}
       <footer
         style={{
           textAlign: 'center',
-          padding: '24px',
-          borderTop: '1px solid #1e293b',
-          color: '#475569',
           fontSize: '12px',
+          color: '#94a3b8',
+          borderTop: '1px solid #334155',
+          padding: '16px 24px 24px',
+          marginTop: '24px',
           backgroundColor: '#0d1322',
+          lineHeight: '1.8',
         }}
       >
-        📊 数据仅供参考，不构成投资建议 · 数据来源: 新浪/腾讯公开行情 · AI深度量化 独立量化平台
+        <p style={{ margin: '0 0 6px' }}>
+          ⚠️ 本平台为<b>学生学术研究演示</b>，数据来源于公开财经网站（新浪/腾讯），
+          <b>不构成任何投资建议</b>，亦不涉及荐股、预测及实盘交易。
+        </p>
+        <p style={{ margin: '0 0 6px' }}>
+          📊 数据源：Ashare（新浪/腾讯公开财经接口） · 仅用于历史回测展示 · 请勿据此操作
+        </p>
+        <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>
+          🌐 当前为公网演示版，国内部分网络可能无法访问，请使用代理或后续等待自定义域名上线。
+        </p>
+        <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
+          © 2026 AI深度量化 · 仅供学习参考
+        </p>
       </footer>
     </div>
   );

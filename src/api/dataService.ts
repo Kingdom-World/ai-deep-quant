@@ -1,49 +1,43 @@
 // ─────────────────────────────────────────────────────────────
-// 统一数据服务层（直连独立后端）
-//   前端 → /api/*（vite proxy）→ server/index.cjs（Express）
+// 统一数据服务层（直连独立后端 / Vercel Serverless）
+//   前端 → /api/*（vite proxy 或同源）→ server/index.cjs（Express）
 //   → 新浪/腾讯公开财经接口（无需 API Key，双源自动切换）
-//   缓存: 30 秒 TTL；请求去重：相同 in-flight 请求合并
+//   前端缓存: 分级 TTL（报价10s / 指数15s / 历史5min），命中输出 [Cache] 日志；
+//   请求去重：相同 in-flight 请求合并
 // ─────────────────────────────────────────────────────────────
 import type { Market } from '../lib/stock';
-import { CACHE_TTL, REQUEST_TIMEOUT } from '../config';
+import {
+  CACHE_TTL_QUOTE,
+  CACHE_TTL_INDICES,
+  CACHE_TTL_HISTORY,
+  CACHE_TTL_MKLINE,
+  CACHE_TTL_SEARCH,
+  REQUEST_TIMEOUT,
+} from '../config';
+import {
+  clearCache as clearMemoryCache,
+  getCacheSize,
+  getCached,
+  setCached,
+} from '../utils/cache';
 
 // ============ 配置 ============
 const CONFIG = {
-  /** 后端 API 基础路径（vite proxy → http://127.0.0.1:3001） */
+  /** 后端 API 基础路径（同源 /api：生产由 Vercel Function 提供，开发经 vite proxy） */
   basePath: '/api',
   /** 请求超时 */
   timeout: REQUEST_TIMEOUT,
-  /** 缓存有效期 */
-  cacheTTL: CACHE_TTL,
   /** 是否启用缓存 */
   enableCache: true,
 };
 
-// ============ 缓存 ============
-interface CacheEntry {
-  data: unknown;
-  timestamp: number;
-}
-const cache = new Map<string, CacheEntry>();
+// ============ 缓存（统一内存缓存工具，分级 TTL） ============
+const getCacheKey = (type: string, params: unknown): string => `${type}:${JSON.stringify(params)}`;
 
 // ============ 请求去重（相同 in-flight 请求合并） ============
 const inFlight = new Map<string, Promise<unknown>>();
 
-const getCacheKey = (type: string, params: unknown): string => `${type}:${JSON.stringify(params)}`;
-
-const getCached = (key: string): unknown | null => {
-  if (!CONFIG.enableCache) return null;
-  const entry = cache.get(key);
-  if (entry && Date.now() - entry.timestamp < CONFIG.cacheTTL) return entry.data;
-  return null;
-};
-
-const setCache = (key: string, data: unknown): void => {
-  if (!CONFIG.enableCache) return;
-  cache.set(key, { data, timestamp: Date.now() });
-};
-
-/** 基础请求（相对路径 /api，经 vite proxy 到独立后端） */
+/** 基础请求（相对路径 /api，经 vite proxy 或同源到后端） */
 async function apiGet<T>(path: string): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
@@ -56,7 +50,7 @@ async function apiGet<T>(path: string): Promise<T> {
     return (await res.json()) as T;
   } catch (e: any) {
     if (e?.name === 'AbortError') {
-      throw new Error('请求超时（请确认已启动数据服务 node server/index.cjs）');
+      throw new Error('请求超时（请确认已启动数据服务）');
     }
     throw e;
   } finally {
@@ -65,17 +59,19 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 /**
- * 带缓存 + 去重的请求
+ * 带缓存 + 去重的请求（TTL 内命中直接返回缓存，不发起网络请求）
  */
-async function apiGetCached<T>(key: string, path: string): Promise<T> {
-  const cached = getCached(key);
-  if (cached !== null) return cached as T;
+async function apiGetCached<T>(key: string, path: string, ttlMs: number): Promise<T> {
+  if (CONFIG.enableCache) {
+    const cached = getCached<T>(key, ttlMs);
+    if (cached !== null) return cached;
+  }
 
   const existing = inFlight.get(key);
   if (existing) return existing as Promise<T>;
 
   const p = apiGet<T>(path).then((data) => {
-    setCache(key, data);
+    if (CONFIG.enableCache) setCached(key, data);
     return data;
   });
   inFlight.set(key, p);
@@ -145,12 +141,13 @@ export const getQuote = async (
 ): Promise<UnifiedQuote> => {
   const cacheKey = getCacheKey('quote', { symbol, market });
   if (!forceRefresh) {
-    const cached = getCached(cacheKey);
-    if (cached !== null) return cached as UnifiedQuote;
+    const cached = getCached<UnifiedQuote>(cacheKey, CACHE_TTL_QUOTE);
+    if (cached !== null) return cached;
   }
   const raw = await apiGetCached<BackendQuote>(
     forceRefresh ? `${cacheKey}:fresh` : cacheKey,
     `/quote/${encodeURIComponent(symbol)}`,
+    CACHE_TTL_QUOTE,
   );
   const result: UnifiedQuote = {
     symbol,
@@ -165,7 +162,7 @@ export const getQuote = async (
     timestamp: Date.now(),
     _source: 'backend',
   };
-  setCache(cacheKey, result);
+  setCached(cacheKey, result);
   return result;
 };
 
@@ -201,12 +198,13 @@ export const getHistory = async (
   const frequency = freqMap[period] || '1d';
   const cacheKey = getCacheKey('history', { symbol, market, period, count });
   if (!forceRefresh) {
-    const cached = getCached(cacheKey);
-    if (cached !== null) return cached as UnifiedKline[];
+    const cached = getCached<UnifiedKline[]>(cacheKey, CACHE_TTL_HISTORY);
+    if (cached !== null) return cached;
   }
   const raw = await apiGetCached<BackendHistory>(
     forceRefresh ? `${cacheKey}:fresh` : cacheKey,
     `/history/${encodeURIComponent(symbol)}?frequency=${frequency}&count=${count}`,
+    CACHE_TTL_HISTORY,
   );
   const klines = (raw.klines || []).map((k) => ({
     time: new Date(`${String(k.date).slice(0, 10)}T00:00:00`).getTime(),
@@ -218,7 +216,7 @@ export const getHistory = async (
     volume: k.volume ?? 0,
     _source: 'backend' as const,
   }));
-  setCache(cacheKey, klines);
+  setCached(cacheKey, klines);
   return klines;
 };
 
@@ -226,12 +224,13 @@ export const getHistory = async (
 export const getIndices = async (forceRefresh = false): Promise<UnifiedQuote[]> => {
   const cacheKey = getCacheKey('indices', {});
   if (!forceRefresh) {
-    const cached = getCached(cacheKey);
-    if (cached !== null) return cached as UnifiedQuote[];
+    const cached = getCached<UnifiedQuote[]>(cacheKey, CACHE_TTL_INDICES);
+    if (cached !== null) return cached;
   }
   const raw = await apiGetCached<BackendQuote[]>(
     forceRefresh ? `${cacheKey}:fresh` : cacheKey,
     '/indices',
+    CACHE_TTL_INDICES,
   );
   const items = (raw || []).map((it) => ({
     symbol: it.symbol,
@@ -246,7 +245,7 @@ export const getIndices = async (forceRefresh = false): Promise<UnifiedQuote[]> 
     timestamp: Date.now(),
     _source: 'backend' as const,
   }));
-  setCache(cacheKey, items);
+  setCached(cacheKey, items);
   return items;
 };
 
@@ -258,6 +257,7 @@ export const searchSymbol = async (
   const raw = await apiGetCached<{ name: string; code: string; market: string }[]>(
     cacheKey,
     `/search/${encodeURIComponent(keyword)}`,
+    CACHE_TTL_SEARCH,
   );
   return raw || [];
 };
@@ -305,14 +305,14 @@ export const getMinuteKline = async (
 ): Promise<MinuteKline[]> => {
   const step = minutePeriod === '120' ? '60' : minutePeriod;
   const cacheKey = getCacheKey('mkline', { symbol, market, step });
-  const cached = getCached(cacheKey);
-  if (cached !== null) return cached as MinuteKline[];
+  const cached = getCached<MinuteKline[]>(cacheKey, CACHE_TTL_MKLINE);
+  if (cached !== null) return cached;
   const raw = await apiGetCached<{
     symbol: string;
     period: string;
     source: string;
     klines: { date: string; open: number | null; close: number | null; high: number | null; low: number | null; volume: number | null }[];
-  }>(cacheKey, `/mkline/${encodeURIComponent(symbol)}?period=m${step}&count=320`);
+  }>(cacheKey, `/mkline/${encodeURIComponent(symbol)}?period=m${step}&count=320`, CACHE_TTL_MKLINE);
   const klines: MinuteKline[] = (raw.klines || []).map((k) => ({
     date: String(k.date),
     open: k.open ?? 0,
@@ -322,7 +322,7 @@ export const getMinuteKline = async (
     volume: k.volume ?? 0,
   }));
   const out = minutePeriod === '120' ? mergeKlines(klines, 2) : klines;
-  setCache(cacheKey, out);
+  setCached(cacheKey, out);
   return out;
 };
 
@@ -332,14 +332,18 @@ export const getMinuteSeries = async (
   market: Market = 'CN',
 ): Promise<{ time: string; price: number; volume: number }[]> => {
   const cacheKey = getCacheKey('minute', { symbol, market });
-  const cached = getCached(cacheKey);
-  if (cached !== null) return cached as { time: string; price: number; volume: number }[];
+  const cached = getCached<{ time: string; price: number; volume: number }[]>(
+    cacheKey,
+    CACHE_TTL_QUOTE,
+  );
+  if (cached !== null) return cached;
   const raw = await apiGetCached<{ symbol: string; points: { time: string; price: number; volume: number }[] }>(
     cacheKey,
     `/minute/${encodeURIComponent(symbol)}`,
+    CACHE_TTL_QUOTE,
   );
   const points = raw.points || [];
-  setCache(cacheKey, points);
+  setCached(cacheKey, points);
   return points;
 };
 
@@ -458,7 +462,7 @@ export const getDataSourceStatus = () => ({
   primaryConfigured: true,
   fallback: 'none',
   current: 'backend',
-  cacheSize: cache.size,
+  cacheSize: getCacheSize(),
   lastFailureAt: 0,
 });
 
@@ -467,8 +471,8 @@ export const forceSwitchDataSource = () => {
   /* 单一后端数据源，无需切换 */
 };
 
-/** 8. 清理缓存 */
-export const clearCache = () => cache.clear();
+/** 8. 清理缓存（切换股票时调用，强制更新） */
+export const clearCache = () => clearMemoryCache();
 
 /** 9. 后端健康检查 */
 export const checkBridgeHealth = async (): Promise<{ ok: boolean; mcpReady: boolean; tools: string[] }> => {

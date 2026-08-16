@@ -191,10 +191,41 @@ async function fetchDailyRows(code, count = 500) {
       const json = JSON.parse(text);
       if (json.code !== 0) continue;
       const rows = parseTencentKlines(json, cand, 'day');
-      if (rows.length > 2) return rows;
+      if (rows.length > 2) {
+        best = rows;
+        break;
+      }
       if (rows.length > best.length) best = rows;
     } catch {
       /* 尝试下一个候选 */
+    }
+  }
+  // A股 qfq 复权数据量受限（如贵州茅台仅约 640 根 ≈ 2.6 年）→
+  // 用新浪长历史补充（不复权，约 8 年），保证季线/年线可绘制
+  if (best.length < 800 && /^(sh|sz)/i.test(code) && count > 800) {
+    try {
+      const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${code}&scale=240&ma=no&datalen=${Math.min(count, 2000)}`;
+      const text = await fetchText(url, {
+        'User-Agent': UA,
+        Referer: 'https://finance.sina.com.cn',
+      });
+      const data = JSON.parse(text);
+      if (Array.isArray(data) && data.length > best.length) {
+        const rows = data
+          .map((r) => ({
+            date: String(r.day).slice(0, 10),
+            open: num(r.open),
+            close: num(r.close),
+            high: num(r.high),
+            low: num(r.low),
+            volume: num(r.volume),
+          }))
+          .filter((r) => r.close !== null && r.open !== null)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        if (rows.length > best.length) return rows;
+      }
+    } catch {
+      /* 新浪不可用时保持腾讯结果 */
     }
   }
   return best;

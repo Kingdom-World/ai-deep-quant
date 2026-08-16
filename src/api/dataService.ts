@@ -339,7 +339,9 @@ export const getMinuteKline = async (
   minutePeriod: '1' | '5' | '15' | '30' | '60' | '120' = '5',
 ): Promise<MinuteKline[]> => {
   const step = minutePeriod === '120' ? '60' : minutePeriod;
-  const cacheKey = getCacheKey('mkline', { symbol, market, step });
+  // 缓存 key 必须包含 minutePeriod：120 分是 60 分数据本地聚合，
+  // 若共用 key 会把聚合结果写回 60 分缓存，导致 60 分与 120 分图互相污染
+  const cacheKey = getCacheKey('mkline', { symbol, market, step, minutePeriod });
   const cached = getCached<MinuteKline[]>(cacheKey, CACHE_TTL_MKLINE);
   if (cached !== null) return cached;
   const raw = await apiGetCached<{

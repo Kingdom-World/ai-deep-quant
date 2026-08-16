@@ -131,6 +131,35 @@ export default function StockDetailPage() {
   const [aggregatedData, setAggregatedData] = useState<number[]>([]);
   /** 完整历史日线（聚合的数据源，仅获取一次） */
   const [allPoints, setAllPoints] = useState<KlinePoint[]>([]);
+  /** 周期切换提示（如：新股暂无季线/年线数据） */
+  const [periodNotice, setPeriodNotice] = useState<string | null>(null);
+
+  /**
+   * 周期选择（含数据量校验）：
+   * 季线/年线需要足够长的历史跨度；上市较短的新股不满足时给出提示（参考主流行情软件做法）
+   */
+  const handlePeriodSelect = (period: Period) => {
+    setPeriodNotice(null);
+    if (period === 'quarter' || period === 'year') {
+      const first = allPoints[0]?.date;
+      const last = allPoints[allPoints.length - 1]?.date;
+      let spanDays = 0;
+      if (first && last) {
+        spanDays = (Date.parse(last) - Date.parse(first)) / 86400000;
+      }
+      // 季线至少约 1 年（4 根以上），年线至少约 3 年（3 根以上）
+      const minDays = period === 'quarter' ? 365 : 1000;
+      if (spanDays < minDays) {
+        setPeriodNotice(
+          period === 'quarter'
+            ? `📌 历史数据约 ${Math.max(1, Math.round(spanDays / 30))} 个月，不足 1 年，暂无足够季度K线数据`
+            : `📌 历史数据约 ${Math.max(1, Math.round(spanDays / 365))} 年，不足 3 年，暂无足够年度K线数据`,
+        );
+        return;
+      }
+    }
+    setSelectedPeriod(period);
+  };
 
   // ── 实时走势（分时历史 + 实时跟踪） ──
   /** 当日分时全量（分钟粒度，进入页面即完整拉取，供前20分钟/前2小时展示；date 为交易日） */
@@ -157,6 +186,7 @@ export default function StockDetailPage() {
     setMinutePoints([]);
     setMinuteTrace([]);
     setLiveTrace([]);
+    setPeriodNotice(null);
     setAggregatedData([]);
     setLatestPrice(null);
     setChangePercent(null);
@@ -184,8 +214,8 @@ export default function StockDetailPage() {
   // 1. 获取历史日线数据（用于初始化图表 + 计算全部量化指标）
   const fetchHistoricalData = async (sym: string, m: Market) => {
     try {
-      // 走统一数据服务（独立后端，带缓存）；请求 500 根支撑 MA250/年线
-      const rows = await getHistory(sym, m, 'day', 500);
+      // 走统一数据服务（独立后端，带缓存）；请求 2000 根支撑 MA250/季线/年线（≈8年）
+      const rows = await getHistory(sym, m, 'day', 2000);
       const points: KlinePoint[] = rows.map((r) => ({
         date: r.date,
         open: r.open,
@@ -1433,7 +1463,7 @@ export default function StockDetailPage() {
             return (
               <button
                 key={p.key}
-                onClick={() => setSelectedPeriod(p.key)}
+                onClick={() => handlePeriodSelect(p.key)}
                 style={{
                   padding: '6px 14px',
                   fontSize: '13px',
@@ -1451,6 +1481,23 @@ export default function StockDetailPage() {
             );
           })}
         </div>
+        {periodNotice && (
+          <div
+            style={{
+              textAlign: 'center',
+              fontSize: '12px',
+              color: '#f59e0b',
+              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              margin: '0 auto 12px',
+              maxWidth: '520px',
+            }}
+          >
+            {periodNotice}
+          </div>
+        )}
         <p
           style={{
             textAlign: 'center',

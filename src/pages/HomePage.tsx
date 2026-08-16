@@ -48,7 +48,7 @@ const INITIAL_INDICES: IndexData[] = [
 /** 统一指数代码形态（sh000001/000001/INX/usINX → 000001/inx） */
 const normalizeSymbol = (s: string) => s.replace(/^(sh|sz|hk|us)/i, '').toLowerCase();
 
-/** 今日推荐数量（每天固定 6 支） */
+/** 今日观察数量（每天固定 6 支） */
 const RECOMMEND_COUNT = 6;
 
 interface FavoriteItem {
@@ -71,9 +71,9 @@ const FEATURES = [
     ready: true,
   },
   {
-    icon: '🤖',
-    title: 'AI 潜力分析',
-    desc: '输入任意股票代码，AI 多因子算法评估上涨潜力',
+    icon: '🧮',
+    title: '量化因子分析',
+    desc: '输入任意股票代码，五因子模型量化评估市场状态',
     path: '/analyze',
     ready: true,
   },
@@ -100,7 +100,7 @@ export default function HomePage() {
   const [indicesLoading, setIndicesLoading] = useState(true);
   const [indicesError, setIndicesError] = useState<string | null>(null);
   const [indicesUpdatedAt, setIndicesUpdatedAt] = useState<string>('');
-  // 今日推荐（AI 评分选出 6 支）
+  // 今日观察（因子评分选出 6 支）
   const [recommends, setRecommends] = useState<RecommendItem[]>([]);
   const [recLoading, setRecLoading] = useState(true);
   const [recError, setRecError] = useState<string | null>(null);
@@ -275,7 +275,7 @@ export default function HomePage() {
     };
   }, [storeSetIndices, storeSetIndicesUpdatedAt]);
 
-  // 今日推荐：AI 算法评分选出 6 支（独立后端数据）
+  // 今日观察：因子评分算法选出 6 支（独立后端数据）
   useEffect(() => {
     (async () => {
       try {
@@ -287,9 +287,9 @@ export default function HomePage() {
         setRecommends(rec);
         setRecError(null);
       } catch (err: any) {
-        console.error('AI 推荐失败:', err);
+        console.error('因子评分加载失败:', err);
         if (!aliveRef.current) return;
-        setRecError(`AI 推荐失败: ${err?.message || '未知错误'}`);
+        setRecError(`因子评分加载失败: ${err?.message || '未知错误'}`);
       } finally {
         if (aliveRef.current) setRecLoading(false);
       }
@@ -408,7 +408,7 @@ export default function HomePage() {
                 border: `1px solid ${scoreColor}33`,
               }}
             >
-              🤖 {item.score}分 · {item.rating}
+              🧮 {item.score}分 · {item.rating}
             </span>
           </div>
         )}
@@ -489,7 +489,7 @@ export default function HomePage() {
             style={{ color: '#94a3b8', cursor: 'pointer' }}
             onClick={() => navigate('/analyze')}
           >
-            AI 潜力分析
+            量化因子分析
           </span>
           <span
             style={{ color: '#94a3b8', cursor: 'pointer' }}
@@ -552,7 +552,7 @@ export default function HomePage() {
             AI深度量化 · 数据驱动 量化决策
           </h1>
           <p style={{ fontSize: '15px', color: '#94a3b8', margin: 0 }}>
-            真实市场数据 · AI 多因子选股 · 策略回测 · 每 10 秒自动更新
+            真实市场数据 · 多因子量化分析 · 策略回测 · 每 10 秒自动更新
           </p>
         </section>
 
@@ -785,7 +785,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* ── 今日推荐（AI 算法每日 6 支） ── */}
+        {/* ── 今日观察（因子评分每日 6 支） ── */}
         <section style={{ marginBottom: '36px' }}>
           <div
             style={{
@@ -799,10 +799,10 @@ export default function HomePage() {
             <h2
               style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 16px', color: '#f1f5f9' }}
             >
-              🤖 今日推荐 · AI 潜力评分
+              📊 今日观察 · 量化因子评分
             </h2>
             <span style={{ fontSize: '12px', color: '#475569', marginBottom: '16px' }}>
-              基于趋势/动量/量能/波动/位置五因子模型，每日从股票池选出 {RECOMMEND_COUNT} 支
+              基于趋势/动量/量能/波动/位置五因子模型，每日对股票池进行量化评分展示
             </span>
           </div>
 
@@ -811,7 +811,7 @@ export default function HomePage() {
               <span className="dsh-spin" style={{ marginRight: '8px' }}>
                 ⏳
               </span>
-              AI 正在评估股票池潜力，请稍候...
+              正在计算股票池因子评分，请稍候...
             </div>
           )}
           {recError && (

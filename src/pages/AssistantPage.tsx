@@ -9,14 +9,14 @@ interface ChatMessage {
 }
 
 /** 快捷提问 */
-const QUICK_QUESTIONS = ['分析 AAPL', '600519 怎么样', '今天推荐什么', '平台怎么用', '回测怎么用'];
+const QUICK_QUESTIONS = ['分析 AAPL', '600519 怎么样', '今天观察什么', '平台怎么用', '回测怎么用'];
 
 export default function AssistantPage() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      text: '🤖 你好！我是 AI深度量化 的站内智能助手（离线规则引擎，无需联网 AI）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天推荐什么」—— 股票池 AI 评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！',
+      text: '🤖 你好！我是 AI深度量化 的站内智能助手（离线规则引擎，无需联网 AI）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！',
     },
   ]);
   const [input, setInput] = useState('');
@@ -93,7 +93,7 @@ export default function AssistantPage() {
             🏠 首页
           </span>
           <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/analyze')}>
-            AI 潜力分析
+            量化因子分析
           </span>
           <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/backtest')}>
             策略回测
@@ -227,7 +227,7 @@ export default function AssistantPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) send();
             }}
-            placeholder="问点什么？如「分析 NVDA」「今天推荐什么」"
+            placeholder="问点什么？如「分析 NVDA」「今天观察什么」"
             style={{
               flex: 1,
               padding: '12px 16px',

@@ -8,9 +8,9 @@ import AssistantPage from './pages/AssistantPage';
 
 /**
  * AI深度量化 路由：
- * - `/`              → 主页（市场概况 / 我的收藏 / AI 今日推荐 / 功能中心）
+ * - `/`              → 主页（市场概况 / 我的收藏 / 今日观察 / 功能中心）
  * - `/stock/:symbol` → 个股详情页（K线/均线/MACD/形态分析 + 分钟副图，URL 参数驱动）
- * - `/analyze`       → AI 潜力分析页（多因子评分）
+ * - `/analyze`       → 量化因子分析页（五因子评分）
  * - `/backtest`      → 策略回测页（MA双均线/RSI/买入持有）
  * - `/assistant`     → AI 智能助手页（个股解读/推荐/指南）
  * 每个页面由 ErrorBoundary 包裹，局部错误不导致整站崩溃。

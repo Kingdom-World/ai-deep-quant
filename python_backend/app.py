@@ -132,7 +132,7 @@ def api_backtest():
     return jsonify(result)
 
 
-# ── AI 今日推荐（后端聚合评分） ──
+# ── 今日观察（后端聚合评分） ──
 @app.route("/api/recommend")
 def api_recommend():
     count = min(int(request.args.get("count", 6)), 10)

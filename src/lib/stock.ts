@@ -598,7 +598,7 @@ export function detectPatterns(points: PatternPoint[], lookback = 60): PatternMa
 }
 
 // ─────────────────────────────────────────────────────────────
-// AI 潜力评分算法（多因子打分 0-100）
+// 五因子量化评分算法（多因子打分 0-100）
 // ─────────────────────────────────────────────────────────────
 
 export interface PotentialFactor {
@@ -626,7 +626,7 @@ function ratingOf(total: number): { rating: string; color: string } {
 }
 
 /**
- * AI 潜力评分：基于历史日 K + 实时报价的多因子打分。
+ * 五因子量化评分：基于历史日 K + 实时报价的多因子打分。
  * 因子：趋势（30）、动量（25）、量能（15）、波动（15）、位置（15）。
  */
 export function analyzeStockPotential(
@@ -905,7 +905,7 @@ export interface RecommendItem {
   name: string;
   price: number;
   changePercent: number;
-  /** AI 潜力评分 */
+  /** 量化因子评分 */
   score: number;
   rating: string;
 }

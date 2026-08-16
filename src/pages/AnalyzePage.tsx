@@ -33,6 +33,7 @@ export default function AnalyzePage() {
 
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const resizeHandler = useRef<(() => void) | null>(null);
 
   const market: Market = detectMarket(symbol);
   const currency: Currency = marketToCurrency(market);
@@ -90,20 +91,32 @@ export default function AnalyzePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 雷达图渲染
+  // 雷达图渲染（每次 report 变化时重建实例：
+  // 图表容器为条件渲染（report 存在才挂载），换股票时 div 会卸载重建，
+  // 旧实例若不销毁会指向已脱离 DOM 的 canvas，导致图形无法显示）
   useEffect(() => {
-    if (!chartRef.current || !report) return;
-    if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current);
-      const handleResize = () => chartInstance.current?.resize();
-      window.addEventListener('resize', handleResize);
-    }
-    const chart = chartInstance.current;
+    const el = chartRef.current;
+    if (!el || !report) return;
+    const cleanup = () => {
+      if (resizeHandler.current) {
+        window.removeEventListener('resize', resizeHandler.current);
+        resizeHandler.current = null;
+      }
+      chartInstance.current?.dispose();
+      chartInstance.current = null;
+    };
+    cleanup(); // 重建前清理旧实例
+    const chart = echarts.init(el);
+    chartInstance.current = chart;
+    const handleResize = () => chart.resize();
+    resizeHandler.current = handleResize;
+    window.addEventListener('resize', handleResize);
+
     const maxes = Object.fromEntries(report.factors.map((f) => [f.name, f.max]));
     chart.setOption({
       tooltip: {},
       legend: {
-        data: ['潜力评分'],
+        data: ['因子评分'],
         textStyle: { color: '#94a3b8' },
         top: 0,
       },
@@ -120,7 +133,7 @@ export default function AnalyzePage() {
           type: 'radar',
           data: [
             {
-              name: '潜力评分',
+              name: '因子评分',
               value: FACTOR_ORDER.map(
                 (name) => report.factors.find((f) => f.name === name)?.score ?? 0,
               ),
@@ -132,6 +145,7 @@ export default function AnalyzePage() {
         },
       ],
     });
+    return cleanup;
   }, [report]);
 
   useEffect(() => {
@@ -168,7 +182,9 @@ export default function AnalyzePage() {
           <span onClick={() => navigate('/')} style={{ fontSize: '24px', cursor: 'pointer' }}>
             🤖
           </span>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9' }}>AI 潜力分析</span>
+          <span style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9' }}>
+            量化因子分析
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <input
@@ -201,7 +217,7 @@ export default function AnalyzePage() {
               cursor: loading ? 'default' : 'pointer',
             }}
           >
-            {loading ? '分析中...' : '🤖 分析'}
+            {loading ? '分析中...' : '🧮 分析'}
           </button>
           <button
             onClick={() => navigate('/')}
@@ -222,7 +238,7 @@ export default function AnalyzePage() {
 
       <main style={{ maxWidth: '960px', margin: '0 auto', padding: '28px 24px 48px' }}>
         <h1 style={{ fontSize: '26px', fontWeight: '700', margin: '0 0 8px', color: '#f8fafc' }}>
-          🤖 AI 潜力评分模型
+          🧮 五因子量化评分模型
         </h1>
         <p style={{ fontSize: '14px', color: '#94a3b8', margin: '0 0 24px', lineHeight: 1.7 }}>
           输入任意股票代码（美股 / A股 / 港股），系统基于{' '}
@@ -235,7 +251,7 @@ export default function AnalyzePage() {
             <div style={{ fontSize: '28px', marginBottom: '12px' }}>
               <span className="dsh-spin">⏳</span>
             </div>
-            AI 正在分析 {symbol} 的 {marketLabel(market)} 数据...
+            正在分析 {symbol} 的 {marketLabel(market)} 数据...
           </div>
         )}
 

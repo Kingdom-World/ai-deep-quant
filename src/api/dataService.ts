@@ -378,7 +378,7 @@ export const getMinuteSeries = async (
   return points;
 };
 
-/** 5d. AI 推荐评分（python 模式：后端 Baostock 数据+评分一次聚合；node 模式：前端 lib 评分） */
+/** 5d. 因子评分观察（python 模式：后端 Baostock 数据+评分一次聚合；node 模式：前端 lib 评分） */
 export const getRecommendations = async (
   codes: { symbol: string; market: Market; name: string }[],
   count = 6,

@@ -27,25 +27,31 @@ export default function BacktestPage() {
 
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const resizeHandler = useRef<(() => void) | null>(null);
 
-  // 图表实例生命周期
+  // 渲染收益曲线（每次 result 变化时重建实例：
+  // 图表容器为条件渲染，实例必须绑定到当前 DOM 节点，否则 canvas 脱离页面导致空白）
   useEffect(() => {
-    if (!chartRef.current) return;
-    const chart = echarts.init(chartRef.current);
-    chartInstance.current = chart;
-    const handleResize = () => chart.resize();
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.dispose();
+    const el = chartRef.current;
+    const cleanup = () => {
+      if (resizeHandler.current) {
+        window.removeEventListener('resize', resizeHandler.current);
+        resizeHandler.current = null;
+      }
+      chartInstance.current?.dispose();
       chartInstance.current = null;
     };
-  }, []);
+    if (!el || !result || result.equity.length === 0) {
+      cleanup();
+      return;
+    }
+    cleanup(); // 重建前清理旧实例
+    const chart = echarts.init(el);
+    chartInstance.current = chart;
+    const handleResize = () => chart.resize();
+    resizeHandler.current = handleResize;
+    window.addEventListener('resize', handleResize);
 
-  // 渲染收益曲线
-  useEffect(() => {
-    const chart = chartInstance.current;
-    if (!chart || !result || result.equity.length === 0) return;
     const dates = result.equity.map((e) => e.date);
     chart.setOption({
       title: {
@@ -115,6 +121,7 @@ export default function BacktestPage() {
         },
       ],
     });
+    return cleanup;
   }, [result]);
 
   const handleRun = async () => {
@@ -195,7 +202,7 @@ export default function BacktestPage() {
             🏠 首页
           </span>
           <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/analyze')}>
-            AI 潜力分析
+            量化因子分析
           </span>
           <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/assistant')}>
             AI 助手

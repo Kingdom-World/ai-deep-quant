@@ -49,7 +49,7 @@ export const REQUEST_TIMEOUT: number = Number(import.meta.env.VITE_REQUEST_TIMEO
 export const DEFAULT_SYMBOL: string = 'MSFT';
 export const DEFAULT_MARKET: 'US' | 'CN' | 'HK' = 'US';
 
-/** 今日推荐数量 */
+/** 今日观察数量 */
 export const RECOMMEND_COUNT: number = 6;
 
 /** 功能配置标记 */

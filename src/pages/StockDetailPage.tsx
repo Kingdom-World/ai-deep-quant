@@ -133,7 +133,12 @@ export default function StockDetailPage() {
   const [allPoints, setAllPoints] = useState<KlinePoint[]>([]);
 
   // ── 实时走势（分时历史 + 实时跟踪） ──
-  const [realtimePrices, setRealtimePrices] = useState<number[]>([]);
+  /** 当日分时全量（分钟粒度，进入页面即完整拉取，供前20分钟/前2小时展示） */
+  const [minuteTrace, setMinuteTrace] = useState<{ time: string; price: number }[]>([]);
+  /** 实时高频点（10 秒轮询追加，供实时跟踪模式） */
+  const [liveTrace, setLiveTrace] = useState<number[]>([]);
+  /** 实时走势窗口模式：20m=前20分钟 / 2h=前2小时 / live=实时跟踪 */
+  const [traceMode, setTraceMode] = useState<'20m' | '2h' | 'live'>('20m');
 
   // ── 分钟副图（1/5/15/30 分钟 K 线） ──
   const [minutePeriod, setMinutePeriod] = useState<MinutePeriod>('5');
@@ -144,7 +149,8 @@ export default function StockDetailPage() {
     setPriceHistory([]);
     setAllPoints([]);
     setMinutePoints([]);
-    setRealtimePrices([]);
+    setMinuteTrace([]);
+    setLiveTrace([]);
     setAggregatedData([]);
     setLatestPrice(null);
     setChangePercent(null);
@@ -227,13 +233,14 @@ export default function StockDetailPage() {
         avg: parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)),
       });
 
-      // ── 实时走势初始化：优先当日分时历史（最近 REALTIME_MAX_POINTS 个分钟点，经独立后端），
+      // ── 实时走势初始化：拉取当日分时全量（前20分钟/前2小时模式进入页面即可完整展示），
       //    分时不可用则回退为最近 2 个真实收盘价起步 ──
       const minute = await getMinuteSeries(sym, m).catch(() => []);
       if (minute.length > 0) {
-        setRealtimePrices(minute.slice(-REALTIME_MAX_POINTS).map((p) => p.price));
+        setMinuteTrace(minute);
+        setLiveTrace(minute.slice(-2).map((p) => p.price));
       } else {
-        setRealtimePrices(prices.length >= 2 ? prices.slice(-2) : []);
+        setLiveTrace(prices.length >= 2 ? prices.slice(-2) : []);
       }
 
       // 历史数据就绪后立即拉一次实时报价（避免等待首个 10 秒窗口；实时数据强制刷新绕过缓存）
@@ -249,7 +256,7 @@ export default function StockDetailPage() {
         setUpdateTime(new Date().toLocaleString());
         setStockName(quote.name ?? '');
         // 追加一个实时点
-        setRealtimePrices((prev) => [...prev, quote.price].slice(-REALTIME_MAX_POINTS));
+        setLiveTrace((prev) => [...prev, quote.price].slice(-REALTIME_MAX_POINTS));
       } catch {
         /* 实时报价失败不阻塞历史展示 */
       }
@@ -284,8 +291,8 @@ export default function StockDetailPage() {
         setTodayChange(parseFloat((((quote.price - open) / open) * 100).toFixed(2)));
       }
 
-      // ── 实时走势追加最新价格，最多保留 120 个点 ──
-      setRealtimePrices((prev) => {
+      // ── 实时走势追加最新价格（实时跟踪模式高频点，最多保留 120 个点） ──
+      setLiveTrace((prev) => {
         const next = [...prev, quote.price];
         return next.slice(-REALTIME_MAX_POINTS);
       });
@@ -804,33 +811,53 @@ export default function StockDetailPage() {
     });
   }, [minutePoints, minutePeriod, loading, symbol, market]);
 
-  // 11. 实时走势图数据更新（分时历史 + 实时跟踪）
+  // 11. 实时走势图数据更新（分时历史 + 实时跟踪，支持 前20分钟/前2小时/实时跟踪 三模式）
   useEffect(() => {
     const chart = realtimeChartInstance.current;
     if (!chart || loading) return;
 
-    const data = realtimePrices;
+    // 模式数据源：
+    //   · 20m/2h —— 当日分时全量按窗口截取（进入页面即完整展示），尾部拼接最新实时价
+    //   · live   —— 10 秒高频实时点（滚动窗口）
+    let data: number[] = [];
+    let labels: string[] = [];
+    if (traceMode === 'live') {
+      data = liveTrace;
+    } else {
+      const limit = traceMode === '2h' ? 120 : 20;
+      const base = minuteTrace.slice(-limit);
+      data = base.map((p) => p.price);
+      labels = base.map((p) => p.time);
+      if (latestPrice !== null && Number.isFinite(latestPrice)) {
+        data = [...data, latestPrice];
+        labels = [...labels, ''];
+      }
+    }
     const first = data[0];
     const last = data[data.length - 1];
     const changePct =
       first !== undefined && last !== undefined && first > 0 ? ((last - first) / first) * 100 : 0;
     const upNow = changePct >= 0;
+    const showTimeAxis = traceMode !== 'live';
 
     chart.setOption({
-      grid: { left: 8, right: 8, top: 12, bottom: 6 },
+      grid: { left: 8, right: 8, top: 12, bottom: showTimeAxis ? 18 : 6 },
       tooltip: {
         trigger: 'axis',
         formatter: (params: any) => {
           const p = Array.isArray(params) ? params[0] : params;
           if (!p) return '';
-          const t = new Date().toLocaleTimeString();
-          return `${displaySymbol} 实时<br/>价格: ${CURRENCY}${Number(p.value).toFixed(2)}<br/>更新: ${t}`;
+          const t = showTimeAxis && labels[p.dataIndex] ? labels[p.dataIndex] : new Date().toLocaleTimeString();
+          return `${displaySymbol} 实时走势（${traceMode === '20m' ? '前20分钟' : traceMode === '2h' ? '前2小时' : '实时跟踪'}）<br/>时间: ${t}<br/>价格: ${CURRENCY}${Number(p.value).toFixed(2)}`;
         },
       },
       xAxis: {
         type: 'category',
-        show: false,
-        data: data.map((_, i) => i),
+        show: showTimeAxis,
+        data: showTimeAxis ? labels : data.map((_, i) => i),
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { fontSize: 9, color: '#64748b', interval: 'auto', hideOverlap: true },
       },
       yAxis: {
         type: 'value',
@@ -851,7 +878,7 @@ export default function StockDetailPage() {
         },
       ],
     });
-  }, [realtimePrices, loading, symbol, market]);
+  }, [minuteTrace, liveTrace, traceMode, latestPrice, loading, symbol, market]);
 
   // 12. 数据加载主流程 + 启动实时轮询（URL 参数变化时自动重载，保留 10 秒轮询机制）
   useEffect(() => {
@@ -1254,37 +1281,84 @@ export default function StockDetailPage() {
         >
           <div
             style={{
-              position: 'absolute',
-              top: '8px',
-              right: '12px',
-              zIndex: 5,
-              fontSize: '12px',
-              color: '#60a5fa',
-              fontWeight: '600',
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
-              padding: '3px 10px',
-              borderRadius: '999px',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              flexWrap: 'wrap',
+              padding: '10px 12px 0',
             }}
           >
-            ● 实时走势 (分时+实时跟踪)
+            <div
+              style={{
+                fontSize: '12px',
+                color: '#60a5fa',
+                fontWeight: '600',
+                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                padding: '3px 10px',
+                borderRadius: '999px',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+              }}
+            >
+              ● 实时走势
+            </div>
+            {/* 窗口模式选择：前20分钟 / 前2小时 / 实时跟踪 */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {(
+                [
+                  { key: '20m', label: '前20分钟' },
+                  { key: '2h', label: '前2小时' },
+                  { key: 'live', label: '实时跟踪' },
+                ] as const
+              ).map((m) => {
+                const active = traceMode === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    onClick={() => setTraceMode(m.key)}
+                    style={{
+                      padding: '3px 12px',
+                      fontSize: '12px',
+                      fontWeight: active ? '700' : '500',
+                      color: active ? '#ffffff' : '#94a3b8',
+                      backgroundColor: active ? '#0ea5e9' : '#1e293b',
+                      border: active ? '1px solid #0ea5e9' : '1px solid #334155',
+                      borderRadius: '999px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div
             style={{
               fontSize: '11px',
               color: '#64748b',
-              padding: '10px 12px 0',
+              padding: '8px 12px 0',
             }}
           >
-            {realtimePrices.length > 0
-              ? `前 ${Math.round((realtimePrices.length * POLL_INTERVAL) / 60000)} 分钟数据 + 每 10 秒实时跟踪 · 当前 ${realtimePrices.length} 个点`
-              : '正在获取分时数据...'}
+            {traceMode === '20m' &&
+              (minuteTrace.length > 0
+                ? `当日分时 · 最近 20 分钟（${minuteTrace.slice(-20)[0]?.time ?? '--'} ~ ${minuteTrace.slice(-1)[0]?.time ?? '--'}）· 尾部实时更新`
+                : '正在获取分时数据...')}
+            {traceMode === '2h' &&
+              (minuteTrace.length > 0
+                ? `当日分时 · 最近 2 小时（${minuteTrace.slice(-120)[0]?.time ?? '--'} ~ ${minuteTrace.slice(-1)[0]?.time ?? '--'}）· 尾部实时更新`
+                : '正在获取分时数据...')}
+            {traceMode === 'live' &&
+              (liveTrace.length > 0
+                ? `每 ${POLL_INTERVAL / 1000} 秒实时跟踪 · 当前 ${liveTrace.length} 个点（约 ${Math.round((liveTrace.length * POLL_INTERVAL) / 60000)} 分钟滚动窗口）`
+                : '正在获取分时数据...')}
           </div>
           <div
             ref={realtimeChartRef}
             style={{
               width: '100%',
-              height: '140px',
+              height: '160px',
               padding: '4px',
             }}
           />

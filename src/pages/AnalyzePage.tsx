@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { getHistory, getQuote } from '../api/dataService';
+import TopNav from '../components/TopNav';
 import {
   analyzeStockPotential,
   detectMarket,
@@ -164,77 +165,44 @@ export default function AnalyzePage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* 顶部导航 */}
-      <nav
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          padding: '14px 32px',
-          backgroundColor: 'rgba(10, 14, 23, 0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #1e293b',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span onClick={() => navigate('/')} style={{ fontSize: '24px', cursor: 'pointer' }}>
-            🤖
-          </span>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: '#f1f5f9' }}>
-            量化因子分析
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && runAnalysis(inputValue)}
-            placeholder="输入股票代码 (如 NVDA, 600519, 00700)"
-            style={{
-              border: '1px solid #334155',
-              outline: 'none',
-              background: '#111827',
-              fontSize: '13px',
-              color: '#e2e8f0',
-              width: '220px',
-              padding: '8px 12px',
-              borderRadius: '8px',
-            }}
-          />
-          <button
-            onClick={() => runAnalysis(inputValue)}
-            disabled={loading}
-            style={{
-              padding: '8px 18px',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: '#fff',
-              backgroundColor: loading ? '#475569' : '#2563eb',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: loading ? 'default' : 'pointer',
-            }}
-          >
-            {loading ? '分析中...' : '🧮 分析'}
-          </button>
-          <button
-            onClick={() => navigate('/')}
-            style={{
-              padding: '8px 14px',
-              fontSize: '13px',
-              color: '#94a3b8',
-              backgroundColor: '#111827',
-              border: '1px solid #334155',
-              borderRadius: '8px',
-              cursor: 'pointer',
-            }}
-          >
-            🏠 主页
-          </button>
-        </div>
-      </nav>
+      {/* 顶部导航（全站统一） */}
+      <TopNav />
+
+      {/* 页面工具条：输入代码立即分析 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 32px 0', flexWrap: 'wrap' }}>
+        <input
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && runAnalysis(inputValue)}
+          placeholder="输入股票代码 (如 NVDA, 600519, 00700)"
+          style={{
+            border: '1px solid #334155',
+            outline: 'none',
+            background: '#111827',
+            fontSize: '13px',
+            color: '#e2e8f0',
+            width: '220px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+          }}
+        />
+        <button
+          onClick={() => runAnalysis(inputValue)}
+          disabled={loading}
+          style={{
+            padding: '8px 18px',
+            fontSize: '13px',
+            fontWeight: '600',
+            color: '#fff',
+            backgroundColor: loading ? '#475569' : '#2563eb',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: loading ? 'default' : 'pointer',
+          }}
+        >
+          {loading ? '分析中...' : '🧮 分析'}
+        </button>
+      </div>
 
       <main style={{ maxWidth: '960px', margin: '0 auto', padding: '28px 24px 48px' }}>
         <h1 style={{ fontSize: '26px', fontWeight: '700', margin: '0 0 8px', color: '#f8fafc' }}>

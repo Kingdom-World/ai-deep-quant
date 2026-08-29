@@ -22,7 +22,7 @@ import {
   type UnifiedKline,
 } from '../api/dataService';
 import { detectMarket, pctColor } from '../lib/stock';
-import UserMenu from '../components/UserMenu';
+import TopNav from '../components/TopNav';
 
 const CARD = {
   backgroundColor: '#111827',
@@ -377,17 +377,15 @@ export default function PaperTradingPage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0a0e17', padding: '20px 24px', color: '#e2e8f0' }}>
-      {/* 顶栏 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '18px' }}>
-        <span style={{ cursor: 'pointer', color: '#60a5fa', fontWeight: 700, fontSize: '16px' }} onClick={() => navigate('/')}>
-          ← 首页
-        </span>
+      {/* 顶部导航（全站统一） */}
+      <TopNav />
+
+      {/* 页面标题行 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '18px 0 0' }}>
         <h1 style={{ fontSize: '20px', margin: 0 }}>💰 模拟交易</h1>
         <span style={{ fontSize: '12px', color: '#64748b' }}>
           100 万虚拟资金 · 真实行情撮合 · 佣金万2.5（最低5元）+ 卖出印花税千1 · 数据 10 秒刷新
         </span>
-        <span style={{ marginLeft: 'auto' }} />
-        <UserMenu />
       </div>
 
       {error && (

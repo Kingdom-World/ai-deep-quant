@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import TopNav from '../components/TopNav';
 import {
   getHistory,
   getIndices,
@@ -117,7 +118,6 @@ export default function HomePage() {
   const [favLoading, setFavLoading] = useState(false);
   const [favInput, setFavInput] = useState('');
   const [favMsg, setFavMsg] = useState<string | null>(null);
-  const [searchInput, setSearchInput] = useState('');
   // 全局 store（大盘指数写入，供跨页共享）
   const storeSetIndices = useQuantStore((s) => s.setIndices);
   const storeSetIndicesUpdatedAt = useQuantStore((s) => s.setIndicesUpdatedAt);
@@ -308,12 +308,6 @@ export default function HomePage() {
     loadFavorites();
   }, [loadFavorites]);
 
-  const handleSearch = () => {
-    const sym = searchInput.trim().toUpperCase();
-    if (!sym) return;
-    navigate(`/stock/${sym}`);
-  };
-
   const gotoDetail = (symbol: string) => {
     navigate(`/stock/${symbol}`);
   };
@@ -451,114 +445,8 @@ export default function HomePage() {
         📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
       </div>
 
-      {/* ── 顶部导航栏 ── */}
-      <nav
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          padding: '14px 32px',
-          backgroundColor: 'rgba(10, 14, 23, 0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #1e293b',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '26px' }}>🤖</span>
-          <span
-            style={{
-              fontSize: '19px',
-              fontWeight: '700',
-              color: '#f1f5f9',
-              letterSpacing: '0.3px',
-            }}
-          >
-            AI深度量化
-          </span>
-          <span
-            style={{
-              fontSize: '11px',
-              color: '#94a3b8',
-              backgroundColor: '#1e293b',
-              padding: '2px 8px',
-              borderRadius: '999px',
-              border: '1px solid #334155',
-            }}
-          >
-            Deep Quant
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '14px' }}>
-          <span style={{ color: '#60a5fa', fontWeight: '600' }}>首页</span>
-          <span
-            style={{ color: '#94a3b8', cursor: 'pointer' }}
-            onClick={() => navigate('/analyze')}
-          >
-            量化因子分析
-          </span>
-          <span
-            style={{ color: '#94a3b8', cursor: 'pointer' }}
-            onClick={() => navigate('/backtest')}
-          >
-            策略回测
-          </span>
-          <span
-            style={{ color: '#94a3b8', cursor: 'pointer' }}
-            onClick={() => navigate('/assistant')}
-          >
-            AI 助手
-          </span>
-          <span
-            style={{ color: '#94a3b8', cursor: 'pointer' }}
-            onClick={() => navigate('/paper')}
-          >
-            模拟交易
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSearch();
-            }}
-            placeholder="输入股票代码 (如 AAPL, 600519)"
-            style={{
-              width: '200px',
-              padding: '9px 14px',
-              fontSize: '13px',
-              color: '#e2e8f0',
-              backgroundColor: '#111827',
-              border: '1px solid #334155',
-              borderRadius: '8px',
-              outline: 'none',
-            }}
-          />
-          <button
-            onClick={() => navigate('/stock/MSFT')}
-            style={{
-              padding: '9px 18px',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: '#ffffff',
-              backgroundColor: '#2563eb',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            🔍 量化看板
-          </button>
-        </div>
-      </nav>
+      {/* ── 顶部导航栏（全站统一） ── */}
+      <TopNav />
 
       {/* ── 主体 ── */}
       <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '28px 24px 48px' }}>
@@ -878,15 +766,43 @@ export default function HomePage() {
           {!recLoading && !recError && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {recommends.map((r) =>
-                renderRow({
-                  symbol: r.symbol,
-                  market: r.market,
-                  name: r.name,
-                  price: r.price,
-                  changePercent: r.changePercent,
-                  score: r.score,
-                  rating: r.rating,
-                }),
+                renderRow(
+                  {
+                    symbol: r.symbol,
+                    market: r.market,
+                    name: r.name,
+                    price: r.price,
+                    changePercent: r.changePercent,
+                    score: r.score,
+                    rating: r.rating,
+                  },
+                  r.score !== null ? (
+                    <div key={`${r.symbol}-scorebar`} style={{ minWidth: '130px' }}>
+                      <div
+                        style={{
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: 'rgba(255,255,255,0.06)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${Math.min(r.score, 100)}%`,
+                            borderRadius: 3,
+                            background: `linear-gradient(90deg, #3b82f6, ${
+                              r.score >= 80 ? '#ef4444' : r.score >= 65 ? '#f59e0b' : '#60a5fa'
+                            })`,
+                          }}
+                        />
+                      </div>
+                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 4, textAlign: 'right' }}>
+                        五因子 {r.score}/100
+                      </div>
+                    </div>
+                  ) : null,
+                ),
               )}
               {recommends.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>

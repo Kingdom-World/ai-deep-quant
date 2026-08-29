@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { runBacktest, type BacktestResult } from '../api/dataService';
 import { detectMarket, marketLabel, pctColor } from '../lib/stock';
+import TopNav from '../components/TopNav';
 
 /** 策略配置 */
 const STRATEGIES = [
@@ -14,7 +14,6 @@ const STRATEGIES = [
 type StrategyKey = (typeof STRATEGIES)[number]['key'];
 
 export default function BacktestPage() {
-  const navigate = useNavigate();
   const [symbol, setSymbol] = useState('AAPL');
   const [strategy, setStrategy] = useState<StrategyKey>('ma');
   const [fast, setFast] = useState(5);
@@ -172,43 +171,8 @@ export default function BacktestPage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* 顶部导航 */}
-      <nav
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          padding: '14px 32px',
-          backgroundColor: 'rgba(10, 14, 23, 0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #1e293b',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '26px', cursor: 'pointer' }} onClick={() => navigate('/')}>
-            🤖
-          </span>
-          <span style={{ fontSize: '19px', fontWeight: '700', color: '#f1f5f9' }}>
-            AI深度量化 · 策略回测
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px' }}>
-          <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/')}>
-            🏠 首页
-          </span>
-          <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/analyze')}>
-            量化因子分析
-          </span>
-          <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/assistant')}>
-            AI 助手
-          </span>
-        </div>
-      </nav>
+      {/* 顶部导航（全站统一） */}
+      <TopNav />
 
       <main style={{ maxWidth: '980px', margin: '0 auto', padding: '28px 20px 48px' }}>
         {/* 参数面板 */}

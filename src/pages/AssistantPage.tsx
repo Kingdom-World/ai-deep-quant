@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { askAssistant } from '../api/dataService';
+import TopNav from '../components/TopNav';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -63,43 +64,8 @@ export default function AssistantPage() {
         flexDirection: 'column',
       }}
     >
-      {/* 顶部导航 */}
-      <nav
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          padding: '14px 32px',
-          backgroundColor: 'rgba(10, 14, 23, 0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #1e293b',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '26px', cursor: 'pointer' }} onClick={() => navigate('/')}>
-            🤖
-          </span>
-          <span style={{ fontSize: '19px', fontWeight: '700', color: '#f1f5f9' }}>
-            AI深度量化 · 智能助手
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px' }}>
-          <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/')}>
-            🏠 首页
-          </span>
-          <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/analyze')}>
-            量化因子分析
-          </span>
-          <span style={{ color: '#94a3b8', cursor: 'pointer' }} onClick={() => navigate('/backtest')}>
-            策略回测
-          </span>
-        </div>
-      </nav>
+      {/* 顶部导航（全站统一） */}
+      <TopNav />
 
       {/* 聊天区 */}
       <main

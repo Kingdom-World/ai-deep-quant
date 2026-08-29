@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import * as echarts from 'echarts';
+import TopNav from '../components/TopNav';
 import {
   clearCache,
   getHistory,
@@ -1133,136 +1134,106 @@ export default function StockDetailPage() {
       </div>
 
       {/* ── 顶部：导航栏 + 搜索框 ── */}
-      <nav
+      {/* 顶部导航（全站统一） */}
+      <TopNav />
+
+      {/* 页面标题行 + 工具条（搜索 / 收藏） */}
+      <div
         style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          gap: '16px',
+          gap: '12px',
           flexWrap: 'wrap',
-          padding: '14px 28px',
-          backgroundColor: 'rgba(10, 14, 23, 0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid #1e293b',
+          padding: '18px 28px 0',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span
-            onClick={() => navigate('/')}
-            style={{ fontSize: '24px', cursor: 'pointer' }}
-            title="返回主页"
-          >
-            🤖
-          </span>
-          <div>
-            <h1 style={{ fontSize: '19px', fontWeight: '700', margin: 0, color: '#f1f5f9' }}>
-              AI深度量化 · {displaySymbol}
-              {stockName && (
-                <span
-                  style={{
-                    marginLeft: '10px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    color: '#94a3b8',
-                    backgroundColor: '#1e293b',
-                    padding: '2px 10px',
-                    borderRadius: '999px',
-                  }}
-                >
-                  {stockName}
-                </span>
-              )}
-            </h1>
-            <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: '12px' }}>
-              {marketLabel(market)} · 每 {POLL_INTERVAL / 1000} 秒自动更新 · 数据来源: 独立数据服务 (新浪/腾讯)
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSearch();
-            }}
-            placeholder="输入股票代码 (如 AAPL, NVDA, 600519)"
-            style={{
-              border: '1px solid #334155',
-              outline: 'none',
-              background: '#111827',
-              fontSize: '13px',
-              color: '#e2e8f0',
-              width: '210px',
-              padding: '8px 12px',
-              borderRadius: '8px',
-            }}
-          />
-          <button
-            onClick={handleSearch}
-            disabled={isSearching}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: '#ffffff',
-              backgroundColor: isSearching ? '#475569' : '#2563eb',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: isSearching ? 'default' : 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            {isSearching ? (
-              <>
-                <span className="dsh-spin">⏳</span> 搜索中
-              </>
-            ) : (
-              <>🔍 搜索</>
-            )}
-          </button>
-          <button
-            onClick={() => navigate('/')}
-            style={{
-              padding: '8px 14px',
-              fontSize: '13px',
-              color: '#94a3b8',
-              backgroundColor: '#111827',
-              border: '1px solid #334155',
-              borderRadius: '8px',
-              cursor: 'pointer',
-            }}
-          >
-            🏠 主页
-          </button>
-          <button
-            onClick={handleToggleFavorite}
-            title={fav ? '取消收藏' : '收藏该股票'}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '8px 12px',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: fav ? '#f59e0b' : '#94a3b8',
-              backgroundColor: fav ? 'rgba(245, 158, 11, 0.12)' : '#111827',
-              border: fav ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #334155',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            {fav ? '★ 已收藏' : '☆ 收藏'}
-          </button>
-        </div>
-      </nav>
+        <h1 style={{ fontSize: '19px', fontWeight: '700', margin: 0, color: '#f1f5f9' }}>
+          {displaySymbol}
+          {stockName && (
+            <span
+              style={{
+                marginLeft: '10px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#94a3b8',
+                backgroundColor: '#1e293b',
+                padding: '2px 10px',
+                borderRadius: '999px',
+              }}
+            >
+              {stockName}
+            </span>
+          )}
+        </h1>
+        <span style={{ color: '#64748b', fontSize: '12px' }}>
+          {marketLabel(market)} · 每 {POLL_INTERVAL / 1000} 秒自动更新 · 数据来源: 独立数据服务 (新浪/腾讯)
+        </span>
+        <span style={{ flex: 1 }} />
+        <input
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSearch();
+          }}
+          placeholder="输入股票代码 (如 AAPL, NVDA, 600519)"
+          style={{
+            border: '1px solid #334155',
+            outline: 'none',
+            background: '#111827',
+            fontSize: '13px',
+            color: '#e2e8f0',
+            width: '210px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+          }}
+        />
+        <button
+          onClick={handleSearch}
+          disabled={isSearching}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: '600',
+            color: '#ffffff',
+            backgroundColor: isSearching ? '#475569' : '#2563eb',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: isSearching ? 'default' : 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          {isSearching ? (
+            <>
+              <span className="dsh-spin">⏳</span> 搜索中
+            </>
+          ) : (
+            <>🔍 搜索</>
+          )}
+        </button>
+        <button
+          onClick={handleToggleFavorite}
+          title={fav ? '取消收藏' : '收藏该股票'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '8px 12px',
+            fontSize: '13px',
+            fontWeight: '600',
+            color: fav ? '#f59e0b' : '#94a3b8',
+            backgroundColor: fav ? 'rgba(245, 158, 11, 0.12)' : '#111827',
+            border: fav ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #334155',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          {fav ? '★ 已收藏' : '☆ 收藏'}
+        </button>
+      </div>
 
       <main style={{ maxWidth: '980px', margin: '0 auto', padding: '24px 20px 32px' }}>
         {/* ── 数据卡片：基础行情 ── */}

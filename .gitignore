@@ -41,3 +41,7 @@ python_backend/data/
 
 # 凭据备忘（不入库）
 访问账号密码.md
+
+# 运行时数据（账本/会话密钥/用户表）不入库
+data/
+server.log

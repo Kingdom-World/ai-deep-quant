@@ -19,20 +19,26 @@ let users = { users: [] }; // [{username, uid, salt, hash, createdAt}]
 let sessionSecret = '';
 
 function init() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(SECRET_FILE)) {
-    sessionSecret = fs.readFileSync(SECRET_FILE, 'utf8').trim();
-  } else {
-    sessionSecret = crypto.randomBytes(32).toString('hex');
-    fs.writeFileSync(SECRET_FILE, sessionSecret, { mode: 0o600 });
-  }
-  if (fs.existsSync(USERS_FILE)) {
-    try {
-      users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-      if (!Array.isArray(users.users)) users = { users: [] };
-    } catch {
-      users = { users: [] };
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (fs.existsSync(SECRET_FILE)) {
+      sessionSecret = fs.readFileSync(SECRET_FILE, 'utf8').trim();
+    } else {
+      sessionSecret = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(SECRET_FILE, sessionSecret, { mode: 0o600 });
     }
+    if (fs.existsSync(USERS_FILE)) {
+      try {
+        users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        if (!Array.isArray(users.users)) users = { users: [] };
+      } catch {
+        users = { users: [] };
+      }
+    }
+  } catch (e) {
+    // 只读文件系统（如 Vercel Serverless）降级：会话仅存内存，进程重启后需重新登录
+    console.warn('[认证] 持久化不可用，降级为内存会话:', e.message);
+    if (!sessionSecret) sessionSecret = crypto.randomBytes(32).toString('hex');
   }
 }
 
@@ -183,7 +189,7 @@ function middleware() {
       req.user = user;
       return next();
     }
-    res.setHeader('WWW-Authenticate', 'Basic realm="AIDeepQuant", charset="UTF-8"');
+    // 不返回 WWW-Authenticate（避免浏览器原生弹窗），由前端登录页接管
     return res.status(401).json({ error: '未登录或会话已过期，请重新登录' });
   };
 }

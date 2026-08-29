@@ -22,6 +22,7 @@ import {
   type UnifiedKline,
 } from '../api/dataService';
 import { detectMarket, pctColor } from '../lib/stock';
+import UserMenu from '../components/UserMenu';
 
 const CARD = {
   backgroundColor: '#111827',
@@ -385,6 +386,8 @@ export default function PaperTradingPage() {
         <span style={{ fontSize: '12px', color: '#64748b' }}>
           100 万虚拟资金 · 真实行情撮合 · 佣金万2.5（最低5元）+ 卖出印花税千1 · 数据 10 秒刷新
         </span>
+        <span style={{ marginLeft: 'auto' }} />
+        <UserMenu />
       </div>
 
       {error && (

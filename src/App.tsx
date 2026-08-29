@@ -1,11 +1,14 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { authApi } from './api/dataService';
 import HomePage from './pages/HomePage';
 import StockDetailPage from './pages/StockDetailPage';
 import AnalyzePage from './pages/AnalyzePage';
 import BacktestPage from './pages/BacktestPage';
 import AssistantPage from './pages/AssistantPage';
 import PaperTradingPage from './pages/PaperTradingPage';
+import LoginPage from './pages/LoginPage';
 
 /**
  * AI深度量化 路由：
@@ -15,9 +18,45 @@ import PaperTradingPage from './pages/PaperTradingPage';
  * - `/backtest`      → 策略回测页（MA双均线/RSI/买入持有）
  * - `/assistant`     → AI 智能助手页（个股解读/推荐/指南）
  * - `/paper`         → 模拟交易页（虚拟资金/真实行情撮合/自动策略）
+ * 认证：应用级守卫——未登录整屏渲染登录页；会话由后端 HttpOnly Cookie 维护（7 天）。
  * 每个页面由 ErrorBoundary 包裹，局部错误不导致整站崩溃。
  */
+
+/** 会话检查期间的启动屏 */
+function Splash() {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 14,
+        background: 'linear-gradient(160deg, #070b14, #0b1220)',
+        color: '#60a5fa',
+      }}
+    >
+      <div style={{ fontSize: 40, animation: 'pq-float 2s ease-in-out infinite' }}>📊</div>
+      <div style={{ fontSize: 14, letterSpacing: 4, color: '#64748b' }}>正在进入 AI 深度量化…</div>
+    </div>
+  );
+}
+
 function App() {
+  const [authState, setAuthState] = useState<'checking' | 'in' | 'out'>('checking');
+
+  useEffect(() => {
+    authApi
+      .me()
+      .then((m) => setAuthState(m.ok ? 'in' : 'out'))
+      .catch(() => setAuthState('out'));
+  }, []);
+
+  if (authState === 'checking') return <Splash />;
+  if (authState === 'out') return <LoginPage onLogin={() => setAuthState('in')} />;
+
   return (
     <BrowserRouter>
       <ErrorBoundary>

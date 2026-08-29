@@ -20,7 +20,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
-const crypto = require('crypto');
+const auth = require('./auth.cjs');
 
 // 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失（配合 start.bat 看门狗）
 process.on('uncaughtException', (e) => console.error('[兜底] 未捕获异常:', (e && e.stack) || e));
@@ -74,7 +74,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ───────────── 访问防护：站点密码（HTTP Basic Auth，保护页面与全部 API） ─────────────
+// ───────────── 访问防护：用户认证系统（注册/登录/Cookie 会话，模块见 server/auth.cjs） ─────────────
 /** 读取根目录 .env（无 dotenv 依赖；不覆盖已存在的环境变量，Vercel 平台变量优先） */
 function loadEnvFile() {
   try {
@@ -95,45 +95,35 @@ const SITE_USERNAME = process.env.SITE_USERNAME || 'admin';
 const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
 const AUTH_ENABLED = Boolean(SITE_PASSWORD);
 
-/** 恒定时间比较，避免逐字符爆破计时侧信道 */
-function safeEqual(a, b) {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
-}
+// 用户系统初始化（会话密钥/用户表）+ 首次启动用 .env 账号引导创建管理员
+auth.init();
+auth.ensureBootstrapAdmin(AUTH_ENABLED ? SITE_USERNAME : '', SITE_PASSWORD);
 
-function checkBasicAuth(req) {
-  const m = String(req.headers.authorization || '').match(/^Basic (.+)$/i);
-  if (!m) return false;
-  let decoded = '';
-  try {
-    decoded = Buffer.from(m[1], 'base64').toString('utf8');
-  } catch {
-    return false;
-  }
-  const sep = decoded.indexOf(':');
-  if (sep < 0) return false;
-  return (
-    safeEqual(decoded.slice(0, sep), SITE_USERNAME) &&
-    safeEqual(decoded.slice(sep + 1), SITE_PASSWORD)
-  );
-}
-
-/** 冒烟测试/内部调用的认证头 */
+/** 冒烟测试/内部调用的认证头（Basic 形式，auth 系统按用户表兼容校验） */
 const authHeaderValue = () =>
   AUTH_ENABLED
     ? { Authorization: `Basic ${Buffer.from(`${SITE_USERNAME}:${SITE_PASSWORD}`).toString('base64')}` }
     : {};
 
+// JSON 体解析需先于 /api/auth/* 路由
+app.use(express.json({ limit: '100kb' }));
+
+// API 鉴权（仅保护 /api/*；静态资源交由 SPA 路由守卫，深链接不碎）
+// 未登录返回纯 JSON 401（不带 WWW-Authenticate，根除浏览器原生弹窗，由前端登录页接管）
 app.use((req, res, next) => {
-  req.authUser = SITE_USERNAME; // 模拟盘账户标识（当前为单用户共享账户）
   if (!AUTH_ENABLED || req.method === 'OPTIONS') return next();
-  if (checkBasicAuth(req)) return next();
-  res.setHeader('WWW-Authenticate', 'Basic realm="AIDeepQuant", charset="UTF-8"');
-  res
-    .status(401)
-    .json({ error: '需要访问密码：浏览器弹出框中输入账号密码（配置见 .env 的 SITE_USERNAME / SITE_PASSWORD）' });
+  if (!req.path.startsWith('/api')) return next();
+  if (req.path.startsWith('/api/auth/') || req.path === '/api/health') return next();
+  const user = auth.getUserFromRequest(req);
+  if (user) {
+    req.user = user; // 模拟盘按用户名分账（uid 隔离）
+    return next();
+  }
+  return res.status(401).json({ error: '未登录或会话已过期，请重新登录' });
 });
+
+// 认证路由：注册 / 登录 / 登出 / 会话查询
+app.use('/api/auth', auth.router());
 
 
 // ───────────── 内存缓存 ─────────────
@@ -1296,8 +1286,6 @@ if (!NO_MAINTAIN && !MAINTAIN_ONCE && !IS_VERCEL) {
 }
 
 // ───────────── 8b. 模拟交易（paper trading，要求 #1） ─────────────
-app.use(express.json({ limit: '100kb' }));
-
 const broker = require('./paper/broker.cjs');
 const strategies = require('./paper/strategies.cjs');
 const wrapQuote = (symbol) => getQuoteInternal(toTencentCode(symbol), symbol);

@@ -17,7 +17,8 @@ function init({ getQuote: fn }) {
 }
 
 function uidOf(req) {
-  return req.authUser || 'default';
+  // 认证系统接管后按登录用户名分账（多用户数据隔离）
+  return req.user?.username || req.authUser || 'default';
 }
 
 function logEvent(msg) {

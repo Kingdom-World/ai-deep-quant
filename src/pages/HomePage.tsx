@@ -84,6 +84,13 @@ const FEATURES = [
     ready: true,
   },
   {
+    icon: '💰',
+    title: '模拟交易',
+    desc: '100万虚拟资金真实行情撮合，市价/限价单与自动策略',
+    path: '/paper',
+    ready: true,
+  },
+  {
     icon: '💬',
     title: 'AI 智能助手',
     desc: '站内 AI 问答：个股解读、选股推荐、使用指南',
@@ -506,6 +513,12 @@ export default function HomePage() {
             onClick={() => navigate('/assistant')}
           >
             AI 助手
+          </span>
+          <span
+            style={{ color: '#94a3b8', cursor: 'pointer' }}
+            onClick={() => navigate('/paper')}
+          >
+            模拟交易
           </span>
         </div>
 

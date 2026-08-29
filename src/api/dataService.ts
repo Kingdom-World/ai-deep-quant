@@ -565,6 +565,119 @@ export const askAssistant = async (
   return apiGet(`/qa?${qs.toString()}`);
 };
 
+// ───────────── 模拟交易（paper trading） ─────────────
+
+/** POST 请求（模拟盘下单/撤单/重置/策略启停） */
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
+  try {
+    const res = await fetch(`${CONFIG.basePath}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') {
+      throw new Error('请求超时（请确认已启动数据服务）');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export interface PaperPosition {
+  symbol: string;
+  name?: string;
+  market: string;
+  qty: number;
+  avgCost: number;
+  lastPrice: number;
+  marketValue: number;
+  unrealizedPnl: number;
+  unrealizedPct: number;
+}
+
+export interface PaperOrder {
+  id: string;
+  symbol: string;
+  name?: string;
+  side: 'buy' | 'sell';
+  type: 'market' | 'limit';
+  qty: number;
+  limitPrice: number | null;
+  status: 'pending' | 'resting' | 'filled' | 'canceled' | 'rejected';
+  reason?: string;
+  avgFillPrice?: number;
+  fees?: { total: number };
+  createdAt: string;
+}
+
+export interface PaperAccount {
+  uid: string;
+  cash: number;
+  initialCapital: number;
+  marketValue: number;
+  totalAssets: number;
+  totalPnl: number;
+  totalPnlPct: number;
+  todayPnl: number;
+  positions: PaperPosition[];
+  orders: PaperOrder[];
+  equity: { t: string; total: number; cash: number; marketValue: number }[];
+}
+
+export interface PaperStrategy {
+  id: string;
+  type: string;
+  symbol: string;
+  name?: string;
+  params: Record<string, number>;
+  status: 'running' | 'stopped';
+  lastSignal: string;
+  startedAt: string;
+  lastRunAt: string;
+  error: string;
+}
+
+export interface PaperLogEntry {
+  t: string;
+  msg: string;
+}
+
+/** 10. 模拟交易 API（后端 server/paper/*） */
+export const paperApi = {
+  getAccount: () => apiGet<PaperAccount>('/paper/account'),
+  placeOrder: (body: {
+    symbol: string;
+    name?: string;
+    side: 'buy' | 'sell';
+    type: 'market' | 'limit';
+    qty: number;
+    limitPrice?: number;
+  }) => apiPost<{ ok: boolean; order?: PaperOrder; error?: string }>('/paper/order', body),
+  cancelOrder: (id: string) =>
+    apiPost<{ ok: boolean; error?: string }>(`/paper/order/${encodeURIComponent(id)}/cancel`, {}),
+  reset: () => apiPost<{ ok: boolean; message?: string }>('/paper/reset', {}),
+  listStrategies: () => apiGet<PaperStrategy[]>('/paper/strategies'),
+  startStrategy: (body: {
+    type: string;
+    symbol: string;
+    name?: string;
+    params: Record<string, number>;
+  }) => apiPost<{ ok: boolean; error?: string }>('/paper/strategies', body),
+  stopStrategy: (id: string) =>
+    apiPost<{ ok: boolean; error?: string }>(`/paper/strategies/${encodeURIComponent(id)}/stop`, {}),
+  getLogs: () => apiGet<PaperLogEntry[]>('/paper/logs'),
+};
+
 /** 6. 数据源状态 */
 export const getDataSourceStatus = () => ({
   primary: 'AI深度量化数据服务',

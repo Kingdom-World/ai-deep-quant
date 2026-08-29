@@ -12,6 +12,9 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
+/** 容量上限：超过后按写入顺序淘汰最早的 10%，防长时间会话内存无界增长 */
+const MAX_CACHE_ENTRIES = 500;
+
 /**
  * 读取缓存；TTL 内命中返回数据（并打印日志），否则返回 null
  */
@@ -26,8 +29,16 @@ export function getCached<T>(key: string, ttlMs: number): T | null {
   return null;
 }
 
-/** 写入缓存 */
+/** 写入缓存（超容量时先淘汰最早条目） */
 export function setCached(key: string, data: unknown): void {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const evict = Math.ceil(MAX_CACHE_ENTRIES / 10);
+    let removed = 0;
+    for (const k of cache.keys()) {
+      cache.delete(k);
+      if (++removed >= evict) break;
+    }
+  }
   cache.set(key, { data, timestamp: Date.now() });
 }
 

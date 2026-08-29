@@ -16,6 +16,7 @@
 | ⚡ 短期副图 | 1/5/15/30/60/120 分钟真实 K 线（A股=腾讯 mkline，美股=新浪，港股=分时聚合），MA5/10/20 + 最新价标线 + 缩放 |
 | 🧮 量化因子分析 | 五因子模型（趋势30/动量25/量能15/波动15/位置15）0-100 评分 + 雷达图 |
 | 📈 策略回测 | MA 双均线 / RSI 超买超卖 / 买入持有，收益曲线、年化、最大回撤、胜率、交易明细（0.1% 手续费） |
+| 💰 模拟交易 | 100 万虚拟资金 + 真实行情撮合：市价/限价单、撤单、持仓与当日盈亏、净值曲线；内置 MA 双均线 / RSI 反转 / 网格三套自动策略与风控（单笔 ≤20%、单标的 ≤30%、当日同标的买入 ≤3 次） |
 | 💬 AI 智能助手 | 站内问答：个股解读（真实行情指标）、股票池推荐、使用指南（离线规则引擎，无需联网 AI） |
 | 🔧 每日自检 | 每天 02:00–03:00 自动自检：代码语法扫描 + 前端产物检查 + 8 项接口冒烟测试，报告写入 `reports/` |
 
@@ -32,6 +33,8 @@
 
 > 一个命令、一个端口、一个网址。页面与全部 API 都由后端提供，
 > 不依赖任何第三方服务、不依赖 MCP、不需要 API Key。
+
+> 🔐 **访问密码**：`.env` 中 `SITE_USERNAME` / `SITE_PASSWORD` 控制整站登录（浏览器弹出框，手机端同样适用），密码留空即关闭；API 默认限流每 IP 每分钟 120 次（`API_RATE_LIMIT` 可调）。
 
 ---
 
@@ -100,6 +103,20 @@ npm run maintain        # 或 node server/index.cjs --maintain-once
 | `GET /api/backtest?symbol=AAPL&strategy=ma&fast=5&slow=20&capital=100000` | 策略回测 |
 | `GET /api/qa?q=分析AAPL` | 网站 AI 问答 |
 | `GET /api/health` | 健康检查 |
+| `GET /api/paper/account` | 模拟盘账户总览（现金/持仓/净值曲线/当日盈亏） |
+| `POST /api/paper/order` | 模拟盘下单 `{symbol, side: buy\|sell, type: market\|limit, qty, limitPrice?}` |
+| `POST /api/paper/order/:id/cancel` | 撤销挂单 |
+| `POST /api/paper/reset` | 重置模拟账户 |
+| `GET/POST /api/paper/strategies` | 自动策略列表 / 启动（`maCross` / `rsiReversal` / `gridTrading`） |
+| `POST /api/paper/strategies/:id/stop` | 停止策略 |
+| `GET /api/paper/logs` | 交易日志（最近 200 条） |
+
+### 💰 模拟交易说明
+
+- 初始虚拟资金 100 万（`PAPER_INITIAL_CAPITAL` 可调），状态持久化于 `data/paper/state.json`（原子写入 + 60 秒快照，重启不丢）。
+- 手续费按 A 股规则：佣金万 2.5（最低 5 元）+ 卖出印花税千 1；市价单按最新行情立即成交，限价单未成交部分持续挂单，每 5 秒撮合重试。
+- 自动策略每小时评估一次、仅在交易时段运行（`PAPER_TRADE_247=1` 可强制全天评估，便于测试）。
+- 所有模拟盘接口同样受站点密码保护。**模拟盘仅用于学习演示，不代表真实可成交价格。**
 
 ## 🧱 技术栈
 

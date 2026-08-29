@@ -33,10 +33,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM [3/3] 启动单端口服务（页面 + API + 自检调度）
+REM [3/3] 启动单端口服务（页面 + API + 自检调度），内置看门狗：异常退出 5 秒后自动重启
 echo   [3/3] 正在启动服务：http://localhost:3001
+echo   （看门狗已开启：服务意外退出会自动重启；连按 Ctrl+C 可彻底退出）
 echo.
 start "" http://localhost:3001
+:runloop
 node server\index.cjs
-
-pause
+echo.
+echo   [看门狗] 服务已退出（退出码 %errorlevel%），5 秒后自动重启...
+timeout /t 5 /nobreak >nul
+goto runloop

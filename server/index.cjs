@@ -6,6 +6,7 @@
 //   · 生产模式：直接托管 dist/ 静态资源（单 URL 即可访问整站）
 //   · 数据源：新浪/腾讯公开财经接口，无需任何 API Key，自动切换
 //   · 自维护：每日 02:00–03:00 自动自检（代码扫描 + 接口冒烟测试 + 报告）
+//   · 访问防护：站点密码 Basic Auth（.env: SITE_USERNAME/SITE_PASSWORD）+ 每 IP 限流
 // ─────────────────────────────────────────────────────────────
 // 启动方式：
 //   node server/index.cjs                # 正常启动（API + dist 静态托管 + 自检调度）
@@ -19,8 +20,15 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
+const crypto = require('crypto');
+
+// 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失（配合 start.bat 看门狗）
+process.on('uncaughtException', (e) => console.error('[兜底] 未捕获异常:', (e && e.stack) || e));
+process.on('unhandledRejection', (e) => console.error('[兜底] 未处理的 Promise 拒绝:', (e && e.stack) || e));
 
 const app = express();
+// Vercel/反向代理后取真实客户端 IP（限流按 IP 计数）
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const ARGS = process.argv.slice(2);
 const MAINTAIN_ONCE = ARGS.includes('--maintain-once');
@@ -40,6 +48,94 @@ app.use((req, res, next) => {
   next();
 });
 
+// ───────────── API 限流（每 IP 每分钟 N 次，超限 429 + Retry-After） ─────────────
+const RATE_LIMIT = Math.max(Number(process.env.API_RATE_LIMIT) || 120, 1);
+const rateMap = new Map(); // ip -> [请求时间戳]
+setInterval(() => {
+  const cutoff = Date.now() - 60_000;
+  for (const [ip, arr] of rateMap) {
+    const kept = arr.filter((t) => t > cutoff);
+    if (kept.length) rateMap.set(ip, kept);
+    else rateMap.delete(ip);
+  }
+}, 60_000).unref();
+app.use((req, res, next) => {
+  const ip = req.ip || 'unknown';
+  // 回环地址豁免（本机浏览器与每日自检冒烟使用；限流防的是外部刷接口）
+  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return next();
+  const now = Date.now();
+  const arr = (rateMap.get(ip) || []).filter((t) => t > now - 60_000);
+  if (arr.length >= RATE_LIMIT) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({ error: `请求过于频繁（每分钟上限 ${RATE_LIMIT} 次），请稍后再试` });
+  }
+  arr.push(now);
+  rateMap.set(ip, arr);
+  next();
+});
+
+// ───────────── 访问防护：站点密码（HTTP Basic Auth，保护页面与全部 API） ─────────────
+/** 读取根目录 .env（无 dotenv 依赖；不覆盖已存在的环境变量，Vercel 平台变量优先） */
+function loadEnvFile() {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+    for (const line of raw.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m && process.env[m[1]] === undefined) {
+        process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      }
+    }
+  } catch {
+    /* 无 .env 时使用系统环境变量 */
+  }
+}
+loadEnvFile();
+
+const SITE_USERNAME = process.env.SITE_USERNAME || 'admin';
+const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
+const AUTH_ENABLED = Boolean(SITE_PASSWORD);
+
+/** 恒定时间比较，避免逐字符爆破计时侧信道 */
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+
+function checkBasicAuth(req) {
+  const m = String(req.headers.authorization || '').match(/^Basic (.+)$/i);
+  if (!m) return false;
+  let decoded = '';
+  try {
+    decoded = Buffer.from(m[1], 'base64').toString('utf8');
+  } catch {
+    return false;
+  }
+  const sep = decoded.indexOf(':');
+  if (sep < 0) return false;
+  return (
+    safeEqual(decoded.slice(0, sep), SITE_USERNAME) &&
+    safeEqual(decoded.slice(sep + 1), SITE_PASSWORD)
+  );
+}
+
+/** 冒烟测试/内部调用的认证头 */
+const authHeaderValue = () =>
+  AUTH_ENABLED
+    ? { Authorization: `Basic ${Buffer.from(`${SITE_USERNAME}:${SITE_PASSWORD}`).toString('base64')}` }
+    : {};
+
+app.use((req, res, next) => {
+  req.authUser = SITE_USERNAME; // 模拟盘账户标识（当前为单用户共享账户）
+  if (!AUTH_ENABLED || req.method === 'OPTIONS') return next();
+  if (checkBasicAuth(req)) return next();
+  res.setHeader('WWW-Authenticate', 'Basic realm="AIDeepQuant", charset="UTF-8"');
+  res
+    .status(401)
+    .json({ error: '需要访问密码：浏览器弹出框中输入账号密码（配置见 .env 的 SITE_USERNAME / SITE_PASSWORD）' });
+});
+
+
 // ───────────── 内存缓存 ─────────────
 const cache = new Map();
 function getCached(key, ttlMs) {
@@ -56,6 +152,15 @@ const HISTORY_TTL = 300_000; // 历史数据 5 分钟
 const INDICES_TTL = 5_000;
 const SEARCH_TTL = 60_000;
 const MKLINE_TTL = 60_000; // 分钟K线 1 分钟
+
+// 缓存兜底清理：过期超 5 分钟即删 + 总量裁剪，防长期运行内存无界增长
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of cache) if (now - v.ts > 300_000) cache.delete(k);
+  if (cache.size > 2000) {
+    for (const k of Array.from(cache.keys()).slice(0, cache.size - 2000)) cache.delete(k);
+  }
+}, 60_000).unref();
 
 // ───────────── HTTP 工具 ─────────────
 const UA =
@@ -82,6 +187,20 @@ const num = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : null;
 };
+
+/** 有界并发 map（保持输入顺序），用于取代串行 await 循环 */
+async function mapPool(items, limit, fn) {
+  const out = new Array(items.length);
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
 
 // ───────────── 代码规范 ─────────────
 /** 统一为腾讯代码：sh600519 / sz000858 / hk00700 / usAAPL / usINX */
@@ -728,159 +847,7 @@ app.get('/api/search/:keyword', async (req, res) => {
 });
 
 // ───────────── 5. 策略回测 ─────────────
-/** SMA 序列（不足 N 为 null） */
-function smaSeries(values, n) {
-  const out = [];
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-    if (i >= n) sum -= values[i - n];
-    out.push(i + 1 >= n ? sum / n : null);
-  }
-  return out;
-}
-
-/** RSI 序列（Wilder 简化） */
-function rsiSeries(values, n = 14) {
-  const out = [];
-  for (let i = 0; i < values.length; i++) {
-    if (i < n) {
-      out.push(null);
-      continue;
-    }
-    let gains = 0;
-    let losses = 0;
-    for (let j = i - n + 1; j <= i; j++) {
-      const diff = values[j] - values[j - 1];
-      if (diff >= 0) gains += diff;
-      else losses -= diff;
-    }
-    const avgGain = gains / n;
-    const avgLoss = losses / n;
-    if (avgLoss === 0) out.push(100);
-    else out.push(100 - 100 / (1 + avgGain / avgLoss));
-  }
-  return out;
-}
-
-/** 单策略回测引擎（全仓多头，0.1% 双边手续费，收盘价成交） */
-function runBacktest(klines, strategy, fast, slow, capital) {
-  const n = klines.length;
-  if (n < 30) return { error: '历史数据不足 30 根，无法回测' };
-  const closes = klines.map((k) => k.close);
-  const equity = [];
-  const trades = [];
-  let cash = capital;
-  let shares = 0;
-  let position = false;
-  let peak = capital;
-  let maxDrawdown = 0;
-  let maxDrawdownPct = 0;
-  let entryPrice = 0;
-  let entryDate = '';
-
-  const fastSMA = smaSeries(closes, fast);
-  const slowSMA = smaSeries(closes, slow);
-  const rsi = rsiSeries(closes, 14);
-  const FEE = 0.001;
-
-  for (let i = 0; i < n; i++) {
-    const price = closes[i];
-    let target = position;
-    if (strategy === 'buyhold') {
-      target = true;
-    } else if (strategy === 'ma') {
-      if (fastSMA[i] !== null && slowSMA[i] !== null) {
-        if (fastSMA[i] > slowSMA[i]) target = true; // 快线上穿慢线 → 持有
-        else if (fastSMA[i] < slowSMA[i]) target = false; // 死叉 → 空仓
-      }
-    } else if (strategy === 'rsi') {
-      if (rsi[i] !== null && rsi[i - 1] !== null) {
-        if (rsi[i - 1] <= 30 && rsi[i] > 30) target = true; // 超卖回升 → 买入
-        if (rsi[i - 1] >= 70 && rsi[i] < 70) target = false; // 超买回落 → 卖出
-      }
-    }
-    // 执行交易（收盘价成交，双向手续费 0.1%）
-    if (target && !position && cash > price) {
-      const cost = cash * (1 - FEE);
-      shares = cost / price;
-      cash = 0;
-      position = true;
-      entryPrice = price;
-      entryDate = klines[i].date;
-    } else if (!target && position) {
-      const proceeds = shares * price * (1 - FEE);
-      cash = proceeds;
-      shares = 0;
-      position = false;
-      const pnlPct = ((price - entryPrice) / entryPrice) * 100;
-      trades.push({
-        entryDate,
-        entryPrice: +entryPrice.toFixed(2),
-        exitDate: klines[i].date,
-        exitPrice: +price.toFixed(2),
-        pnlPct: +pnlPct.toFixed(2),
-        holdDays: i - klines.findIndex((k) => k.date === entryDate),
-      });
-    }
-    const value = cash + shares * price;
-    equity.push({ date: klines[i].date, value: +value.toFixed(2) });
-    peak = Math.max(peak, value);
-    const dd = (peak - value) / peak;
-    if (dd > maxDrawdownPct) maxDrawdownPct = dd;
-    maxDrawdown = Math.max(maxDrawdown, peak - value);
-  }
-
-  // 期末清仓
-  let finalValue = equity[n - 1].value;
-  if (position) {
-    finalValue = shares * closes[n - 1] * (1 - FEE);
-    trades.push({
-      entryDate,
-      entryPrice: +entryPrice.toFixed(2),
-      exitDate: klines[n - 1].date,
-      exitPrice: +closes[n - 1].toFixed(2),
-      pnlPct: +(((closes[n - 1] - entryPrice) / entryPrice) * 100).toFixed(2),
-      holdDays: n - 1 - klines.findIndex((k) => k.date === entryDate),
-      forced: true,
-    });
-    equity[n - 1] = { date: klines[n - 1].date, value: +finalValue.toFixed(2) };
-  }
-
-  const totalReturn = (finalValue / capital - 1) * 100;
-  const years = Math.max(n / 252, 0.25);
-  const annualized = (Math.pow(finalValue / capital, 1 / years) - 1) * 100;
-  const wins = trades.filter((t) => t.pnlPct > 0).length;
-  const winRate = trades.length ? (wins / trades.length) * 100 : 0;
-  // 基准：买入持有
-  const buyholdReturn = (closes[n - 1] / closes[0] - 1) * 100;
-  const buyholdEquity = closes.map((c, i) => ({
-    date: klines[i].date,
-    value: +((capital / closes[0]) * c).toFixed(2),
-  }));
-
-  return {
-    strategy,
-    params: { fast, slow, capital },
-    range: { start: klines[0].date, end: klines[n - 1].date, bars: n },
-    finalValue: +finalValue.toFixed(2),
-    totalReturn: +totalReturn.toFixed(2),
-    annualized: +annualized.toFixed(2),
-    maxDrawdownPct: +(maxDrawdownPct * 100).toFixed(2),
-    maxDrawdown: +maxDrawdown.toFixed(2),
-    tradeCount: trades.length,
-    winRate: +winRate.toFixed(1),
-    avgWinPct: trades.filter((t) => t.pnlPct > 0).reduce((a, t) => a + t.pnlPct, 0) /
-      Math.max(1, wins),
-    avgLossPct: trades.filter((t) => t.pnlPct <= 0).reduce((a, t) => a + t.pnlPct, 0) /
-      Math.max(1, trades.length - wins),
-    benchmarkReturn: +buyholdReturn.toFixed(2),
-    trades: trades.slice(-50),
-    equity,
-    benchmark: buyholdEquity,
-  };
-}
-
+const { runBacktest, rsiSeries } = require('./quant.cjs');
 /** GET /api/backtest?symbol=MSFT&strategy=ma&fast=5&slow=20&capital=100000&count=500 */
 app.get('/api/backtest', async (req, res) => {
   const symbol = String(req.query.symbol || 'MSFT');
@@ -1140,21 +1107,22 @@ app.get('/api/qa', async (req, res) => {
     }
     // 今日观察（五因子评分）
     if (/推荐|选股|观察|机会|评分/i.test(q)) {
-      const results = [];
-      for (const item of QA_POOL.slice(0, 10)) {
+      // 并发 4 路评估股票池（原串行实现冷启动可达分钟级）
+      const evalOne = async (item) => {
         try {
           const code = toTencentCode(item.symbol);
           const [klines, quote] = await Promise.all([
             fetchDailyRows(code, 250),
             getQuoteInternal(code, item.symbol),
           ]);
-          if (!klines.length) continue;
+          if (!klines.length) return null;
           const { score, rating } = scoreStock(klines, quote?.price);
-          results.push({ symbol: item.symbol, name: item.name, price: quote?.price ?? klines[klines.length - 1].close, score, rating });
+          return { symbol: item.symbol, name: item.name, price: quote?.price ?? klines[klines.length - 1].close, score, rating };
         } catch {
-          /* 单只失败跳过 */
+          return null; /* 单只失败跳过 */
         }
-      }
+      };
+      const results = (await mapPool(QA_POOL.slice(0, 10), 4, evalOne)).filter(Boolean);
       results.sort((a, b) => b.score - a.score);
       const top = results.slice(0, 5);
       const answer = [
@@ -1255,11 +1223,11 @@ async function runMaintenance() {
     add('前端产物完整性', false, e.message);
   }
 
-  // 3) 接口冒烟测试
+  // 3) 接口冒烟测试（站点密码启用时自动携带认证头）
   const base = `http://127.0.0.1:${PORT}`;
   const smoke = async (pathName, validate) => {
     try {
-      const res = await axios.get(base + pathName, { timeout: 10000 });
+      const res = await axios.get(base + pathName, { timeout: 10000, headers: authHeaderValue() });
       const ok = validate(res.data);
       return { ok, detail: ok ? 'OK' : '数据校验失败' };
     } catch (e) {
@@ -1326,6 +1294,72 @@ if (!NO_MAINTAIN && !MAINTAIN_ONCE && !IS_VERCEL) {
   }, 60_000);
   console.log('🔧 每日 02:00–03:00 自检调度已开启（--no-maintain 可关闭）');
 }
+
+// ───────────── 8b. 模拟交易（paper trading，要求 #1） ─────────────
+app.use(express.json({ limit: '100kb' }));
+
+const broker = require('./paper/broker.cjs');
+const strategies = require('./paper/strategies.cjs');
+const wrapQuote = (symbol) => getQuoteInternal(toTencentCode(symbol), symbol);
+broker.init({ getQuote: wrapQuote });
+strategies.init({
+  getQuote: wrapQuote,
+  fetchDailyRows: (symbol, count) => fetchDailyRows(toTencentCode(symbol), count),
+});
+
+// 撮合循环 5s / 策略评估循环（Vercel Serverless 与 --maintain-once 不启动）
+if (!IS_VERCEL && !MAINTAIN_ONCE) {
+  setInterval(() => broker.runMatcher(), 5_000).unref();
+  strategies.startLoop();
+}
+
+/** 账户总览：现金/持仓/净值曲线/当日盈亏 */
+app.get('/api/paper/account', async (req, res) => {
+  try {
+    res.json(await broker.accountSnapshot(broker.uidOf(req)));
+  } catch (e) {
+    res.status(500).json({ error: `查询账户失败: ${e.message?.slice(0, 80)}` });
+  }
+});
+
+/** 下单：{symbol, name?, side: buy|sell, type: market|limit, qty, limitPrice?} */
+app.post('/api/paper/order', async (req, res) => {
+  try {
+    const r = await broker.placeOrder(broker.uidOf(req), req.body || {});
+    res.status(r.ok ? 200 : 400).json(r);
+  } catch (e) {
+    res.status(500).json({ error: `下单失败: ${e.message?.slice(0, 80)}` });
+  }
+});
+
+/** 撤销挂单 */
+app.post('/api/paper/order/:id/cancel', (req, res) => {
+  const r = broker.cancelOrder(broker.uidOf(req), req.params.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+/** 重置模拟账户（回到初始资金，清空持仓/订单/净值） */
+app.post('/api/paper/reset', (req, res) => {
+  broker.store.reset(broker.uidOf(req));
+  broker.logEvent('模拟账户已重置');
+  res.json({ ok: true, message: '模拟账户已重置为初始资金' });
+});
+
+/** 策略列表 / 启动 / 停止 */
+app.get('/api/paper/strategies', (req, res) => res.json(strategies.list(broker.uidOf(req))));
+app.post('/api/paper/strategies', (req, res) => {
+  const r = strategies.start(broker.uidOf(req), req.body || {});
+  res.status(r.ok ? 200 : 400).json(r);
+});
+app.post('/api/paper/strategies/:id/stop', (req, res) => {
+  const r = strategies.stop(broker.uidOf(req), req.params.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+/** 交易日志（最近 200 条，倒序） */
+app.get('/api/paper/logs', (req, res) => {
+  res.json(broker.store.state.logs.slice(-200).reverse());
+});
 
 // ───────────── 9. 静态托管（生产模式：单端口整站） ─────────────
 const DIST_DIR = path.join(__dirname, '..', 'dist');

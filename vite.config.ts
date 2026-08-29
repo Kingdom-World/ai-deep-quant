@@ -1,11 +1,31 @@
 import { defineConfig } from 'vite'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 
 // vite-plugin-compression 为 CJS 包，用 createRequire 兼容 nodenext 解析
 const require = createRequire(import.meta.url)
 const compression = require('vite-plugin-compression')
+
+// 从 .env 读取站点密码，开发代理自动附带认证头（后端启用 Basic Auth 时 dev 模式仍可用）
+function readEnvVar(name: string): string {
+  try {
+    const raw = readFileSync(new URL('./.env', import.meta.url), 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const m = line.match(new RegExp(`^\\s*${name}\\s*=\\s*(.*)\\s*$`))
+      if (m) return m[1].replace(/^["']|["']$/g, '')
+    }
+  } catch {
+    /* 无 .env 时忽略 */
+  }
+  return ''
+}
+const siteUser = process.env.SITE_USERNAME || readEnvVar('SITE_USERNAME') || 'admin'
+const sitePass = process.env.SITE_PASSWORD || readEnvVar('SITE_PASSWORD')
+const devAuthHeaders = sitePass
+  ? { Authorization: `Basic ${Buffer.from(`${siteUser}:${sitePass}`).toString('base64')}` }
+  : {}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -26,6 +46,7 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_API_TARGET || 'http://127.0.0.1:3001',
         changeOrigin: true,
+        headers: devAuthHeaders,
       },
     },
     // 忽略编辑器临时文件，避免 watcher EBUSY 崩溃

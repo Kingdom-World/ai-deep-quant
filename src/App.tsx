@@ -5,6 +5,7 @@ import StockDetailPage from './pages/StockDetailPage';
 import AnalyzePage from './pages/AnalyzePage';
 import BacktestPage from './pages/BacktestPage';
 import AssistantPage from './pages/AssistantPage';
+import PaperTradingPage from './pages/PaperTradingPage';
 
 /**
  * AI深度量化 路由：
@@ -13,6 +14,7 @@ import AssistantPage from './pages/AssistantPage';
  * - `/analyze`       → 量化因子分析页（五因子评分）
  * - `/backtest`      → 策略回测页（MA双均线/RSI/买入持有）
  * - `/assistant`     → AI 智能助手页（个股解读/推荐/指南）
+ * - `/paper`         → 模拟交易页（虚拟资金/真实行情撮合/自动策略）
  * 每个页面由 ErrorBoundary 包裹，局部错误不导致整站崩溃。
  */
 function App() {
@@ -25,6 +27,7 @@ function App() {
           <Route path="/analyze" element={<AnalyzePage />} />
           <Route path="/backtest" element={<BacktestPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
+          <Route path="/paper" element={<PaperTradingPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ErrorBoundary>

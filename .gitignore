@@ -38,3 +38,6 @@ python_backend/data/
 *.sw?
 
 .vercel
+
+# 凭据备忘（不入库）
+访问账号密码.md

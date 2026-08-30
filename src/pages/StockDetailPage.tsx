@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import TopNav from '../components/TopNav';
+import { theme } from '../lib/theme';
 import {
   clearCache,
   getHistory,
@@ -1113,9 +1114,7 @@ export default function StockDetailPage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: '#0a0e17',
-        color: '#e2e8f0',
+                ...theme.page,
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >

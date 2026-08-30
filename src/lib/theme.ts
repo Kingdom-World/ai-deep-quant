@@ -40,4 +40,34 @@ export const theme = {
     borderRadius: '8px',
     outline: 'none',
   },
+  /** 高科技页面底色：深空渐变 + 双光晕 */
+  page: {
+    minHeight: '100vh',
+    color: '#e2e8f0',
+    background:
+      'radial-gradient(900px 480px at 12% -8%, rgba(37,99,235,0.16), transparent 60%),' +
+      'radial-gradient(820px 460px at 108% 112%, rgba(14,165,233,0.12), transparent 55%),' +
+      'linear-gradient(160deg, #070b14 0%, #0b1220 45%, #0a0e17 100%)',
+  },
+  /** 玻璃拟态卡片（配合页面底色使用） */
+  glass: {
+    backgroundColor: 'rgba(17,24,39,0.6)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
+    border: '1px solid rgba(96,165,250,0.16)',
+    borderRadius: '14px',
+    padding: '16px',
+    boxShadow: '0 10px 36px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)',
+  },
+  /** 细网格纹理（叠在页面底色上，营造终端感） */
+  gridOverlay: {
+    position: 'absolute',
+    inset: 0,
+    pointerEvents: 'none',
+    backgroundImage:
+      'linear-gradient(rgba(148,163,184,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.045) 1px, transparent 1px)',
+    backgroundSize: '42px 42px',
+    maskImage: 'radial-gradient(ellipse at 50% 0%, black 20%, transparent 78%)',
+    WebkitMaskImage: 'radial-gradient(ellipse at 50% 0%, black 20%, transparent 78%)',
+  },
 } as const;

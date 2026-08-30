@@ -32,6 +32,44 @@ import {
   marketToCurrency,
 } from '../utils/formatters';
 import { useQuantStore } from '../store/quantStore';
+import { theme } from '../lib/theme';
+
+/** 迷你走势线（纯 SVG，无 ECharts 开销） */
+function Sparkline({ points, color }: { points: number[]; color: string }) {
+  if (points.length < 2) return null;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const w = 110;
+  const h = 34;
+  const d = points
+    .map((p, i) => `${((i / (points.length - 1)) * w).toFixed(1)},${(h - ((p - min) / range) * h).toFixed(1)}`)
+    .join(' ');
+  return (
+    <svg width={w} height={h} style={{ display: 'block' }}>
+      <polyline points={d} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 评分环（SVG 圆环进度） */
+function ScoreRing({ score, color }: { score: number; color: string }) {
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - Math.min(score, 100) / 100);
+  return (
+    <svg width="38" height="38" style={{ display: 'block' }}>
+      <circle cx="19" cy="19" r={r} stroke="#1e293b" strokeWidth="4" fill="none" />
+      <circle
+        cx="19" cy="19" r={r} stroke={color} strokeWidth="4" fill="none" strokeLinecap="round"
+        strokeDasharray={c.toFixed(1)} strokeDashoffset={off.toFixed(1)} transform="rotate(-90 19 19)"
+      />
+      <text x="19" y="23" textAnchor="middle" fontSize="11" fontWeight="700" fill={color}>
+        {score}
+      </text>
+    </svg>
+  );
+}
 
 /** 大盘指数轮询间隔（与个股看板一致：每 10 秒） */
 const INDEX_REFRESH_MS = 10_000;
@@ -119,6 +157,8 @@ export default function HomePage() {
   const [favLoading, setFavLoading] = useState(false);
   const [favInput, setFavInput] = useState('');
   const [favMsg, setFavMsg] = useState<string | null>(null);
+  // 指数迷你走势（30 日收盘，供卡片 sparkline）
+  const [sparks, setSparks] = useState<Record<string, number[]>>({});
   // 全局 store（大盘指数写入，供跨页共享）
   const storeSetIndices = useQuantStore((s) => s.setIndices);
   const storeSetIndicesUpdatedAt = useQuantStore((s) => s.setIndicesUpdatedAt);
@@ -309,6 +349,31 @@ export default function HomePage() {
     loadFavorites();
   }, [loadFavorites]);
 
+  // 拉取指数迷你走势（一次即可，getHistory 自带 5 分钟缓存）
+  useEffect(() => {
+    if (indicesLoading || Object.keys(sparks).length > 0) return;
+    let alive = true;
+    (async () => {
+      const out: Record<string, number[]> = {};
+      await Promise.all(
+        indices.map(async (q) => {
+          if (q.price === null) return;
+          try {
+            const rows = await getHistory(q.symbol, detectMarket(q.symbol), 'day', 30);
+            if (rows.length) out[q.symbol] = rows.map((r) => r.close);
+          } catch {
+            /* 缺图不影响主流程 */
+          }
+        }),
+      );
+      if (alive && Object.keys(out).length) setSparks(out);
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicesLoading]);
+
   const gotoDetail = (symbol: string) => {
     navigate(`/stock/${symbol}`);
   };
@@ -426,8 +491,8 @@ export default function HomePage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: '#0a0e17',
+        ...theme.page,
+        position: 'relative',
         color: '#e2e8f0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
@@ -449,11 +514,45 @@ export default function HomePage() {
       {/* ── 顶部导航栏（全站统一） ── */}
       <TopNav />
 
+      {/* 跑马灯动画关键帧 */}
+      <style>{`@keyframes pq-ticker { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }`}</style>
+
+      {/* ── 指数跑马灯 ── */}
+      {indices.some((q) => q.price !== null) && (
+        <div style={{ overflow: 'hidden', borderBottom: '1px solid #1e293b', backgroundColor: 'rgba(10,14,23,0.72)' }}>
+          <div style={{ display: 'flex', gap: '44px', width: 'max-content', padding: '7px 0', animation: 'pq-ticker 32s linear infinite' }}>
+            {[...indices, ...indices].map((q, i) => (
+              <span
+                key={i}
+                style={{ fontSize: 12, fontFamily: 'Consolas, monospace', whiteSpace: 'nowrap', color: '#94a3b8', cursor: 'pointer' }}
+                onClick={() => navigate(`/stock/${q.symbol}`)}
+              >
+                {q.name}{' '}
+                <span style={{ color: '#f1f5f9' }}>{q.price !== null ? q.price.toFixed(2) : '--'}</span>{' '}
+                <span style={{ color: pctColor(q.changePercent) }}>
+                  {(q.changePercent ?? 0) >= 0 ? '▲' : '▼'} {Math.abs(q.changePercent ?? 0).toFixed(2)}%
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── 主体 ── */}
       <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '28px 24px 48px' }}>
         {/* Hero 标语 */}
         <section style={{ textAlign: 'center', margin: '10px 0 36px' }}>
-          <h1 style={{ fontSize: '34px', fontWeight: '700', margin: '0 0 10px', color: '#f8fafc' }}>
+          <h1
+            style={{
+              fontSize: '34px',
+              fontWeight: 800,
+              margin: '0 0 10px',
+              letterSpacing: '1px',
+              background: 'linear-gradient(90deg, #f8fafc 20%, #93c5fd 60%, #38bdf8)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
             AI深度量化 · 数据驱动 量化决策
           </h1>
           <p style={{ fontSize: '15px', color: '#94a3b8', margin: 0 }}>
@@ -534,65 +633,71 @@ export default function HomePage() {
                 gap: '12px',
               }}
             >
-              {indices.map((q) => (
-                <div
-                  key={q.symbol}
-                  onClick={() => navigate(`/stock/${q.symbol}`)}
-                  title="点击查看指数详情"
-                  style={{
-                    padding: '14px 16px',
-                    backgroundColor: '#111827',
-                    borderRadius: '12px',
-                    border: '1px solid #1e293b',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.borderColor = '#3b82f6';
-                    (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.borderColor = '#1e293b';
-                    (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-                  }}
-                >
-                  <div style={{ fontSize: '13px', color: '#94a3b8' }}>{q.name}</div>
-                  {indicesLoading && q.price === null ? (
-                    <div style={{ fontSize: '16px', color: '#64748b', marginTop: '8px' }}>
-                      加载中...
-                    </div>
-                  ) : q.price === null ? (
-                    <div style={{ fontSize: '16px', color: '#64748b', marginTop: '8px' }}>
-                      暂无数据
-                    </div>
-                  ) : (
-                    <>
-                      <div
-                        style={{
-                          fontSize: '20px',
-                          fontWeight: '700',
-                          color: '#f1f5f9',
-                          marginTop: '4px',
-                        }}
-                      >
-                        {q.price.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+              {indices.map((q) => {
+                const chg = q.changePercent ?? 0;
+                const spark = sparks[q.symbol];
+                return (
+                  <div
+                    key={q.symbol}
+                    onClick={() => navigate(`/stock/${q.symbol}`)}
+                    title="点击查看指数详情"
+                    style={{
+                      padding: '14px 16px',
+                      backgroundColor: 'rgba(17,24,39,0.6)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(96,165,250,0.16)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.borderColor = '#3b82f6';
+                      (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
+                      (e.currentTarget as HTMLDivElement).style.boxShadow = '0 8px 24px rgba(37,99,235,0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(96,165,250,0.16)';
+                      (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+                      (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', color: '#94a3b8' }}>{q.name}</div>
+                    {indicesLoading && q.price === null ? (
+                      <div style={{ fontSize: '16px', color: '#64748b', marginTop: '8px' }}>
+                        加载中...
                       </div>
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          color: pctColor(q.changePercent),
-                        }}
-                      >
-                        {q.changePercent === null ? '--' : formatPercent(q.changePercent)}
+                    ) : q.price === null ? (
+                      <div style={{ fontSize: '16px', color: '#64748b', marginTop: '8px' }}>
+                        暂无数据
                       </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            fontSize: '20px',
+                            fontWeight: '700',
+                            color: '#f1f5f9',
+                            marginTop: '4px',
+                          }}
+                        >
+                          {q.price.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '2px', gap: '6px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: pctColor(chg) }}>
+                            {formatPercent(chg)}
+                          </span>
+                          {spark && spark.length > 1 && (
+                            <Sparkline points={spark} color={chg >= 0 ? '#ef4444' : '#22c55e'} />
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -798,29 +903,13 @@ export default function HomePage() {
                     rating: r.rating,
                   },
                   r.score !== null ? (
-                    <div key={`${r.symbol}-scorebar`} style={{ minWidth: '130px' }}>
-                      <div
-                        style={{
-                          height: 6,
-                          borderRadius: 3,
-                          backgroundColor: 'rgba(255,255,255,0.06)',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: '100%',
-                            width: `${Math.min(r.score, 100)}%`,
-                            borderRadius: 3,
-                            background: `linear-gradient(90deg, #3b82f6, ${
-                              r.score >= 80 ? '#ef4444' : r.score >= 65 ? '#f59e0b' : '#60a5fa'
-                            })`,
-                          }}
-                        />
-                      </div>
-                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 4, textAlign: 'right' }}>
-                        五因子 {r.score}/100
-                      </div>
+                    <div key={`${r.symbol}-ring`} style={{ minWidth: '46px' }}>
+                      <ScoreRing
+                        score={r.score}
+                        color={
+                          r.score >= 80 ? '#ef4444' : r.score >= 65 ? '#f59e0b' : r.score >= 45 ? '#60a5fa' : '#94a3b8'
+                        }
+                      />
                     </div>
                   ) : null,
                 ),
@@ -861,10 +950,14 @@ export default function HomePage() {
                 onMouseEnter={(e) => {
                   if (f.ready) {
                     (e.currentTarget as HTMLDivElement).style.borderColor = '#3b82f6';
+                    (e.currentTarget as HTMLDivElement).style.boxShadow = '0 10px 30px rgba(37,99,235,0.3)';
+                    (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   (e.currentTarget as HTMLDivElement).style.borderColor = '#1e293b';
+                  (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+                  (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
                 }}
               >
                 <div style={{ fontSize: '28px' }}>{f.icon}</div>

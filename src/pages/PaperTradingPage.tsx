@@ -23,13 +23,17 @@ import {
 } from '../api/dataService';
 import { detectMarket, pctColor } from '../lib/stock';
 import { getMarketStatus } from '../lib/marketHours';
+import { theme } from '../lib/theme';
 import TopNav from '../components/TopNav';
 
 const CARD = {
-  backgroundColor: '#111827',
-  border: '1px solid #1e293b',
-  borderRadius: '12px',
+  backgroundColor: 'rgba(17,24,39,0.6)',
+  backdropFilter: 'blur(14px)',
+  WebkitBackdropFilter: 'blur(14px)',
+  border: '1px solid rgba(96,165,250,0.16)',
+  borderRadius: '14px',
   padding: '16px',
+  boxShadow: '0 10px 36px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)',
 } as const;
 
 const INPUT = {
@@ -379,7 +383,7 @@ export default function PaperTradingPage() {
     : [];
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0a0e17', padding: '20px 24px', color: '#e2e8f0' }}>
+    <div style={{ ...theme.page, padding: '20px 24px' }}>
       {/* 顶部导航（全站统一） */}
       <TopNav />
 
@@ -611,10 +615,16 @@ export default function PaperTradingPage() {
                     ⚪ {mktStatus.label} —— {mktStatus.detail}
                   </div>
                 )}
-                <div style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 4px' }}>当日分时</div>
-                <div ref={intradayRef} style={{ height: '160px' }} />
-                <div style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 4px' }}>日 K（近 120 日，红涨绿跌）</div>
-                <div ref={dailyRef} style={{ height: '220px' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginTop: '10px' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: 4 }}>当日分时</div>
+                    <div ref={intradayRef} style={{ height: '190px' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: 4 }}>日 K（近 120 日，红涨绿跌）</div>
+                    <div ref={dailyRef} style={{ height: '190px' }} />
+                  </div>
+                </div>
               </>
             )}
           </div>

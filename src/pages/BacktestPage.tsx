@@ -3,6 +3,7 @@ import * as echarts from 'echarts';
 import { runBacktest, type BacktestResult } from '../api/dataService';
 import { detectMarket, marketLabel, pctColor } from '../lib/stock';
 import TopNav from '../components/TopNav';
+import { theme } from '../lib/theme';
 
 /** 策略配置 */
 const STRATEGIES = [
@@ -165,8 +166,7 @@ export default function BacktestPage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: '#0a0e17',
+                ...theme.page,
         color: '#e2e8f0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}

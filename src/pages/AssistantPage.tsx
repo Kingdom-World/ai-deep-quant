@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { askAssistant } from '../api/dataService';
 import TopNav from '../components/TopNav';
+import { theme } from '../lib/theme';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -56,8 +57,7 @@ export default function AssistantPage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: '#0a0e17',
+                ...theme.page,
         color: '#e2e8f0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         display: 'flex',

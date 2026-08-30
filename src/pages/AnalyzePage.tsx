@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { getHistory, getQuote } from '../api/dataService';
 import TopNav from '../components/TopNav';
+import { theme } from '../lib/theme';
 import {
   analyzeStockPotential,
   detectMarket,
@@ -159,8 +160,7 @@ export default function AnalyzePage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        backgroundColor: '#0a0e17',
+                ...theme.page,
         color: '#e2e8f0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}

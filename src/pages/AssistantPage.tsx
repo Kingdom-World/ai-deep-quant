@@ -10,6 +10,7 @@ interface ChatMessage {
   symbol?: string;
   question?: string;
   type?: string;
+  engine?: string;
 }
 
 /** 快捷提问 */
@@ -80,7 +81,7 @@ export default function AssistantPage() {
     setMessages((prev) => [...prev, { role: 'user', text: q }]);
     try {
       const res = await askAssistant(q);
-      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol, question: q, type: res.type }]);
+      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol, question: q, type: res.type, engine: res.engine }]);
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
@@ -164,6 +165,8 @@ export default function AssistantPage() {
                     wordBreak: 'break-word',
                   }}
                 >
+                  {m.engine === 'cloud' && <span style={{ display: 'inline-block', fontSize: 10, color: '#93c5fd', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🛰️ 云端专家模型</span>}
+                  {m.engine === 'knowledge' && <span style={{ display: 'inline-block', fontSize: 10, color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🧠 学习知识库</span>}
                   {m.text}
                   {m.symbol && (
                     <div style={{ marginTop: '10px' }}>

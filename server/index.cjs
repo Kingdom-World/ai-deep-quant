@@ -22,6 +22,7 @@ const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const auth = require('./auth.cjs');
 const brain = require('./ai/brain.cjs');
+const cloudAI = require('./ai/cloud.cjs');
 
 // 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失（配合 start.bat 看门狗）
 process.on('uncaughtException', (e) => console.error('[兜底] 未捕获异常:', (e && e.stack) || e));
@@ -1106,18 +1107,38 @@ app.get('/api/qa', async (req, res) => {
     try { brain.recordQA(q, obj.answer, { type: obj.type }); } catch { /* 语料记录失败不阻塞 */ }
     return res.json(obj);
   };
-  // 自学习知识库优先（来自用户教学与反馈训练）
+  if (!q) return reply({ question: q, type: 'empty', answer: '请告诉我你的问题，例如「分析 AAPL」或「平台怎么用？」' });
+  // 自学习知识库（用户教学 / 高赞问答）
   const hit = brain.lookup(q);
-  if (hit) {
+  if (hit && hit.score >= 0.7) {
     return reply({
-      question: q,
-      type: 'learned',
+      question: q, type: 'learned', engine: 'knowledge',
       answer: `${hit.entry.a}
 
 （🧠 来自学习知识库 · 匹配置信 ${Math.round(hit.score * 100)}%）`,
     });
   }
-  if (!q) return reply({ question: q, type: 'empty', answer: '请告诉我你的问题，例如「分析 AAPL」或「平台怎么用？」' });
+  // 云端专家模型优先（配置 AI_CLOUD_* 后生效；失败自动回退本地规则引擎）
+  if (cloudAI.configured()) {
+    try {
+      const ctx = [
+        { role: 'system', content: process.env.AI_CLOUD_SYSTEM || '你是「AI深度量化」平台的金融研究助手。回答专业、结构化；所有内容为学术研究演示，不构成任何投资建议；拒绝荐股与收益承诺。' },
+      ];
+      if (hit) ctx.push({ role: 'system', content: `平台知识库参考（置信 ${Math.round(hit.score * 100)}%）：
+${hit.entry.a}` });
+      ctx.push({ role: 'user', content: q });
+      const answer = await cloudAI.chat(ctx);
+      if (answer) return reply({ question: q, type: 'cloud', engine: 'cloud', answer });
+    } catch { /* 云端失败自动回退 */ }
+  }
+  if (hit) {
+    return reply({
+      question: q, type: 'learned', engine: 'knowledge',
+      answer: `${hit.entry.a}
+
+（🧠 来自学习知识库 · 匹配置信 ${Math.round(hit.score * 100)}%）`,
+    });
+  }
 
   try {
     // 回测指引（优先级高于通用指南：避免「回测怎么用」被使用指南截胡）

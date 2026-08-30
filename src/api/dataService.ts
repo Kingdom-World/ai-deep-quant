@@ -569,7 +569,7 @@ export const runBacktest = async (params: {
 /** 5f. 网站 AI 问答（后端离线规则引擎） */
 export const askAssistant = async (
   question: string,
-): Promise<{ question: string; type: string; answer: string; symbol?: string }> => {
+): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string }> => {
   const qs = new URLSearchParams();
   qs.set('q', question);
   return apiGet(`/qa?${qs.toString()}`);

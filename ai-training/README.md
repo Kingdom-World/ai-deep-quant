@@ -4,6 +4,18 @@
 >（金融问答 / 量化分析解读 / 专业报告生成 / 合规拒答）。
 > **本地电脑零计算**——训练与部署全部在云端免费额度完成。
 
+## 🇨🇳 国内直连方案（无代理必读——本机无法访问 HF/Colab/Kaggle 时采用）
+
+| 环节 | 国内直连方案 | 说明 |
+| --- | --- | --- |
+| 训练算力 | **百度飞桨 AI Studio**（免费算力卡，V100/A100）· **ModelScope 魔搭免费 Notebook** · **阿里云天池** | 全部国内直连，注册即用 |
+| 模型权重下载 | **ModelScope 魔搭**（Qwen2.5 官方模型齐全）· **hf-mirror.com**（HF 镜像：`export HF_ENDPOINT=https://hf-mirror.com` 后 huggingface_hub 照常下载） | 无需代理 |
+| 训练框架 | LLaMA Factory（两者环境均支持）/ 本包 train_qlora.py | 不变 |
+| 部署推理 | **阿里云百炼 DashScope**（`https://dashscope.aliyuncs.com/compatible-mode/v1`，新用户免费 token，OpenAI 兼容，国内直连）| 平台 .env 直接填 |
+| 代码托管 | GitHub（脚本/数据集）+ ModelScope（模型） | 不变 |
+
+> 训练产物（合并后的模型）建议上传 ModelScope 存储；平台 .env 的 AI_CLOUD_* 按上表填 DashScope 即可立即获得云端智能引擎。
+
 ## 技术选型（调研结论）
 
 | 项 | 选择 | 理由 |

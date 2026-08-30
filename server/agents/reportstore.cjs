@@ -13,9 +13,10 @@ function ensure() {
   fs.mkdirSync(DIR, { recursive: true });
 }
 
-function saveReport(trace) {
+function saveReport(trace, uid) {
   try {
     ensure();
+    trace.uid = uid || 'default';
     const id = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.random().toString(36).slice(2, 8);
     const file = path.join(DIR, `${id}.json`);
     const tmp = `${file}.tmp`;
@@ -30,6 +31,7 @@ function saveReport(trace) {
     }
     index.unshift({
       id,
+      uid: trace.uid,
       symbol: trace.symbol,
       name: trace.name ?? '',
       mode: trace.mode,
@@ -57,11 +59,12 @@ function getReport(id) {
   }
 }
 
-function listReports({ symbol, limit = 20 } = {}) {
+function listReports({ symbol, limit = 20, uid } = {}) {
   try {
     ensure();
     if (!fs.existsSync(INDEX)) return [];
     let index = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
+    if (uid) index = index.filter((x) => (x.uid || 'admin') === uid); // 历史无主报告归属 admin
     if (symbol) index = index.filter((x) => x.symbol === symbol || x.name === symbol);
     return index.slice(0, Math.min(Math.max(limit, 1), 100));
   } catch {

@@ -1229,7 +1229,7 @@ app.post('/api/agents/analyze', async (req, res) => {
       datafeeds.getAll(code),
     ]);
     if (!klines.length) return res.status(404).json({ ok: false, error: `未获取到 ${symbol} 的行情数据` });
-    const trace = agentTeam.run({ symbol, klines, quote, mode, agent: String(body.agent || ''), entryPrice: Number(body.entryPrice) || null, feed });
+    const trace = agentTeam.run({ symbol, klines, quote, mode, agent: String(body.agent || ''), entryPrice: Number(body.entryPrice) || null, feed, uid: broker.uidOf(req) });
     res.json({ ok: true, name: quote?.name, ...trace });
   } catch (e) {
     res.status(500).json({ ok: false, error: `Agent 团队分析失败: ${e.message?.slice(0, 80)}` });
@@ -1239,13 +1239,13 @@ app.post('/api/agents/analyze', async (req, res) => {
 /** GET /api/agents/report/:id —— 完整报告（含全部 Agent 全文） */
 app.get('/api/agents/report/:id', (req, res) => {
   const r = agentReportStore.getReport(req.params.id);
-  if (!r) return res.status(404).json({ ok: false, error: '报告不存在或已过期' });
+  if (!r || r.uid !== broker.uidOf(req)) return res.status(404).json({ ok: false, error: '报告不存在或已过期' });
   res.json({ ok: true, report: r });
 });
 
 /** GET /api/agents/reports —— 历史报告列表 */
 app.get('/api/agents/reports', (req, res) => {
-  res.json({ ok: true, list: agentReportStore.listReports({ symbol: req.query.symbol, limit: Number(req.query.limit) || 20 }) });
+  res.json({ ok: true, list: agentReportStore.listReports({ symbol: req.query.symbol, limit: Number(req.query.limit) || 20, uid: broker.uidOf(req) }) });
 });
 
 /** GET /api/feed/:symbol —— 量化看板右侧面板数据（资金流/财务/估值/公告） */

@@ -625,7 +625,7 @@ function riskChief(trade, trio, debate, verdict, digest) {
 
 // ═══════════ 主理人编排器 ═══════════
 
-function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed }) {
+function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed, uid = 'default' }) {
   const price = quote?.price ?? klines[klines.length - 1]?.close ?? null;
   const stages = {};
   let final = null;
@@ -649,8 +649,8 @@ function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, fe
       final: final_,
       disclaimer: DISCLAIMER,
     };
-    const reportId = reportstore.saveReport(trace);
-    return { ...trace, reportId };
+    const reportId = reportstore.saveReport(trace, uid);
+    return { ...trace, reportId, uid };
   };
 
   if (mode === 'single') {

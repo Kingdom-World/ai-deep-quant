@@ -23,6 +23,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const auth = require('./auth.cjs');
 const brain = require('./ai/brain.cjs');
 const cloudAI = require('./ai/cloud.cjs');
+const reasoning = require('./ai/reasoning.cjs');
 
 // 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失（配合 start.bat 看门狗）
 process.on('uncaughtException', (e) => console.error('[兜底] 未捕获异常:', (e && e.stack) || e));
@@ -1147,7 +1148,14 @@ app.get('/api/qa', async (req, res) => {
     return res.json(obj);
   };
   if (!q) return reply({ question: q, type: 'empty', answer: '请告诉我你的问题，例如「分析 AAPL」或「平台怎么用？」' });
-  // 自学习知识库（用户教学 / 高赞问答）
+
+  // ReAct 工具集（推理引擎按意图调用，避免循环依赖由宿主注入）
+  const tools = {
+    analyzeStock: (sym) => analyzeForQA(sym),
+    sectorFlow: (t) => sectors.getFlow(t),
+  };
+
+  // 自学习知识库（用户教学 / 高赞问答，高置信直接命中）
   const hit = brain.lookup(q);
   if (hit && hit.score >= 0.7) {
     return reply({
@@ -1157,18 +1165,25 @@ app.get('/api/qa', async (req, res) => {
 （🧠 来自学习知识库 · 匹配置信 ${Math.round(hit.score * 100)}%）`,
     });
   }
-  // 云端专家模型优先（配置 AI_CLOUD_* 后生效；失败自动回退本地规则引擎）
+  // 云端专家模型优先（ReAct 观察结果注入上下文 → 大模型综合真思考链）
   if (cloudAI.configured()) {
     try {
+      const dataCtx = await reasoning.buildCloudContext(q, tools);
       const ctx = [
         { role: 'system', content: process.env.AI_CLOUD_SYSTEM || '你是「AI深度量化」平台的金融研究助手。回答专业、结构化；所有内容为学术研究演示，不构成任何投资建议；拒绝荐股与收益承诺。' },
       ];
+      if (dataCtx) ctx.push({ role: 'system', content: dataCtx });
       if (hit) ctx.push({ role: 'system', content: `平台知识库参考（置信 ${Math.round(hit.score * 100)}%）：
 ${hit.entry.a}` });
       ctx.push({ role: 'user', content: q });
       const answer = await cloudAI.chat(ctx);
       if (answer) return reply({ question: q, type: 'cloud', engine: 'cloud', answer });
     } catch { /* 云端失败自动回退 */ }
+  }
+  // 本地 ReAct 推理引擎（无云端时的思考链回答）
+  if (reasoning.enabled !== false) {
+    const routed = await reasoning.route(q, tools);
+    if (routed) return reply({ question: q, type: routed.type, engine: 'reasoner', answer: routed.answer, reasoning: routed.reasoning });
   }
   if (hit) {
     return reply({
@@ -1252,6 +1267,7 @@ ${hit.entry.a}` });
 // ───────────── 6b. Agent 团队分析（主理人调度制五阶段流水线） ─────────────
 const agentTeam = require('./agents/agents.cjs');
 const datafeeds = require('./agents/datafeeds.cjs');
+const sectors = require('./sectors.cjs');
 const agentReportStore = require('./agents/reportstore.cjs');
 
 /** POST /api/agents/analyze  body: { symbol, mode?: full|quick|debate|risk|single, agent?, entryPrice? } */
@@ -1285,6 +1301,30 @@ app.get('/api/agents/report/:id', (req, res) => {
 /** GET /api/agents/reports —— 历史报告列表 */
 app.get('/api/agents/reports', (req, res) => {
   res.json({ ok: true, list: agentReportStore.listReports({ symbol: req.query.symbol, limit: Number(req.query.limit) || 20, uid: broker.uidOf(req) }) });
+});
+
+/** GET /api/sectors/flow?type=industry|concept|region —— 板块主力净流入排行 */
+app.get('/api/sectors/flow', async (req, res) => {
+  const type = ['industry', 'concept', 'region'].includes(req.query.type) ? req.query.type : 'industry';
+  try {
+    const r = await sectors.getFlow(type);
+    if (!r) return res.status(502).json({ ok: false, error: '板块数据源暂不可用' });
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: `板块数据失败: ${e.message?.slice(0, 60)}` });
+  }
+});
+
+/** GET /api/sectors/cards?type=... —— 板块卡片（涨跌幅排序 + 分时 sparkline + 领涨股） */
+app.get('/api/sectors/cards', async (req, res) => {
+  const type = ['industry', 'concept', 'region'].includes(req.query.type) ? req.query.type : 'industry';
+  try {
+    const r = await sectors.getCards(type, 8);
+    if (!r) return res.status(502).json({ ok: false, error: '板块数据源暂不可用' });
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: `板块数据失败: ${e.message?.slice(0, 60)}` });
+  }
 });
 
 /** GET /api/feed/:symbol —— 量化看板右侧面板数据（资金流/财务/估值/公告） */

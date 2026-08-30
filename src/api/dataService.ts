@@ -39,7 +39,7 @@ const getCacheKey = (type: string, params: unknown): string => `${type}:${JSON.s
 const inFlight = new Map<string, Promise<unknown>>();
 
 /** 基础请求（相对路径 /api，经 vite proxy 或同源到后端） */
-async function apiGet<T>(path: string): Promise<T> {
+export async function apiGet<T>(path: string): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
   try {

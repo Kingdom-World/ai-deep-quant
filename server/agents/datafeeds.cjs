@@ -6,14 +6,29 @@
 const axios = require('axios');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 const cache = new Map();
+const lastGood = new Map();
 const TTL = { flow: 120_000, fund: 600_000, news: 600_000, val: 120_000 };
 
 async function getJSON(url, referer) {
-  const res = await axios.get(url, {
-    headers: { 'User-Agent': UA, Referer: referer },
-    timeout: 6000,
-  });
-  return res.data;
+  let lastErr = null;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await axios.get(url, { headers: { 'User-Agent': UA, Referer: referer }, timeout: 6000 });
+      return res.data;
+    } catch (e) {
+      lastErr = e;
+      if (url.includes('push2.eastmoney.com')) {
+        try {
+          const res2 = await axios.get(url.replace('push2.eastmoney.com', 'push2delay.eastmoney.com'), { headers: { 'User-Agent': UA }, timeout: 6000 });
+          return res2.data;
+        } catch (e2) {
+          lastErr = e2;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  throw lastErr;
 }
 
 function emSecid(symbol) {
@@ -42,8 +57,14 @@ function cached(key, ttl, loader) {
     } catch {
       data = null;
     }
-    cache.set(key, { ts: Date.now(), data });
-    return data;
+    if (data != null) {
+      cache.set(key, { ts: Date.now(), data });
+      lastGood.set(key, { ts: Date.now(), data });
+      return data;
+    }
+    const g = lastGood.get(key);
+    if (g && Date.now() - g.ts < 10 * 60_000) return g.data;
+    return null;
   })();
 }
 

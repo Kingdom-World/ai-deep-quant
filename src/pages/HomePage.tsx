@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TopNav from '../components/TopNav';
 import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
+import SectorMarketPanel from '../components/SectorMarketPanel';
 import {
   getHistory,
   getIndices,
@@ -708,6 +709,15 @@ export default function HomePage() {
               })}
             </div>
           </div>
+        </section>
+
+        {/* ── 板块与资金 ── */}
+        <section style={{ marginBottom: '36px' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 16px', color: '#f1f5f9' }}>
+            🧭 板块与资金
+            <span style={{ fontSize: '12px', color: '#64748b', marginLeft: 10, fontWeight: 400 }}>数据来自东方财富公开接口 · 30 秒缓存</span>
+          </h2>
+          <SectorMarketPanel />
         </section>
 
         {/* ── 我的收藏（可增删，localStorage 持久化） ── */}

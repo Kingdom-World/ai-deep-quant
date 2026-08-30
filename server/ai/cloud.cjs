@@ -38,23 +38,49 @@ function configured() {
 async function chat(messages, { maxTokens = 2000, temperature = 0.6, timeout = 45000, thinking } = {}) {
   const cfg = resolve();
   if (!cfg) return null;
-  const body = { model: cfg.model, messages, max_tokens: maxTokens, temperature, stream: false };
-  // 智谱思考模式开关（GLM-4.5+ 支持交错思考；免费 Flash 系列思考不另计费）
-  if (cfg.provider === 'zhipu' && thinking !== undefined) body.thinking = { type: thinking };
-  try {
-    const res = await axios.post(
-      `${cfg.base}/chat/completions`,
-      body,
-      { headers: { Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json' }, timeout },
-    );
-    const msg = res.data?.choices?.[0]?.message ?? {};
-    const content = typeof msg.content === 'string' ? msg.content : null;
-    if (!content) return null;
-    return { content, reasoning: typeof msg.reasoning_content === 'string' ? msg.reasoning_content : null };
-  } catch (e) {
-    console.warn(`[AI云端:${cfg.provider}] 调用失败:`, e.message?.slice(0, 80));
-    return null;
+
+  // 模型故障转移链：主模型 → AI_CLOUD_FALLBACK_MODELS（逗号分隔，应对免费模型高峰拥塞 429）
+  const models = [
+    cfg.model,
+    ...(process.env.AI_CLOUD_FALLBACK_MODELS || '').split(',').map((x) => x.trim()).filter(Boolean),
+  ];
+  const delays = [0, 1000, 3000]; // 429 退避：1s → 3s
+  let lastErr = null;
+  let lastStatus = null;
+
+  for (const model of models) {
+    for (const delay of delays) {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      const body = { model, messages, max_tokens: maxTokens, temperature, stream: false };
+      // 智谱 GLM-4.5+ 思考模式开关（老模型不传该参数）
+      if (cfg.provider === 'zhipu' && thinking !== undefined && /glm-4\.[5-9]/.test(model)) {
+        body.thinking = { type: thinking };
+      }
+      try {
+        const res = await axios.post(
+          `${cfg.base}/chat/completions`,
+          body,
+          { headers: { Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json' }, timeout },
+        );
+        const msg = res.data?.choices?.[0]?.message ?? {};
+        // content 归一化：思考模式下可能返回分段数组，拼接 text 片段
+        let content = null;
+        const raw = msg.content;
+        if (typeof raw === 'string') content = raw;
+        else if (Array.isArray(raw)) content = raw.map((p) => (typeof p === 'string' ? p : p?.text ?? '')).join('');
+        else if (raw && typeof raw === 'object' && typeof raw.text === 'string') content = raw.text;
+        if (!content) return null;
+        return { content, reasoning: typeof msg.reasoning_content === 'string' ? msg.reasoning_content : null, model };
+      } catch (e) {
+        lastErr = e;
+        lastStatus = e.response?.status ?? null;
+        if (lastStatus && lastStatus !== 429 && lastStatus !== 503) break; // 认证/参数错误换模型也无意义
+      }
+    }
+    console.warn(`[AI云端:${cfg.provider}] 模型 ${model} 不可用（${lastStatus ?? '网络'}），尝试备用模型…`);
   }
+  console.warn(`[AI云端:${cfg.provider}] 全部模型不可用:`, lastStatus ?? lastErr?.message?.slice(0, 60));
+  return null;
 }
 
 module.exports = { configured, chat, resolve };

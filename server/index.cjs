@@ -1176,8 +1176,20 @@ app.get('/api/qa', async (req, res) => {
       if (hit) ctx.push({ role: 'system', content: `平台知识库参考（置信 ${Math.round(hit.score * 100)}%）：
 ${hit.entry.a}` });
       ctx.push({ role: 'user', content: q });
-      const answer = await cloudAI.chat(ctx);
-      if (answer) return reply({ question: q, type: 'cloud', engine: 'cloud', answer });
+      const out = await cloudAI.chat(ctx, { thinking: 'enabled' });
+      if (out?.content) {
+        return reply({
+          question: q, type: 'cloud', engine: 'cloud',
+          answer: out.reasoning
+            ? `🧠 模型思考链：
+${out.reasoning.trim()}
+
+──── 回答 ────
+${out.content}`
+            : out.content,
+          reasoning: out.reasoning ?? null,
+        });
+      }
     } catch { /* 云端失败自动回退 */ }
   }
   // 本地 ReAct 推理引擎（无云端时的思考链回答）

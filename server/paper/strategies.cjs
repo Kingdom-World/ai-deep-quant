@@ -210,10 +210,10 @@ async function runStrategies() {
       }
       st.lastRunAt = nowISO();
       st.error = '';
-      broker.logEvent(`[策略:${st.type}] ${st.symbol} ${st.lastSignal}`);
+      broker.logEvent(st.uid, `[策略:${st.type}] ${st.symbol} ${st.lastSignal}`);
     } catch (e) {
       st.error = String(e.message).slice(0, 200);
-      broker.logEvent(`[策略:${st.type}] ${st.symbol} 评估异常: ${st.error}`);
+      broker.logEvent(st.uid, `[策略:${st.type}] ${st.symbol} 评估异常: ${st.error}`);
     }
   }
   save();
@@ -248,7 +248,7 @@ function start(uid, { type, symbol, name, params }) {
   strategies.unshift(st);
   if (strategies.length > 50) strategies.length = 50;
   save();
-  broker.logEvent(`[策略] 启动 ${type} @ ${symbol}`);
+  broker.logEvent(uid, `[策略] 启动 ${type} @ ${symbol}`);
   // 异步立即评估一次，不等下一个整周期
   setImmediate(() => runStrategies().catch(() => {}));
   return { ok: true, strategy: st };
@@ -260,7 +260,7 @@ function stop(uid, id) {
   st.status = 'stopped';
   st.lastSignal = '已手动停止';
   save();
-  broker.logEvent(`[策略] 停止 ${st.type} @ ${st.symbol}`);
+  broker.logEvent(st.uid, `[策略] 停止 ${st.type} @ ${st.symbol}`);
   return { ok: true };
 }
 

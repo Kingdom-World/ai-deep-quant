@@ -6,11 +6,15 @@ import { authApi } from '../api/dataService';
 
 export default function UserMenu() {
   const [username, setUsername] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     authApi
       .me()
-      .then((m) => setUsername(m.ok ? m.username : null))
+      .then((m) => {
+        setUsername(m.ok ? m.username : null);
+        setIsAdmin(!!m.isAdmin);
+      })
       .catch(() => setUsername(null));
   }, []);
 
@@ -46,6 +50,11 @@ export default function UserMenu() {
           {username.slice(0, 1).toUpperCase()}
         </span>
         {username}
+        {isAdmin && (
+          <span style={{ fontSize: 9, color: '#fbbf24', backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 4, padding: '0 5px' }}>
+            管理员
+          </span>
+        )}
       </span>
       <button
         style={{

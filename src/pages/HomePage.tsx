@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TopNav from '../components/TopNav';
-import { getMarketStatus } from '../lib/marketHours';
+import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
 import {
   getHistory,
   getIndices,
@@ -148,6 +148,7 @@ const FEATURES = [
 
 export default function HomePage() {
   const navigate = useNavigate();
+  useMinuteTick(30000); // 状态徽章时钟兜底
   // 大盘指数（每 10 秒轮询刷新）
   const [indices, setIndices] = useState<IndexData[]>(INITIAL_INDICES);
   const [indicesLoading, setIndicesLoading] = useState(true);

@@ -22,7 +22,7 @@ import {
   type UnifiedKline,
 } from '../api/dataService';
 import { detectMarket, pctColor } from '../lib/stock';
-import { getMarketStatus } from '../lib/marketHours';
+import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
 import { theme } from '../lib/theme';
 import TopNav from '../components/TopNav';
 
@@ -76,6 +76,7 @@ const fmtMoney = (v: number, digits = 2) =>
 
 export default function PaperTradingPage() {
   const navigate = useNavigate();
+  useMinuteTick(30000); // 状态徽章时钟兜底
   const [account, setAccount] = useState<PaperAccount | null>(null);
   const [strategies, setStrategies] = useState<PaperStrategy[]>([]);
   const [logs, setLogs] = useState<PaperLogEntry[]>([]);

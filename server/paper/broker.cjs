@@ -21,8 +21,8 @@ function uidOf(req) {
   return req.user?.username || req.authUser || 'default';
 }
 
-function logEvent(msg) {
-  store.state.logs.push({ t: nowISO(), msg: String(msg).slice(0, 300) });
+function logEvent(uid, msg) {
+  store.state.logs.push({ t: nowISO(), uid, msg: String(msg).slice(0, 300) });
   if (store.state.logs.length > 500) store.state.logs.splice(0, store.state.logs.length - 500);
 }
 
@@ -140,7 +140,7 @@ async function placeOrder(uid, { symbol, name, side, type, qty, limitPrice }) {
     order.reason = risk.reason;
     store.state.orders[uid].unshift(order);
     store.save();
-    logEvent(`拒单 ${side} ${symbol} ×${qty}: ${risk.reason}`);
+    logEvent(uid, `拒单 ${side} ${symbol} ×${qty}: ${risk.reason}`);
     return { ok: false, error: risk.reason, order };
   }
 
@@ -160,9 +160,9 @@ async function placeOrder(uid, { symbol, name, side, type, qty, limitPrice }) {
   if (store.state.orders[uid].length > 300) store.state.orders[uid].length = 300;
   store.save();
   if (order.status === 'filled') {
-    logEvent(`成交 ${side} ${symbol} ×${qty} @ ${order.avgFillPrice}（费 ${order.fees.total}）`);
+    logEvent(uid, `成交 ${side} ${symbol} ×${qty} @ ${order.avgFillPrice}（费 ${order.fees.total}）`);
   } else if (order.status === 'resting') {
-    logEvent(`挂单 ${side} ${symbol} ×${qty} @ 限价 ${limitPrice}`);
+    logEvent(uid, `挂单 ${side} ${symbol} ×${qty} @ 限价 ${limitPrice}`);
   }
   return { ok: order.status !== 'rejected', order };
 }
@@ -177,7 +177,7 @@ function cancelOrder(uid, orderId) {
   order.status = 'canceled';
   order.filledAt = nowISO();
   store.save();
-  logEvent(`撤单 ${order.side} ${order.symbol} ×${order.qty}`);
+  logEvent(uid, `撤单 ${order.side} ${order.symbol} ×${order.qty}`);
   return { ok: true };
 }
 
@@ -195,7 +195,7 @@ async function runMatcher() {
         tryFillLimitOrder(order, quote);
         if (order.status === 'filled' && before !== 'filled') {
           if (applyFill(uid, order, order.avgFillPrice)) {
-            logEvent(`挂单成交 ${order.side} ${order.symbol} ×${order.qty} @ ${order.avgFillPrice}`);
+            logEvent(uid, `挂单成交 ${order.side} ${order.symbol} ×${order.qty} @ ${order.avgFillPrice}`);
           }
         }
       }

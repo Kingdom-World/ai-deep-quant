@@ -3,12 +3,14 @@
 //   · 让"数据没变"在休市日有明确解释，而不是看起来像故障
 //   · 与后端 server/paper/strategies.cjs 的 isMarketOpen 口径一致（近似值）
 // ─────────────────────────────────────────────────────────────
+import { useEffect, useState } from 'react';
+
 export type MarketCode = 'CN' | 'HK' | 'US';
 
 export interface MarketStatus {
   /** 当前是否处于可交易时段 */
   open: boolean;
-  /** 状态短语：交易中 / 午间休市 / 已收盘 / 周末休市 */
+  /** 状态短语：交易中 / 午间休市 / 未开盘 / 已收盘 / 周末休市 */
   label: string;
   /** 给用户的一句话解释 */
   detail: string;
@@ -17,6 +19,19 @@ export interface MarketStatus {
 /** 当前北京时间（不受本机时区影响） */
 function beijingNow(now: Date): Date {
   return new Date(now.getTime() + (now.getTimezoneOffset() + 480) * 60_000);
+}
+
+/**
+ * 分钟级时钟兜底：即使轮询静默失败（无状态更新、页面不重渲染），
+ * 状态徽章也会每 30 秒强制重算一次，保证"周末休市/交易中"永不挂错。
+ */
+export function useMinuteTick(ms = 30_000): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return tick;
 }
 
 export function getMarketStatus(market: MarketCode, now: Date = new Date()): MarketStatus {
@@ -33,20 +48,23 @@ export function getMarketStatus(market: MarketCode, now: Date = new Date()): Mar
   }
 
   if (market === 'CN') {
+    if (mins < 555) return { open: false, label: '未开盘', detail: 'A股尚未开盘，早盘 9:15 开始（当前数据为上一交易日收盘价）' };
     if (mins >= 555 && mins < 700) return { open: true, label: '交易中', detail: 'A股上午盘（9:15-11:35）' };
     if (mins >= 700 && mins < 775) return { open: false, label: '午间休市', detail: 'A股午间休市（11:40-13:00）' };
     if (mins >= 775 && mins <= 905) return { open: true, label: '交易中', detail: 'A股下午盘（13:00-15:05）' };
     return { open: false, label: '已收盘', detail: 'A股今日已收盘，数据为最近交易日收盘价' };
   }
   if (market === 'HK') {
-    if (mins >= 555 && mins < 720) return { open: true, label: '交易中', detail: '港股上午盘（9:15-12:00）' };
+    if (mins < 555) return { open: false, label: '未开盘', detail: '港股尚未开盘（9:30 开始）' };
+    if (mins >= 555 && mins < 720) return { open: true, label: '交易中', detail: '港股上午盘（9:30-12:00）' };
     if (mins >= 720 && mins < 780) return { open: false, label: '午间休市', detail: '港股午间休市（12:00-13:00）' };
     if (mins >= 780 && mins <= 970) return { open: true, label: '交易中', detail: '港股下午盘（13:00-16:10）' };
     return { open: false, label: '已收盘', detail: '港股已收盘，数据为最近交易日收盘价' };
   }
   // 美股：北京时间约 21:25 - 次日 04:05（简化处理，未细分夏令时）
   if (mins >= 1285 || mins <= 245) return { open: true, label: '交易中', detail: '美股夜间交易时段（北京时间）' };
-  return { open: false, label: '已收盘', detail: '美股已收盘，数据为最近交易日收盘价' };
+  if (mins < 555) return { open: false, label: '已收盘', detail: '美股已收盘，数据为最近交易日收盘价' };
+  return { open: false, label: '盘前', detail: '美股盘前时段（北京时间夜间开盘）' };
 }
 
 /** 状态徽章的颜色：交易中=红(开盘活跃)，休市=灰 */

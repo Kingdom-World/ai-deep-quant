@@ -125,7 +125,7 @@ app.use((req, res, next) => {
 });
 
 // 认证路由：注册 / 登录 / 登出 / 会话查询
-app.use('/api/auth', auth.router());
+app.use('/api/auth', auth.router({ adminUsername: AUTH_ENABLED ? SITE_USERNAME : '' }));
 
 
 // ───────────── 内存缓存 ─────────────
@@ -1248,6 +1248,7 @@ app.post('/api/ai/feedback', (req, res) => {
 
 /** POST /api/ai/teach —— 用户教学：直接写入知识库 */
 app.post('/api/ai/teach', (req, res) => {
+  if (req.user?.username !== SITE_USERNAME) return res.status(403).json({ ok: false, error: '仅管理员可教学' });
   const { q, a } = req.body || {};
   const r = brain.addEntry(q, a, 'user');
   res.status(r.ok ? 200 : 400).json(r);
@@ -1255,6 +1256,7 @@ app.post('/api/ai/teach', (req, res) => {
 
 /** GET /api/ai/stats —— 知识库规模 / 训练状态 */
 app.get('/api/ai/stats', (req, res) => {
+  if (req.user?.username !== SITE_USERNAME) return res.status(403).json({ ok: false, error: '仅管理员可查看学习统计' });
   res.json({ ok: true, ...brain.stats() });
 });
 
@@ -1450,7 +1452,7 @@ app.post('/api/paper/order/:id/cancel', (req, res) => {
 /** 重置模拟账户（回到初始资金，清空持仓/订单/净值） */
 app.post('/api/paper/reset', (req, res) => {
   broker.store.reset(broker.uidOf(req));
-  broker.logEvent('模拟账户已重置');
+  broker.logEvent(broker.uidOf(req), '模拟账户已重置');
   res.json({ ok: true, message: '模拟账户已重置为初始资金' });
 });
 
@@ -1467,7 +1469,8 @@ app.post('/api/paper/strategies/:id/stop', (req, res) => {
 
 /** 交易日志（最近 200 条，倒序） */
 app.get('/api/paper/logs', (req, res) => {
-  res.json(broker.store.state.logs.slice(-200).reverse());
+  const uid = broker.uidOf(req);
+  res.json(broker.store.state.logs.filter((l) => l.uid === uid).slice(-200).reverse());
 });
 
 // ───────────── 9. 静态托管（生产模式：单端口整站） ─────────────

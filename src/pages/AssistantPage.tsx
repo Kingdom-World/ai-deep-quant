@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { askAssistant, aiApi } from '../api/dataService';
+import { askAssistant, aiApi, authApi } from '../api/dataService';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 
@@ -33,12 +33,20 @@ export default function AssistantPage() {
   const [teachA, setTeachA] = useState('');
   const [teachMsg, setTeachMsg] = useState<string | null>(null);
 
+  const [me, setMe] = useState<{ username: string | null; isAdmin?: boolean } | null>(null);
   const loadStats = () => {
+    if (!me?.isAdmin) return;
     aiApi.stats().then((s) => setAiStats(s)).catch(() => {});
   };
   useEffect(() => {
-    loadStats();
+    authApi
+      .me()
+      .then((m) => setMe({ username: m.username, isAdmin: m.isAdmin }))
+      .catch(() => setMe({ username: null, isAdmin: false }));
   }, []);
+  useEffect(() => {
+    loadStats();
+  }, [me?.isAdmin]);
 
   const doTeach = async () => {
     if (!teachQ.trim() || !teachA.trim()) return;
@@ -215,7 +223,9 @@ export default function AssistantPage() {
           )}
         </div>
 
-        {/* 学习统计 + 教学 */}
+        {/* 学习统计 + 教学（仅管理员可见） */}
+        {me?.isAdmin && (
+        <div style={{ marginTop: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: '#475569' }}>
             🧠 已学习 {aiStats?.knowledge ?? 0} 条知识 · 自训练 {aiStats?.trainCount ?? 0} 轮
@@ -251,6 +261,8 @@ export default function AssistantPage() {
               教给它
             </button>
           </div>
+        )}
+        </div>
         )}
 
         {/* 快捷问题 */}

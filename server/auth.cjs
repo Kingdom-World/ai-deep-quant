@@ -195,9 +195,10 @@ function middleware() {
 }
 
 /** /api/auth 路由：register / login / logout / me */
-function router() {
+function router(opts = {}) {
   const express = require('express');
   const r = express.Router();
+  const adminName = opts.adminUsername || '';
 
   r.post('/register', (req, res) => {
     try {
@@ -227,8 +228,8 @@ function router() {
 
   r.get('/me', (req, res) => {
     const user = getUserFromRequest(req);
-    if (!user) return res.json({ ok: false, username: null });
-    res.json({ ok: true, username: user.username, uid: user.uid });
+    if (!user) return res.json({ ok: false, username: null, isAdmin: false });
+    res.json({ ok: true, username: user.username, uid: user.uid, isAdmin: !!adminName && user.username === adminName });
   });
 
   return r;

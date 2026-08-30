@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data', 'ai');
+const SEED_FILE = path.join(__dirname, '..', '..', 'ai-training', 'dataset', 'fin_seed.jsonl');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
 const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.jsonl');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.jsonl');
@@ -23,12 +24,34 @@ let state = { trainedAt: null, trainCount: 0, lastNightly: null, pendingQuestion
 function init() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    // 内置种子知识（ai-training 数据集同步注入：无需云端，本地知识库即拥有金融领域问答能力）
+    if (fs.existsSync(SEED_FILE)) {
+      for (const line of fs.readFileSync(SEED_FILE, 'utf8').trim().split('\n').filter(Boolean)) {
+        try {
+          const o = JSON.parse(line);
+          const u = (o.messages ?? []).find((m) => m.role === 'user');
+          const a = (o.messages ?? []).find((m) => m.role === 'assistant');
+          if (u && a && !knowledge.entries.some((e) => normalizeQ(e.q) === normalizeQ(u.content))) {
+            knowledge.entries.push({
+              id: 'seed-' + normalizeQ(u.content).slice(0, 16),
+              q: u.content, a: a.content, source: 'builtin',
+              createdAt: new Date().toISOString(), hits: 0, weight: 1.2,
+            });
+          }
+        } catch { /* 跳过坏行 */ }
+      }
+    }
     if (fs.existsSync(KNOWLEDGE_FILE)) {
       try {
-        knowledge = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
-        if (!Array.isArray(knowledge.entries)) knowledge = { entries: [] };
+        const saved = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
+        // 增量合并：种子知识 + 用户教学/反馈条目（按问题去重，不互相覆盖）
+        if (Array.isArray(saved.entries)) {
+          for (const e of saved.entries) {
+            if (!knowledge.entries.some((x) => normalizeQ(x.q) === normalizeQ(e.q))) knowledge.entries.push(e);
+          }
+        }
       } catch {
-        knowledge = { entries: [] };
+        /* 忽略损坏文件 */
       }
     }
     if (fs.existsSync(STATE_FILE)) {

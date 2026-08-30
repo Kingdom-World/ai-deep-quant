@@ -11,6 +11,7 @@ interface ChatMessage {
   question?: string;
   type?: string;
   engine?: string;
+  reasoning?: string | null;
 }
 
 /** 轻量 markdown 渲染（标题/加粗/列表/行内代码，供气泡使用） */
@@ -140,7 +141,7 @@ export default function AssistantPage() {
     setMessages((prev) => [...prev, { role: 'user', text: q }]);
     try {
       const res = await askAssistant(q);
-      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol, question: q, type: res.type, engine: res.engine }]);
+      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol, question: q, type: res.type, engine: res.engine, reasoning: res.reasoning ?? null }]);
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
@@ -226,6 +227,12 @@ export default function AssistantPage() {
                 >
                   {m.engine === 'cloud' && <span style={{ display: 'inline-block', fontSize: 10, color: '#93c5fd', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🛰️ 云端专家模型</span>}
                   {m.engine === 'knowledge' && <span style={{ display: 'inline-block', fontSize: 10, color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🧠 学习知识库</span>}
+                  {m.reasoning && (
+                    <details style={{ marginBottom: 8, backgroundColor: 'rgba(13,19,34,0.6)', border: '1px solid #1e293b', borderRadius: 8, padding: '6px 10px' }}>
+                      <summary style={{ fontSize: 11, color: '#93c5fd', cursor: 'pointer' }}>🧠 查看模型思考链</summary>
+                      <div style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'pre-wrap', lineHeight: 1.7, marginTop: 6 }}>{m.reasoning}</div>
+                    </details>
+                  )}
                   {renderMdLite(m.text)}
                   {m.symbol && (
                     <div style={{ marginTop: '10px' }}>

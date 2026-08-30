@@ -566,13 +566,27 @@ export const runBacktest = async (params: {
   return apiGet<BacktestResult>(`/backtest?${qs.toString()}`);
 };
 
-/** 5f. 网站 AI 问答（后端离线规则引擎） */
+/** 5f. 网站 AI 问答（云端模型生成较慢，专用 75s 超时；思考链独立返回） */
 export const askAssistant = async (
   question: string,
-): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string }> => {
+): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string; reasoning?: string | null }> => {
   const qs = new URLSearchParams();
   qs.set('q', question);
-  return apiGet(`/qa?${qs.toString()}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 75000);
+  try {
+    const res = await fetch(`/qa?${qs.toString()}`, { signal: controller.signal });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
+    }
+    return (await res.json()) as { question: string; type: string; answer: string; engine?: string; reasoning?: string | null };
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw new Error('云端模型响应超时，请稍后重试');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 // ───────────── 模拟交易（paper trading） ─────────────

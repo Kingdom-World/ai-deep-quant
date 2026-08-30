@@ -1187,13 +1187,7 @@ ${hit.entry.a}` });
       if (out?.content) {
         return reply({
           question: q, type: 'cloud', engine: 'cloud',
-          answer: out.reasoning
-            ? `🧠 模型思考链：
-${out.reasoning.trim()}
-
-──── 回答 ────
-${out.content}`
-            : out.content,
+          answer: out.content,
           reasoning: out.reasoning ?? null,
         });
       }

@@ -22,6 +22,7 @@ import {
   type UnifiedKline,
 } from '../api/dataService';
 import { detectMarket, pctColor } from '../lib/stock';
+import { getMarketStatus } from '../lib/marketHours';
 import TopNav from '../components/TopNav';
 
 const CARD = {
@@ -335,6 +336,8 @@ export default function PaperTradingPage() {
     );
 
   const stDef = STRATEGY_TYPES.find((s) => s.key === stType) ?? STRATEGY_TYPES[0];
+  // 交易时段状态（随选中标的的市场变化；每次轮询重渲染时自动刷新）
+  const mktStatus = getMarketStatus(detectMarket(selectedSymbol || 'sh600519'));
 
   /** 可点击的代码标签：页内选中行情 + 保留详情页入口 */
   const CodeTag = ({ code, label }: { code: string; label?: string }) => (
@@ -385,6 +388,21 @@ export default function PaperTradingPage() {
         <h1 style={{ fontSize: '20px', margin: 0 }}>💰 模拟交易</h1>
         <span style={{ fontSize: '12px', color: '#64748b' }}>
           100 万虚拟资金 · 真实行情撮合 · 佣金万2.5（最低5元）+ 卖出印花税千1 · 数据 10 秒刷新
+        </span>
+        <span
+          title={mktStatus.detail}
+          style={{
+            marginLeft: 'auto',
+            fontSize: '13px',
+            fontWeight: 600,
+            color: mktStatus.open ? '#ef4444' : '#94a3b8',
+            backgroundColor: 'rgba(255,255,255,0.04)',
+            border: '1px solid #1e293b',
+            padding: '4px 12px',
+            borderRadius: '999px',
+          }}
+        >
+          {mktStatus.open ? '🔴' : '⚪'} A股{mktStatus.label}
         </span>
       </div>
 
@@ -576,6 +594,21 @@ export default function PaperTradingPage() {
                     <span>最低 <span style={{ color: '#22c55e' }}>{quote.low ?? '--'}</span></span>
                     <span>昨收 {quote.prevClose ?? '--'}</span>
                     <span>成交量 {quote.volume != null ? quote.volume.toLocaleString() : '--'}</span>
+                  </div>
+                )}
+                {!mktStatus.open && (
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#f59e0b',
+                      backgroundColor: 'rgba(245,158,11,0.08)',
+                      border: '1px solid rgba(245,158,11,0.25)',
+                      borderRadius: '8px',
+                      padding: '6px 10px',
+                      margin: '8px 0',
+                    }}
+                  >
+                    ⚪ {mktStatus.label} —— {mktStatus.detail}
                   </div>
                 )}
                 <div style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 4px' }}>当日分时</div>

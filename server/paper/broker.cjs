@@ -212,7 +212,9 @@ async function runMatcher() {
         const total = +(acc.cash + marketValue).toFixed(2);
         const eq = store.state.equity[uid];
         const last = eq[eq.length - 1];
-        if (!last || last.total !== total) {
+        // 变化即记录；无变化时每 10 分钟保活一条，避免休市期间净值曲线"看起来断了"
+        const stale = !last || Date.now() - new Date(last.t).getTime() > 10 * 60_000;
+        if (!last || last.total !== total || stale) {
           eq.push({ t: nowISO(), total, cash: +acc.cash.toFixed(2), marketValue: +marketValue.toFixed(2) });
           if (eq.length > 5000) eq.splice(0, eq.length - 5000);
         }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TopNav from '../components/TopNav';
+import { getMarketStatus } from '../lib/marketHours';
 import {
   getHistory,
   getIndices,
@@ -475,6 +476,26 @@ export default function HomePage() {
               style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 16px', color: '#f1f5f9' }}
             >
               📈 市场概况
+              {(() => {
+                const st = getMarketStatus('CN');
+                return (
+                  <span
+                    title={st.detail}
+                    style={{
+                      marginLeft: '10px',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: st.open ? '#ef4444' : '#94a3b8',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      padding: '2px 10px',
+                      borderRadius: '999px',
+                      verticalAlign: 'middle',
+                    }}
+                  >
+                    {st.open ? '🔴' : '⚪'} A股{st.label}
+                  </span>
+                );
+              })()}
             </h2>
             <span
               style={{

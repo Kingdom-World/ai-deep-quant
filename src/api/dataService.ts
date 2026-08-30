@@ -575,7 +575,7 @@ export const askAssistant = async (
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 75000);
   try {
-    const res = await fetch(`/qa?${qs.toString()}`, { signal: controller.signal });
+    const res = await fetch(`${CONFIG.basePath}/qa?${qs.toString()}`, { signal: controller.signal });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
       throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);

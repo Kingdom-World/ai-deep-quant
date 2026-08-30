@@ -51,6 +51,14 @@ function renderMdLite(text: string): React.ReactNode[] {
 /** 问候语 */
 const GREETING_TEXT = '🤖 你好！我是 AI深度量化 的站内智能助手（离线规则引擎，无需联网 AI）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！';
 
+/** 加载态思考步骤（与思考链呈现形式一致） */
+const THINKING_STEPS = [
+  '🧠 正在理解你的问题…',
+  '📡 正在调取实时行情数据…',
+  '⚖️ 正在多维度交叉验证…',
+  '✍️ 正在组织回答…',
+];
+
 /** 快捷提问 */
 const QUICK_QUESTIONS = ['分析 AAPL', '600519 怎么样', '今天观察什么', '平台怎么用', '回测怎么用'];
 
@@ -71,6 +79,7 @@ export default function AssistantPage() {
   const [teachQ, setTeachQ] = useState('');
   const [teachA, setTeachA] = useState('');
   const [teachMsg, setTeachMsg] = useState<string | null>(null);
+  const [thinkStep, setThinkStep] = useState(0);
   const [me, setMe] = useState<{ username: string | null; isAdmin?: boolean } | null>(null);
 
   // 会话持久化：切页/刷新不丢（sessionStorage 上限 40 条）
@@ -133,6 +142,16 @@ export default function AssistantPage() {
     }
   }, [messages, sending]);
 
+  // 思考步骤轮换（加载态与思考链呈现形式一致）
+  useEffect(() => {
+    if (!sending) {
+      setThinkStep(0);
+      return;
+    }
+    const t = setInterval(() => setThinkStep((i) => (i + 1) % THINKING_STEPS.length), 1600);
+    return () => clearInterval(t);
+  }, [sending]);
+
   const send = async (text?: string) => {
     const q = (text ?? input).trim();
     if (!q || sending) return;
@@ -165,6 +184,7 @@ export default function AssistantPage() {
         flexDirection: 'column',
       }}
     >
+      <style>{`@keyframes pq-pulse { 0%,100% { opacity: .45 } 50% { opacity: 1 } }`}</style>
       {/* 顶部导航（全站统一） */}
       <TopNav />
 
@@ -285,9 +305,9 @@ export default function AssistantPage() {
             ),
           )}
           {sending && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#64748b', fontSize: '13px' }}>
-              <span style={{ fontSize: '22px' }}>🤖</span>
-              <span>正在分析真实行情数据，请稍候...</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#93c5fd', fontSize: '13px' }}>
+              <span style={{ fontSize: '22px', animation: 'pq-pulse 1.4s ease-in-out infinite' }}>🤖</span>
+              <span>{THINKING_STEPS[thinkStep % THINKING_STEPS.length]}<span style={{ animation: 'pq-pulse 1s infinite' }}>…</span></span>
             </div>
           )}
         </div>

@@ -21,6 +21,7 @@ const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const auth = require('./auth.cjs');
+const brain = require('./ai/brain.cjs');
 
 // 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失（配合 start.bat 看门狗）
 process.on('uncaughtException', (e) => console.error('[兜底] 未捕获异常:', (e && e.stack) || e));
@@ -98,6 +99,7 @@ const AUTH_ENABLED = Boolean(SITE_PASSWORD);
 // 用户系统初始化（会话密钥/用户表）+ 首次启动用 .env 账号引导创建管理员
 auth.init();
 auth.ensureBootstrapAdmin(AUTH_ENABLED ? SITE_USERNAME : '', SITE_PASSWORD);
+brain.init();
 
 /** 冒烟测试/内部调用的认证头（Basic 形式，auth 系统按用户表兼容校验） */
 const authHeaderValue = () =>
@@ -1100,12 +1102,27 @@ async function getQuoteInternal(code, symbol) {
 /** GET /api/qa?q=问题 */
 app.get('/api/qa', async (req, res) => {
   const q = String(req.query.q || '').trim();
-  if (!q) return res.json({ question: q, type: 'empty', answer: '请告诉我你的问题，例如「分析 AAPL」或「平台怎么用？」' });
+  const reply = (obj) => {
+    try { brain.recordQA(q, obj.answer, { type: obj.type }); } catch { /* 语料记录失败不阻塞 */ }
+    return res.json(obj);
+  };
+  // 自学习知识库优先（来自用户教学与反馈训练）
+  const hit = brain.lookup(q);
+  if (hit) {
+    return reply({
+      question: q,
+      type: 'learned',
+      answer: `${hit.entry.a}
+
+（🧠 来自学习知识库 · 匹配置信 ${Math.round(hit.score * 100)}%）`,
+    });
+  }
+  if (!q) return reply({ question: q, type: 'empty', answer: '请告诉我你的问题，例如「分析 AAPL」或「平台怎么用？」' });
 
   try {
     // 回测指引（优先级高于通用指南：避免「回测怎么用」被使用指南截胡）
     if (/回测|backtest/i.test(q)) {
-      return res.json({
+      return reply({
         question: q,
         type: 'guide',
         answer: [
@@ -1119,7 +1136,7 @@ app.get('/api/qa', async (req, res) => {
     }
     // 使用指南
     if (/怎么|如何|教程|帮助|使用|操作|入门|指南|help|guide|usage/i.test(q)) {
-      return res.json({ question: q, type: 'guide', answer: USAGE_GUIDE });
+      return reply({ question: q, type: 'guide', answer: USAGE_GUIDE });
     }
     // 今日观察（五因子评分）
     if (/推荐|选股|观察|机会|评分/i.test(q)) {
@@ -1146,16 +1163,16 @@ app.get('/api/qa', async (req, res) => {
         ...top.map((r, i) => `${i + 1}. ${r.symbol}（${r.name}）现价 ${Number(r.price).toFixed(2)} → ${r.score} 分 · ${r.rating}`),
         '想看某只的详细解读，可以问「分析 <代码>」。',
       ];
-      return res.json({ question: q, type: 'recommend', answer: answer.join('\n') });
+      return reply({ question: q, type: 'recommend', answer: answer.join('\n') });
     }
     // 个股分析
     const symbol = extractSymbol(q);
     if (symbol) {
       const answer = await analyzeForQA(symbol);
-      return res.json({ question: q, type: 'analysis', symbol, answer });
+      return reply({ question: q, type: 'analysis', symbol, answer });
     }
     // 兜底
-    return res.json({
+    return reply({
       question: q,
       type: 'fallback',
       answer: [
@@ -1174,6 +1191,7 @@ app.get('/api/qa', async (req, res) => {
 
 // ───────────── 6b. Agent 团队分析（主理人调度制五阶段流水线） ─────────────
 const agentTeam = require('./agents/agents.cjs');
+const datafeeds = require('./agents/datafeeds.cjs');
 
 /** POST /api/agents/analyze  body: { symbol, mode?: full|quick|debate|risk|single, agent?, entryPrice? } */
 app.post('/api/agents/analyze', async (req, res) => {
@@ -1183,13 +1201,48 @@ app.post('/api/agents/analyze', async (req, res) => {
   const mode = ['full', 'quick', 'debate', 'risk', 'single'].includes(String(body.mode)) ? String(body.mode) : 'full';
   try {
     const code = toTencentCode(symbol);
-    const [klines, quote] = await Promise.all([fetchDailyRows(code, 300), getQuoteInternal(code, symbol)]);
+    const [klines, quote, feed] = await Promise.all([
+      fetchDailyRows(code, 300),
+      getQuoteInternal(code, symbol),
+      datafeeds.getAll(code),
+    ]);
     if (!klines.length) return res.status(404).json({ ok: false, error: `未获取到 ${symbol} 的行情数据` });
-    const trace = agentTeam.run({ symbol, klines, quote, mode, agent: String(body.agent || ''), entryPrice: Number(body.entryPrice) || null });
+    const trace = agentTeam.run({ symbol, klines, quote, mode, agent: String(body.agent || ''), entryPrice: Number(body.entryPrice) || null, feed });
     res.json({ ok: true, name: quote?.name, ...trace });
   } catch (e) {
     res.status(500).json({ ok: false, error: `Agent 团队分析失败: ${e.message?.slice(0, 80)}` });
   }
+});
+
+/** GET /api/feed/:symbol —— 量化看板右侧面板数据（资金流/财务/估值/公告） */
+app.get('/api/feed/:symbol', async (req, res) => {
+  try {
+    const code = toTencentCode(req.params.symbol);
+    const feed = await datafeeds.getAll(code);
+    res.json({ ok: true, ...feed });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: `数据获取失败: ${e.message?.slice(0, 80)}` });
+  }
+});
+
+// ───────────── 6c. AI 助手学习系统（知识库 / 反馈 / 教学 / 自训练） ─────────────
+/** POST /api/ai/feedback —— 点赞/点踩，实时调整知识权重 */
+app.post('/api/ai/feedback', (req, res) => {
+  const { question, answer, rating, comment } = req.body || {};
+  if (!['up', 'down'].includes(rating)) return res.status(400).json({ ok: false, error: 'rating 必须为 up/down' });
+  res.json(brain.recordFeedback({ question, answer, rating, comment }));
+});
+
+/** POST /api/ai/teach —— 用户教学：直接写入知识库 */
+app.post('/api/ai/teach', (req, res) => {
+  const { q, a } = req.body || {};
+  const r = brain.addEntry(q, a, 'user');
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+/** GET /api/ai/stats —— 知识库规模 / 训练状态 */
+app.get('/api/ai/stats', (req, res) => {
+  res.json({ ok: true, ...brain.stats() });
 });
 
 // ───────────── 7. 健康检查 ─────────────
@@ -1325,7 +1378,16 @@ if (!NO_MAINTAIN && !MAINTAIN_ONCE && !IS_VERCEL) {
     if (now.getHours() === 2 && lastMaintainDay !== day) {
       lastMaintainDay = day;
       console.log(`🔧 [自检] 进入每日 02:00–03:00 维护窗口，开始自检...`);
-      runMaintenance().catch((e) => console.error('[自检] 执行失败:', e.message));
+      runMaintenance()
+        .then(() => {
+          try {
+            const r = brain.nightlyTrain();
+            console.log(`🧠 [AI自训练] 第${r && 1 ? '' : ''}轮完成: 提升 ${r.promoted} / 降权 ${r.demoted} / 剪枝 ${r.pruned} / 待学习 +${r.pendingAdded}`);
+          } catch (e2) {
+            console.error('[AI自训练] 失败:', e2.message);
+          }
+        })
+        .catch((e) => console.error('[自检] 执行失败:', e.message));
     }
   }, 60_000);
   console.log('🔧 每日 02:00–03:00 自检调度已开启（--no-maintain 可关闭）');

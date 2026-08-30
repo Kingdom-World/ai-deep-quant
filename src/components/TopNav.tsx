@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { path: '/analyze', label: '因子分析' },
   { path: '/backtest', label: '策略回测' },
   { path: '/paper', label: '模拟交易' },
+  { path: '/agents', label: 'Agent 团队' },
   { path: '/assistant', label: 'AI 助手' },
 ];
 

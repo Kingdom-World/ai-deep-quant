@@ -167,9 +167,48 @@ function techAnalyst(symbol, klines, quote) {
   };
 }
 
-function fundamentalAnalyst(symbol, klines, quote) {
+function fundamentalAnalyst(symbol, klines, quote, feed) {
   const closes = klines.map((k) => k.close);
   const price = quote?.price ?? closes[closes.length - 1];
+  const fund = feed?.fundamentals ?? null;
+  const val = feed?.valuation ?? null;
+
+  // 真实数据分支：东财财务主要指标 + 估值快照
+  if (fund && (fund.roe != null || val?.pe != null)) {
+    const findings = [];
+    let bull = 0;
+    let bear = 0;
+    if (fund.roe != null) {
+      if (fund.roe >= 15) { findings.push(`加权 ROE ${fund.roe.toFixed(1)}%（${fund.reportDate}），盈利能力优秀`); bull += 2; }
+      else if (fund.roe >= 8) { findings.push(`加权 ROE ${fund.roe.toFixed(1)}%，盈利能力良好`); bull += 1; }
+      else { findings.push(`加权 ROE ${fund.roe != null ? fund.roe.toFixed(1) : '--'}%，盈利能力偏弱`); bear += 1; }
+    }
+    if (fund.profitYoY != null) {
+      if (fund.profitYoY >= 20) { findings.push(`归母净利润同比 +${fund.profitYoY.toFixed(1)}%，业绩高增长`); bull += 2; }
+      else if (fund.profitYoY <= -20) { findings.push(`归母净利润同比 ${fund.profitYoY.toFixed(1)}%，业绩明显下滑`); bear += 2; }
+      else findings.push(`归母净利润同比 ${fund.profitYoY != null ? fund.profitYoY.toFixed(1) + '%' : '--'}，业绩平稳`);
+    }
+    if (fund.grossMargin != null) findings.push(`销售毛利率 ${fund.grossMargin.toFixed(1)}%${fund.grossMargin >= 40 ? '（高毛利生意属性）' : ''}`);
+    if (fund.debt != null) findings.push(`资产负债率 ${fund.debt.toFixed(1)}%${fund.debt > 70 ? '，杠杆偏高需警惕' : fund.debt <= 45 ? '，财务结构稳健' : ''}`);
+    if (val?.pe != null && val.pe > 0) {
+      if (val.pe < 15) { findings.push(`市盈率(动) ${val.pe.toFixed(1)}，处于低估值区间`); bull += 1; }
+      else if (val.pe > 60) { findings.push(`市盈率(动) ${val.pe.toFixed(1)}，估值偏高，透支预期风险`); bear += 1; }
+      else findings.push(`市盈率(动) ${val.pe.toFixed(1)}，估值处于市场常见区间`);
+    }
+    if (val?.pb != null) findings.push(`市净率 ${val.pb.toFixed(2)}${val.marketCap ? ` · 总市值 ${(val.marketCap / 1e8).toFixed(0)} 亿` : ''}`);
+    const bias = bull > bear ? 'bullish' : bear > bull ? 'bearish' : 'neutral';
+    return {
+      name: 'Beta · 基本面分析师',
+      role: '财报 ROE / EPS / 毛利率 / 估值（东方财富真实数据）',
+      findings,
+      bias,
+      confidence: Math.min(60 + Math.abs(bull - bear) * 8, 82),
+      metrics: { roe: fund.roe, eps: fund.eps, pe: val?.pe ?? null, pb: val?.pb ?? null, profitYoY: fund.profitYoY },
+      limitations: fund.quarters < 4 ? ['公开财报期数较少，历史可比性有限'] : [],
+    };
+  }
+
+  // 降级分支：价格行为代理指标（无真实基本面数据时）
   const slope = trendSlope(closes, 120);
   const mdd = maxDrawdown(closes, 250);
   const high52 = Math.max(...klines.slice(-250).map((k) => k.high));
@@ -197,52 +236,79 @@ function fundamentalAnalyst(symbol, klines, quote) {
     role: '财报 / ROE / 真实价值评估（数据受限，使用价格行为代理指标）',
     findings,
     bias,
-    confidence: 45, // 无真实财报数据，置信度强制封顶
+    confidence: 45,
     metrics: { slope, maxDrawdown: mdd, drawdownFromHigh },
     limitations: [
-      '未接入财报 / ROE / PE / PB 等基本面数据源，无法计算真实估值',
-      '本报告全部为价格行为代理指标，不能替代基本面研究',
+      '本次财务/估值数据源暂时不可用，已降级为价格行为代理指标，不能替代基本面研究',
     ],
   };
 }
 
-function newsAnalyst(symbol, klines, quote) {
+function newsAnalyst(symbol, klines, quote, feed) {
   const recent = klines.slice(-10);
   const avgVol20 = sma(klines.slice(-30).map((k) => k.volume), 20) ?? 0;
+  const anns = feed?.announcements ?? null;
+
   const findings = [];
   let bias = 'neutral';
   let events = 0;
+  let good = 0;
+  let bad = 0;
 
+  // 真实公告关键词情绪扫描
+  if (anns && anns.length) {
+    const GOOD = /中标|预增|增长|增持|回购|分红|派息|合作|获批|签订|向好|胜利|突破/;
+    const BAD = /减持|质押|诉讼|处罚|亏损|预减|下滑|警示|问询|违规|退市/;
+    for (const a of anns) {
+      if (GOOD.test(a.title)) good += 1;
+      if (BAD.test(a.title)) bad += 1;
+    }
+    if (good + bad > 0) {
+      findings.push(`近 12 条公告情绪扫描：利好类关键词 ${good} 条 / 利空类关键词 ${bad} 条`);
+      for (const a of anns.slice(0, 3)) findings.push(`· [${a.date}] ${a.title.slice(0, 40)}`);
+      if (good > bad) bias = 'bullish';
+      else if (bad > good) bias = 'bearish';
+    } else {
+      findings.push(`近 12 条公告未检出明显利好/利空关键词，消息面平静`);
+    }
+  }
+
+  // 量价事件检测（与公告互相印证）
   for (const k of recent) {
     const volRatio = avgVol20 > 0 ? k.volume / avgVol20 : 0;
     const chg = ((k.close - k.open) / k.open) * 100;
     if (volRatio > 2 && chg > 5) {
-      findings.push(`${k.date} 放量上涨（量比 ${volRatio.toFixed(1)}×，涨幅 ${chg.toFixed(1)}%），疑似存在利好事件驱动`);
+      findings.push(`${k.date} 放量上涨（量比 ${volRatio.toFixed(1)}×，涨幅 ${chg.toFixed(1)}%），与公告面互相印证价值高`);
       events += 1;
-      bias = 'bullish';
+      if (bias === 'neutral') bias = 'bullish';
     } else if (volRatio > 2 && chg < -5) {
-      findings.push(`${k.date} 放量下跌（量比 ${volRatio.toFixed(1)}×，跌幅 ${chg.toFixed(1)}%），疑似存在利空事件驱动`);
+      findings.push(`${k.date} 放量下跌（量比 ${volRatio.toFixed(1)}×，跌幅 ${chg.toFixed(1)}%），注意与公告面交叉验证`);
       events += 1;
-      bias = 'bearish';
+      if (bias === 'neutral') bias = 'bearish';
     }
   }
-  if (events === 0) findings.push('近 10 个交易日未检出放量异动事件，价格走势平稳，无异常事件信号');
-  findings.push(`近 10 日事件检出 ${events} 起（基于量价异动的统计学推断，非真实公告）`);
+  if (events === 0 && !anns) findings.push('近 10 个交易日未检出放量异动事件，价格走势平稳，无异常事件信号');
+  findings.push(`近 10 日量价异动 ${events} 起${anns ? ` · 公告样本 ${anns.length} 条（真实公告标题，来自东方财富）` : ''}`);
 
   return {
     name: 'Gamma · 新闻分析师',
-    role: '追公告 / 政策 / 行业风向（数据受限，使用量价事件检测代理）',
+    role: anns ? '公告标题情绪扫描 + 量价事件检测（真实公告数据）' : '追公告 / 政策 / 行业风向（数据受限，使用量价事件检测代理）',
     findings,
     bias,
-    confidence: 40,
-    metrics: { events },
-    limitations: ['未接入任何新闻 / 公告 / 政策数据源，无法获取真实消息面', '事件检测为量价异动的统计推断，存在误报可能'],
+    confidence: anns ? Math.min(50 + (good + bad) * 4, 72) : 40,
+    metrics: { events, good, bad, annCount: anns?.length ?? 0 },
+    limitations: anns ? ['仅扫描公告标题关键词，未做全文语义理解，存在误判可能'] : ['本次公告数据源不可用，已降级为量价事件检测，无法获取真实消息面'],
   };
 }
 
-function sentimentAnalyst(symbol, klines, quote) {
+function sentimentAnalyst(symbol, klines, quote, feed) {
   const closes = klines.map((k) => k.close);
-  const vols = klines.map((k) => k.volume);
+  const flow = feed?.moneyFlow ?? null;
+  const price = quote?.price ?? closes[closes.length - 1];
+  const high52 = Math.max(...klines.slice(-250).map((k) => k.high));
+  const low52 = Math.min(...klines.slice(-250).map((k) => k.low));
+  const posInRange = ((price - low52) / (high52 - low52)) * 100;
+
   const upVols = [];
   const downVols = [];
   for (let i = Math.max(1, klines.length - 20); i < klines.length; i++) {
@@ -252,33 +318,45 @@ function sentimentAnalyst(symbol, klines, quote) {
   const avgDown = downVols.length ? downVols.reduce((a, b) => a + b, 0) / downVols.length : 0;
   const pvRatio = avgDown > 0 ? avgUp / avgDown : 1;
   const rsi = rsiLast(closes, 14);
-  const price = quote?.price ?? closes[closes.length - 1];
-  const high52 = Math.max(...klines.slice(-250).map((k) => k.high));
-  const posInRange = ((price - Math.min(...klines.slice(-250).map((k) => k.low))) / (high52 - Math.min(...klines.slice(-250).map((k) => k.low)))) * 100;
 
   const findings = [];
   let bias = 'neutral';
+
+  // 真实主力资金分支（东方财富资金流）
+  if (flow) {
+    const y = (v) => (v / 1e8).toFixed(2);
+    if (flow.streak > 0) {
+      findings.push(`主力资金已连续 ${flow.streak} 日净流入，近 5 日合计 ${y(flow.sum5)} 亿，近 10 日 ${y(flow.sum10)} 亿`);
+      if (flow.sum10 > 0) bias = 'bullish';
+    } else if (flow.streak < 0) {
+      findings.push(`主力资金已连续 ${-flow.streak} 日净流出，近 5 日合计 ${y(flow.sum5)} 亿，近 10 日 ${y(flow.sum10)} 亿`);
+      if (flow.sum10 < 0) bias = 'bearish';
+    } else {
+      findings.push(`主力资金近 5 日 ${y(flow.sum5)} 亿 / 近 10 日 ${y(flow.sum10)} 亿，方向反复，多空分歧大`);
+    }
+    if (flow.lastPct != null) findings.push(`最新交易日主力净占比 ${flow.lastPct.toFixed(1)}%`);  }
+
+  // 量价结构代理（与资金流互相印证）
   if (pvRatio > 1.25) {
-    findings.push(`量价配合度 ${pvRatio.toFixed(2)}：上涨日平均成交量显著大于下跌日，资金参与意愿偏多（代理指标）`);
-    bias = 'bullish';
+    findings.push(`量价配合度 ${pvRatio.toFixed(2)}：上涨日平均成交量显著大于下跌日，参与意愿偏多（代理指标）`);
+    if (bias === 'neutral') bias = 'bullish';
   } else if (pvRatio < 0.8) {
     findings.push(`量价配合度 ${pvRatio.toFixed(2)}：下跌日放量更明显，抛压情绪占优（代理指标）`);
-    bias = 'bearish';
+    if (bias === 'neutral') bias = 'bearish';
   } else {
     findings.push(`量价配合度 ${pvRatio.toFixed(2)}，多空情绪均衡`);
   }
   if (rsi != null && rsi > 75) findings.push(`RSI=${rsi.toFixed(1)} 情绪过热，追高意愿拥挤，警惕情绪退潮`);
   if (posInRange > 90) findings.push(`现价处于 52 周区间 ${posInRange.toFixed(0)}% 分位，接近年内高位，市场关注度高位`);
-  findings.push('主力资金 / 北向资金数据未接入，以上为量价结构代理的情绪推断');
 
   return {
     name: 'Delta · 情绪分析师',
-    role: '主力资金 / 北向资金 / 市场情绪（数据受限，使用量价结构代理）',
+    role: flow ? '主力资金流向（东方财富真实数据）+ 量价结构情绪' : '主力资金 / 北向资金 / 市场情绪（数据受限，使用量价结构代理）',
     findings,
     bias,
-    confidence: 42,
-    metrics: { pvRatio, rsi, posInRange },
-    limitations: ['未接入主力资金 / 北向资金 / 融资融券数据源', '情绪判断为量价代理指标，可能与真实资金行为背离'],
+    confidence: flow ? Math.min(55 + Math.abs(flow.streak) * 4, 78) : 42,
+    metrics: { pvRatio, rsi, posInRange, sum5: flow?.sum5 ?? null, streak: flow?.streak ?? null },
+    limitations: flow ? ['北向资金 / 融资融券数据未接入，情绪画像仍不完整'] : ['本次资金流数据源不可用，已降级为量价代理，可能与真实资金行为背离'],
   };
 }
 
@@ -432,16 +510,16 @@ function riskChief(trade, trio, verdict, digest) {
 
 // ═══════════ 主理人编排器 ═══════════
 
-function run({ symbol, klines, quote, mode = 'full', agent, entryPrice }) {
+function run({ symbol, klines, quote, mode = 'full', agent, entryPrice, feed }) {
   const price = quote?.price ?? klines[klines.length - 1]?.close ?? null;
   const stages = {};
   let final = null;
 
   const ALL_ANALYSTS = [
-    techAnalyst(symbol, klines, quote),
-    fundamentalAnalyst(symbol, klines, quote),
-    newsAnalyst(symbol, klines, quote),
-    sentimentAnalyst(symbol, klines, quote),
+    techAnalyst(symbol, klines, quote, feed),
+    fundamentalAnalyst(symbol, klines, quote, feed),
+    newsAnalyst(symbol, klines, quote, feed),
+    sentimentAnalyst(symbol, klines, quote, feed),
   ];
 
   if (mode === 'single') {

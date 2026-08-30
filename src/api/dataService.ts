@@ -762,6 +762,22 @@ export const agentsApi = {
     apiPost<AgentTrace>('/agents/analyze', body),
 };
 
+/** 13. 看板数据面板（资金流 / 财务 / 估值 / 公告，东方财富公开接口，缺失自动为 null） */
+export const feedApi = {
+  get: (symbol: string) =>
+    apiGet<{ ok: boolean; moneyFlow: any; fundamentals: any; valuation: any; announcements: any[] | null; error?: string }>(
+      `/feed/${encodeURIComponent(symbol)}`,
+    ),
+};
+
+/** 14. AI 助手学习系统（知识库 / 反馈 / 教学 / 自训练状态） */
+export const aiApi = {
+  stats: () => apiGet<{ ok: boolean; knowledge: number; trainCount: number; lastNightly: any; pendingQuestions: number }>('/ai/stats'),
+  feedback: (body: { question: string; answer: string; rating: 'up' | 'down'; comment?: string }) =>
+    apiPost<{ ok: boolean }>('/ai/feedback', body),
+  teach: (body: { q: string; a: string }) => apiPost<{ ok: boolean; updated?: boolean; error?: string }>('/ai/teach', body),
+};
+
 export default {
   getQuote,
   getQuotesBatch,

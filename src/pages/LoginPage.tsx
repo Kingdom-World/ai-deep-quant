@@ -154,6 +154,8 @@ export default function LoginPage({ onLogin }: { onLogin: (username: string) => 
     >
       <style>{`
         @keyframes pq-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-18px) } }
+        @keyframes pq-aurora1 { 0%,100% { transform: translate(-6%,-4%) rotate(0deg) scale(1); filter: blur(70px) hue-rotate(0deg) } 33% { transform: translate(9%,9%) rotate(24deg) scale(1.22); filter: blur(84px) hue-rotate(28deg) } 66% { transform: translate(-8%,12%) rotate(-16deg) scale(1.08); filter: blur(76px) hue-rotate(-18deg) } }
+        @keyframes pq-aurora2 { 0%,100% { transform: translate(4%,6%) rotate(0deg) scale(1.05); filter: blur(90px) hue-rotate(0deg) } 50% { transform: translate(-10%,-10%) rotate(-22deg) scale(1.2); filter: blur(100px) hue-rotate(35deg) } }
         @keyframes pq-shake { 0%,100% { transform: translateX(0) } 20%,60% { transform: translateX(-8px) } 40%,80% { transform: translateX(8px) } }
         @keyframes pq-scan { 0% { transform: translateY(-120px) } 100% { transform: translateY(100vh) } }
         @keyframes pq-ticker { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
@@ -163,19 +165,26 @@ export default function LoginPage({ onLogin }: { onLogin: (username: string) => 
 
       <ParticleCanvas />
 
-      {/* 光晕与网格 */}
+      {/* 极光光斑（动画漂移 + 色相旋转）与网格 */}
       <div
         style={{
-          position: 'absolute', width: 340, height: 340, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(59,130,246,0.30), transparent 70%)',
-          filter: 'blur(70px)', top: '6%', left: '10%', animation: 'pq-float 9s ease-in-out infinite', pointerEvents: 'none',
+          position: 'absolute', width: 380, height: 380, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(59,130,246,0.32), transparent 70%)',
+          top: '5%', left: '8%', animation: 'pq-aurora1 18s ease-in-out infinite', pointerEvents: 'none',
         }}
       />
       <div
         style={{
-          position: 'absolute', width: 420, height: 420, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(14,165,233,0.20), transparent 70%)',
-          filter: 'blur(90px)', bottom: '-8%', right: '8%', animation: 'pq-float 12s ease-in-out infinite reverse', pointerEvents: 'none',
+          position: 'absolute', width: 440, height: 440, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(14,165,233,0.22), transparent 70%)',
+          bottom: '-8%', right: '6%', animation: 'pq-aurora2 24s ease-in-out infinite', pointerEvents: 'none',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute', width: 300, height: 300, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(139,92,246,0.16), transparent 70%)',
+          filter: 'blur(80px)', top: '38%', left: '46%', animation: 'pq-float 11s ease-in-out infinite', pointerEvents: 'none',
         }}
       />
       <div

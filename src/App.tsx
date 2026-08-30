@@ -8,6 +8,7 @@ import AnalyzePage from './pages/AnalyzePage';
 import BacktestPage from './pages/BacktestPage';
 import AssistantPage from './pages/AssistantPage';
 import PaperTradingPage from './pages/PaperTradingPage';
+import AgentTeamPage from './pages/AgentTeamPage';
 import LoginPage from './pages/LoginPage';
 
 /**
@@ -67,6 +68,7 @@ function App() {
           <Route path="/backtest" element={<BacktestPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/paper" element={<PaperTradingPage />} />
+          <Route path="/agents" element={<AgentTeamPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ErrorBoundary>

@@ -131,6 +131,13 @@ const FEATURES = [
     ready: true,
   },
   {
+    icon: '🤖',
+    title: 'Agent 团队',
+    desc: '主理人调度多Agent流水线：数据收集/多空辩论/风险评估，输出研究结论',
+    path: '/agents',
+    ready: true,
+  },
+  {
     icon: '💬',
     title: 'AI 智能助手',
     desc: '站内 AI 问答：个股解读、选股推荐、使用指南',

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { askAssistant } from '../api/dataService';
+import { askAssistant, aiApi } from '../api/dataService';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 
@@ -8,6 +8,8 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   symbol?: string;
+  question?: string;
+  type?: string;
 }
 
 /** 快捷提问 */
@@ -24,6 +26,36 @@ export default function AssistantPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const [aiStats, setAiStats] = useState<any>(null);
+  const [fbDone, setFbDone] = useState<Record<number, 'up' | 'down'>>({});
+  const [teachOpen, setTeachOpen] = useState(false);
+  const [teachQ, setTeachQ] = useState('');
+  const [teachA, setTeachA] = useState('');
+  const [teachMsg, setTeachMsg] = useState<string | null>(null);
+
+  const loadStats = () => {
+    aiApi.stats().then((s) => setAiStats(s)).catch(() => {});
+  };
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const doTeach = async () => {
+    if (!teachQ.trim() || !teachA.trim()) return;
+    try {
+      const r = await aiApi.teach({ q: teachQ.trim(), a: teachA.trim() });
+      if (r.ok) {
+        setTeachMsg(r.updated ? '✓ 已更新该条知识' : '✓ 已学会，以后就这么回答');
+        setTeachQ('');
+        setTeachA('');
+        loadStats();
+      } else {
+        setTeachMsg('✗ ' + (r.error || '教学失败'));
+      }
+    } catch (e) {
+      setTeachMsg('✗ ' + (e as Error).message);
+    }
+  };
 
   // 自动滚动到底部
   useEffect(() => {
@@ -40,7 +72,7 @@ export default function AssistantPage() {
     setMessages((prev) => [...prev, { role: 'user', text: q }]);
     try {
       const res = await askAssistant(q);
-      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol }]);
+      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol, question: q, type: res.type }]);
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
@@ -145,6 +177,33 @@ export default function AssistantPage() {
                     </div>
                   )}
                 </div>
+                {i > 0 && m.question && (
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4, marginLeft: 34, alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#475569' }}>这次回答有帮助吗？</span>
+                    {(['up', 'down'] as const).map((r) => (
+                      <button
+                        key={r}
+                        onClick={async () => {
+                          if (fbDone[i]) return;
+                          setFbDone((p) => ({ ...p, [i]: r }));
+                          try {
+                            await aiApi.feedback({ question: m.question!, answer: m.text, rating: r });
+                            loadStats();
+                          } catch { /* 忽略 */ }
+                        }}
+                        style={{
+                          fontSize: 11,
+                          color: fbDone[i] === r ? '#60a5fa' : '#64748b',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          cursor: fbDone[i] ? 'default' : 'pointer',
+                        }}
+                      >
+                        {fbDone[i] === r ? '已反馈，谢谢' : r === 'up' ? '👍 有用' : '👎 没用'}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ),
           )}
@@ -155,6 +214,44 @@ export default function AssistantPage() {
             </div>
           )}
         </div>
+
+        {/* 学习统计 + 教学 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#475569' }}>
+            🧠 已学习 {aiStats?.knowledge ?? 0} 条知识 · 自训练 {aiStats?.trainCount ?? 0} 轮
+            {aiStats?.lastNightly ? ` · 上次训练 ${String(aiStats.lastNightly.at).slice(0, 10)}` : ''}
+            {aiStats?.pendingQuestions ? ` · 待学习 ${aiStats.pendingQuestions} 问` : ''}
+          </span>
+          <button
+            onClick={() => setTeachOpen(!teachOpen)}
+            style={{ fontSize: 11, color: '#93c5fd', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+          >
+            {teachOpen ? '收起' : '🧠 教我一招'}
+          </button>
+          {teachMsg && <span style={{ fontSize: 11, color: teachMsg.startsWith('✓') ? '#4ade80' : '#f87171' }}>{teachMsg}</span>}
+        </div>
+        {teachOpen && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '2px 0 8px' }}>
+            <input
+              value={teachQ}
+              onChange={(e) => setTeachQ(e.target.value)}
+              placeholder="问法（例：什么是五因子评分）"
+              style={{ flex: '1 1 200px', padding: '8px 12px', fontSize: '12px', color: '#e2e8f0', backgroundColor: '#0d1322', border: '1px solid #334155', borderRadius: 8, outline: 'none' }}
+            />
+            <input
+              value={teachA}
+              onChange={(e) => setTeachA(e.target.value)}
+              placeholder="答案（我以后就照这个回答，不构成投资建议）"
+              style={{ flex: '1 1 280px', padding: '8px 12px', fontSize: '12px', color: '#e2e8f0', backgroundColor: '#0d1322', border: '1px solid #334155', borderRadius: 8, outline: 'none' }}
+            />
+            <button
+              onClick={doTeach}
+              style={{ padding: '8px 16px', fontSize: '12px', fontWeight: 600, color: '#fff', backgroundColor: '#2563eb', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+            >
+              教给它
+            </button>
+          </div>
+        )}
 
         {/* 快捷问题 */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '10px 0' }}>

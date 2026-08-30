@@ -180,7 +180,7 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
           </button>
         </div>
         <div style={{ marginTop: 8, fontSize: '11px', color: '#64748b' }}>
-          {MODES.find((m) => m.key === mode)?.desc} · 铁律：成员之间严禁直连，所有信息经主理人中转 · 研究主管必须给出 BUY / SELL / HOLD，不和稀泥
+          {MODES.find((m) => m.key === mode)?.desc} · 多视角交叉验证 · 研究主管强制给出 BUY / SELL / HOLD 结论
         </div>
       </div>
 
@@ -223,11 +223,11 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
             )}
           </div>
 
-          {/* 主理人 */}
+          {/* 调度中枢 */}
           <div style={{ ...CARD, marginBottom: 14, textAlign: 'center', padding: '12px' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#93c5fd' }}>🎛️ Arbiter · 主理人</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#93c5fd' }}>🎛️ 调度中枢</span>
             <span style={{ fontSize: 11.5, color: '#64748b', marginLeft: 10 }}>
-              不做分析，只负责调度、中转与编报告 —— 成员之间严禁直连
+              统一调度各分析师 · 汇总证据 · 编制最终报告
             </span>
           </div>
 
@@ -236,7 +236,6 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>
                 {stages.collect.title}
-                <span style={{ fontSize: 11, color: '#64748b', marginLeft: 10, fontWeight: 400 }}>{stages.collect.rule}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 }}>
                 {(stages.collect.agents ?? []).map((a: any, i: number) => (
@@ -245,9 +244,9 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
               </div>
               {stages.collect.digest && (
                 <div style={{ ...CARD, marginTop: 10, fontSize: '12px', color: '#94a3b8' }}>
-                  📮 <b style={{ color: '#93c5fd' }}>主理人中转摘要</b>（第二阶段仅能看到此摘要）：
-                  加权偏多度 <b style={{ color: '#e2e8f0' }}>{stages.collect.digest.weightedBias}</b> ·
+                  📮 <b style={{ color: '#93c5fd' }}>证据汇总</b>：
                   偏多 {stages.collect.digest.votes?.bullish ?? 0} 票 / 偏空 {stages.collect.digest.votes?.bearish ?? 0} 票 / 中性 {stages.collect.digest.votes?.neutral ?? 0} 票
+                  · 加权评分 <b style={{ color: '#e2e8f0' }}>{stages.collect.digest.weightedBias}</b>
                 </div>
               )}
             </div>
@@ -258,7 +257,6 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>
                 {stages.debate.title}
-                <span style={{ fontSize: 11, color: '#64748b', marginLeft: 10, fontWeight: 400 }}>{stages.debate.rule}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : '1fr 1fr', gap: 10 }}>
                 {stages.debate.bull && (

@@ -10,6 +10,7 @@ import {
   getMinuteSeries,
   getPeriodPolicy,
   getQuote,
+  feedApi,
   type PeriodPolicy,
 } from '../api/dataService';
 import {
@@ -51,6 +52,47 @@ import {
 
 /** MA 均线配置（主图叠加） */
 const MA_PERIODS = [5, 10, 20, 60, 120, 250];
+
+/** RSI 序列（副图指标切换用） */
+function rsiSeriesCalc(closes: number[], n = 14): (number | null)[] {
+  const out: (number | null)[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < n) {
+      out.push(null);
+      continue;
+    }
+    let g = 0;
+    let l = 0;
+    for (let j = i - n + 1; j <= i; j++) {
+      const d = closes[j] - closes[j - 1];
+      if (d >= 0) g += d;
+      else l -= d;
+    }
+    out.push(l === 0 ? 100 : 100 - 100 / (1 + g / n / (l / n)));
+  }
+  return out;
+}
+
+/** KDJ 序列（9,3,3） */
+function kdjSeriesCalc(klines: { high: number; low: number; close: number }[], n = 9) {
+  const K: number[] = [];
+  const D: number[] = [];
+  const J: number[] = [];
+  let k = 50;
+  let d = 50;
+  for (let i = 0; i < klines.length; i++) {
+    const seg = klines.slice(Math.max(0, i - n + 1), i + 1);
+    const hh = Math.max(...seg.map((x) => x.high));
+    const ll = Math.min(...seg.map((x) => x.low));
+    const rsv = hh === ll ? 50 : ((klines[i].close - ll) / (hh - ll)) * 100;
+    k = (2 / 3) * k + (1 / 3) * rsv;
+    d = (2 / 3) * d + (1 / 3) * k;
+    K.push(+k.toFixed(2));
+    D.push(+d.toFixed(2));
+    J.push(+(3 * k - 2 * d).toFixed(2));
+  }
+  return { K, D, J };
+}
 const MA_COLORS = ['#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f97316'];
 
 /** 形态标注颜色 */
@@ -103,6 +145,11 @@ export default function StockDetailPage() {
   // 状态管理（原有）
   const [priceHistory, setPriceHistory] = useState<number[]>([]);
   const [latestPrice, setLatestPrice] = useState<number | null>(null);
+  const [book, setBook] = useState<{
+    bids: { price: number; qty: number }[];
+    asks: { price: number; qty: number }[];
+    quoteTime: string | null;
+  } | null>(null);
   const [changePercent, setChangePercent] = useState<number | null>(null);
   const [rangeChange, setRangeChange] = useState<number | null>(null);
   const [updateTime, setUpdateTime] = useState<string>('');
@@ -145,6 +192,8 @@ export default function StockDetailPage() {
   }, [symbol]);
 
   /** 历史数据覆盖跨度（天）：用于季线/年线数据量校验（后端策略未加载时的回退） */
+  /** 副图指标切换（同花顺式）：MACD / RSI / KDJ */
+  const [subIndicator, setSubIndicator] = useState<'MACD' | 'RSI' | 'KDJ'>('MACD');
   const historySpanDays = useMemo(() => {
     const first = allPoints[0]?.date;
     const last = allPoints[allPoints.length - 1]?.date;
@@ -311,6 +360,7 @@ export default function StockDetailPage() {
       // 历史数据就绪后立即拉一次实时报价（避免等待首个 10 秒窗口；实时数据强制刷新绕过缓存）
       try {
         const quote = await getQuote(sym, m, true);
+        setBook(quote.bids && quote.asks ? { bids: quote.bids, asks: quote.asks, quoteTime: quote.quoteTime ?? null } : null);
         const chg = quote.changePercent ?? 0;
         const open = quote.open ?? 0;
         setLatestPrice(quote.price);
@@ -337,6 +387,7 @@ export default function StockDetailPage() {
   const fetchRealtimeQuote = async (sym: string, m: Market) => {
     try {
       const quote = await getQuote(sym, m, true); // 实时轮询强制刷新，绕过缓存
+      setBook(quote.bids && quote.asks ? { bids: quote.bids, asks: quote.asks, quoteTime: quote.quoteTime ?? null } : null);
       const chg = quote.changePercent ?? 0;
       const open = quote.open ?? 0;
 
@@ -461,6 +512,8 @@ export default function StockDetailPage() {
         itemStyle: { color: MA_COLORS[idx] },
       })),
       macd: calcMACD(closes),
+      rsi: rsiSeriesCalc(closes),
+      kdj: kdjSeriesCalc(agg),
       patterns: detectPatterns(agg),
     };
   }, [allPoints, selectedPeriod]);
@@ -471,7 +524,7 @@ export default function StockDetailPage() {
     if (!chart || loading || allPoints.length === 0) return;
     if (!chartData) return;
 
-    const { agg, labels, klineData, maSeries, macd, patterns } = chartData;
+    const { agg, labels, klineData, maSeries, macd, rsi, kdj, patterns } = chartData;
     const periodInfo = PERIODS.find((p) => p.key === selectedPeriod);
 
     // 供 UI 展示当前周期的聚合点数（aggregateData 为收盘价数组）
@@ -529,7 +582,11 @@ export default function StockDetailPage() {
         link: [{ xAxisIndex: 'all' }],
       },
       legend: {
-        data: [...MA_PERIODS.map((p) => `MA${p}`), '成交量', 'DIF', 'DEA'],
+        data: [
+          ...MA_PERIODS.map((p) => `MA${p}`),
+          '成交量',
+          ...(subIndicator === 'MACD' ? ['DIF', 'DEA'] : subIndicator === 'RSI' ? ['RSI14'] : ['K', 'D', 'J']),
+        ],
         top: 22,
         left: 'center',
         textStyle: { color: '#94a3b8', fontSize: 11 },
@@ -637,44 +694,74 @@ export default function StockDetailPage() {
           })),
           barWidth: '60%',
         },
-        {
-          name: 'DIF',
-          type: 'line',
-          xAxisIndex: 2,
-          yAxisIndex: 2,
-          data: macd.dif,
-          showSymbol: false,
-          smooth: true,
-          lineStyle: { width: 1.2, color: '#f59e0b' },
-          itemStyle: { color: '#f59e0b' },
-        },
-        {
-          name: 'DEA',
-          type: 'line',
-          xAxisIndex: 2,
-          yAxisIndex: 2,
-          data: macd.dea,
-          showSymbol: false,
-          smooth: true,
-          lineStyle: { width: 1.2, color: '#3b82f6' },
-          itemStyle: { color: '#3b82f6' },
-        },
-        {
-          name: 'MACD柱',
-          type: 'bar',
-          xAxisIndex: 2,
-          yAxisIndex: 2,
-          data: macd.macd.map((v) => ({
-            value: v,
-            itemStyle: {
-              color: v !== null && v >= 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)',
-            },
-          })),
-          barWidth: '60%',
-        },
+        ...(subIndicator === 'MACD'
+          ? [
+              {
+                name: 'DIF',
+                type: 'line',
+                xAxisIndex: 2,
+                yAxisIndex: 2,
+                data: macd.dif,
+                showSymbol: false,
+                smooth: true,
+                lineStyle: { width: 1.2, color: '#f59e0b' },
+                itemStyle: { color: '#f59e0b' },
+              },
+              {
+                name: 'DEA',
+                type: 'line',
+                xAxisIndex: 2,
+                yAxisIndex: 2,
+                data: macd.dea,
+                showSymbol: false,
+                smooth: true,
+                lineStyle: { width: 1.2, color: '#3b82f6' },
+                itemStyle: { color: '#3b82f6' },
+              },
+              {
+                name: 'MACD柱',
+                type: 'bar',
+                xAxisIndex: 2,
+                yAxisIndex: 2,
+                data: macd.macd.map((v) => ({
+                  value: v,
+                  itemStyle: {
+                    color: v !== null && v >= 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)',
+                  },
+                })),
+                barWidth: '60%',
+              },
+            ]
+          : subIndicator === 'RSI'
+            ? [
+                {
+                  name: 'RSI14',
+                  type: 'line',
+                  xAxisIndex: 2,
+                  yAxisIndex: 2,
+                  data: rsi,
+                  showSymbol: false,
+                  smooth: true,
+                  lineStyle: { width: 1.4, color: '#a78bfa' },
+                  itemStyle: { color: '#a78bfa' },
+                  markLine: {
+                    silent: true,
+                    symbol: 'none',
+                    label: { show: false },
+                    lineStyle: { color: '#475569', type: 'dashed' as const },
+                    data: [{ yAxis: 70 }, { yAxis: 30 }],
+                  },
+                },
+              ]
+            : [
+                { name: 'K', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: kdj.K, showSymbol: false, smooth: true, lineStyle: { width: 1.3, color: '#f59e0b' }, itemStyle: { color: '#f59e0b' } },
+                { name: 'D', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: kdj.D, showSymbol: false, smooth: true, lineStyle: { width: 1.3, color: '#3b82f6' }, itemStyle: { color: '#3b82f6' } },
+                { name: 'J', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: kdj.J, showSymbol: false, smooth: true, lineStyle: { width: 1.1, color: '#22c55e' }, itemStyle: { color: '#22c55e' } },
+              ]),
       ],
-    });
-  }, [allPoints, selectedPeriod, changePercent, loading, symbol, market]);
+      },
+      true);
+  }, [allPoints, selectedPeriod, changePercent, loading, symbol, market, subIndicator]);
 
   // 9. 分钟副图数据源：按选中分钟周期拉取真实分钟 K 线（120分由数据服务自动聚合）
   useEffect(() => {
@@ -1016,6 +1103,22 @@ export default function StockDetailPage() {
     if (value < 30) return DOWN_COLOR;
     return '#94a3b8';
   };
+
+  // 东方财富数据面板（资金流/财务/估值），服务端带缓存
+  const [feed, setFeed] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    setFeed(null);
+    feedApi
+      .get(displaySymbol)
+      .then((f) => {
+        if (alive) setFeed(f);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [displaySymbol]);
 
   // ── 价格横幅派生值（最后一根日 K 的 OHLCV）与五因子评分 ──
   const lastBar = allPoints.length ? allPoints[allPoints.length - 1] : null;
@@ -1428,6 +1531,37 @@ export default function StockDetailPage() {
           />
         </div>
 
+        {/* ── 副图指标切换 ── */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '8px',
+          }}
+        >
+          <span style={{ fontSize: '12px', color: '#64748b', marginRight: 4 }}>副图指标</span>
+          {(['MACD', 'RSI', 'KDJ'] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSubIndicator(s)}
+              style={{
+                padding: '5px 16px',
+                fontSize: '12px',
+                fontWeight: subIndicator === s ? '700' : '500',
+                color: subIndicator === s ? '#ffffff' : '#94a3b8',
+                backgroundColor: subIndicator === s ? '#0891b2' : '#1e293b',
+                border: subIndicator === s ? '1px solid #0891b2' : '1px solid #334155',
+                borderRadius: '6px',
+                cursor: 'pointer',
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+
         {/* ── 周期切换按钮 + 主图（K线） ── */}
         <div
           style={{
@@ -1443,7 +1577,7 @@ export default function StockDetailPage() {
             const active = selectedPeriod === p.key;
             // 季线/年线：后端周期策略判定数据不足时按钮置灰（点击仍提示原因）
             const insufficient = !isPeriodAvailable(p.key);
-            return (
+              return (
               <button
                 key={p.key}
                 onClick={() => handlePeriodSelect(p.key)}
@@ -1518,6 +1652,50 @@ export default function StockDetailPage() {
 
           {/* 右侧信息面板 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* 五档盘口 */}
+            <div style={{ ...cardStyle, padding: '14px 16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>
+                📊 五档盘口{book?.quoteTime ? <span style={{ fontSize: 11, color: '#64748b' }}> · {book.quoteTime}</span> : null}
+              </div>
+              {book && book.bids.length > 0 && book.asks.length > 0 ? (
+                (() => {
+                  const maxQ = Math.max(...book.bids.map((b) => b.qty), ...book.asks.map((a) => a.qty), 1);
+                  const Row = ({ label, lvl, color }: { label: string; lvl: { price: number; qty: number }; color: string }) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '2px 0' }}>
+                      <span style={{ width: 28, color: '#64748b' }}>{label}</span>
+                      <span style={{ width: 70, textAlign: 'right', color, fontFamily: 'Consolas, monospace', fontWeight: 600 }}>{lvl.price.toFixed(2)}</span>
+                      <div style={{ flex: 1, height: 9, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ width: `${(lvl.qty / maxQ) * 100}%`, height: '100%', backgroundColor: color, opacity: 0.35 }} />
+                      </div>
+                      <span style={{ width: 60, textAlign: 'right', color: '#94a3b8' }}>{lvl.qty.toLocaleString()}</span>
+                    </div>
+                  );
+                  return (
+                    <>
+                      {[...book.asks].slice(0, 5).reverse().map((a, i) => (
+                        <Row key={`a${i}`} label={`卖${5 - i}`} lvl={a} color="#22c55e" />
+                      ))}
+                      <div
+                        style={{
+                          display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: '#64748b',
+                          padding: '4px 0', borderTop: '1px dashed #1e293b', borderBottom: '1px dashed #1e293b', margin: '4px 0',
+                        }}
+                      >
+                        <span>最新</span>
+                        <span style={{ color: '#f1f5f9', fontFamily: 'Consolas, monospace', fontWeight: 700 }}>{formatCurrency(latestPrice)}</span>
+                        <span>{formatPercent(changePercent)}</span>
+                      </div>
+                      {book.bids.slice(0, 5).map((b, i) => (
+                        <Row key={`b${i}`} label={`买${i + 1}`} lvl={b} color="#ef4444" />
+                      ))}
+                    </>
+                  );
+                })()
+              ) : (
+                <div style={{ fontSize: '12px', color: '#475569' }}>该市场暂无五档盘口数据</div>
+              )}
+            </div>
+
             {/* 关键均线 */}
             <div style={{ ...cardStyle, padding: '14px 16px' }}>
               <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>📐 关键均线（日）</div>
@@ -1585,6 +1763,59 @@ export default function StockDetailPage() {
                 <div style={{ fontSize: '12px', color: '#475569' }}>历史数据不足，暂无法评分</div>
               )}
             </div>
+
+            {/* 资金与基本面（东方财富公开数据） */}
+            {feed && (feed.moneyFlow || feed.fundamentals || feed.valuation) && (
+              <div style={{ ...cardStyle, padding: '14px 16px' }}>
+                <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>💰 资金与基本面</div>
+                {feed.moneyFlow && (
+                  <div style={{ fontSize: '12.5px', marginBottom: 10, lineHeight: 1.8 }}>
+                    <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>主力资金（近 10 日）</div>
+                    <div>
+                      5日 <b style={{ color: feed.moneyFlow.sum5 >= 0 ? '#ef4444' : '#22c55e', fontFamily: 'Consolas,monospace' }}>
+                        {(feed.moneyFlow.sum5 / 1e8).toFixed(2)} 亿
+                      </b>
+                      {' · '}10日{' '}
+                      <b style={{ color: feed.moneyFlow.sum10 >= 0 ? '#ef4444' : '#22c55e', fontFamily: 'Consolas,monospace' }}>
+                        {(feed.moneyFlow.sum10 / 1e8).toFixed(2)} 亿
+                      </b>
+                    </div>
+                    <div style={{ color: '#64748b', fontSize: 11.5 }}>
+                      {feed.moneyFlow.streak > 0
+                        ? `连续净流入 ${feed.moneyFlow.streak} 日`
+                        : feed.moneyFlow.streak < 0
+                          ? `连续净流出 ${-feed.moneyFlow.streak} 日`
+                          : ''}
+                    </div>
+                  </div>
+                )}
+                {feed.fundamentals && (
+                  <div style={{ fontSize: '12.5px', lineHeight: 1.9 }}>
+                    <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 2 }}>财务快照（{feed.fundamentals.reportDate}）</div>
+                    {[
+                      ['加权ROE', feed.fundamentals.roe != null ? `${feed.fundamentals.roe.toFixed(1)}%` : '--'],
+                      ['每股收益', feed.fundamentals.eps != null ? feed.fundamentals.eps.toFixed(2) : '--'],
+                      ['毛利率', feed.fundamentals.grossMargin != null ? `${feed.fundamentals.grossMargin.toFixed(1)}%` : '--'],
+                      ['净利同比', feed.fundamentals.profitYoY != null ? `${feed.fundamentals.profitYoY > 0 ? '+' : ''}${feed.fundamentals.profitYoY.toFixed(1)}%` : '--'],
+                      ['负债率', feed.fundamentals.debt != null ? `${feed.fundamentals.debt.toFixed(1)}%` : '--'],
+                    ].map(([l, v]) => (
+                      <div key={l} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>{l}</span>
+                        <span style={{ color: '#e2e8f0', fontFamily: 'Consolas,monospace' }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {feed.valuation && (
+                  <div style={{ fontSize: '12.5px', marginTop: 8, color: '#e2e8f0' }}>
+                    <span style={{ color: '#94a3b8', marginRight: 6 }}>估值</span>
+                    PE {feed.valuation.pe != null ? feed.valuation.pe.toFixed(1) : '--'} · PB{' '}
+                    {feed.valuation.pb != null ? feed.valuation.pb.toFixed(2) : '--'}
+                    {feed.valuation.marketCap != null ? ` · 总市值 ${(feed.valuation.marketCap / 1e8).toFixed(0)} 亿` : ''}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 模拟交易直达 */}
             <div style={{ ...cardStyle, padding: '14px 16px' }}>

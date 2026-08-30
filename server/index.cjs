@@ -1192,6 +1192,7 @@ app.get('/api/qa', async (req, res) => {
 // ───────────── 6b. Agent 团队分析（主理人调度制五阶段流水线） ─────────────
 const agentTeam = require('./agents/agents.cjs');
 const datafeeds = require('./agents/datafeeds.cjs');
+const agentReportStore = require('./agents/reportstore.cjs');
 
 /** POST /api/agents/analyze  body: { symbol, mode?: full|quick|debate|risk|single, agent?, entryPrice? } */
 app.post('/api/agents/analyze', async (req, res) => {
@@ -1212,6 +1213,18 @@ app.post('/api/agents/analyze', async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: `Agent 团队分析失败: ${e.message?.slice(0, 80)}` });
   }
+});
+
+/** GET /api/agents/report/:id —— 完整报告（含全部 Agent 全文） */
+app.get('/api/agents/report/:id', (req, res) => {
+  const r = agentReportStore.getReport(req.params.id);
+  if (!r) return res.status(404).json({ ok: false, error: '报告不存在或已过期' });
+  res.json({ ok: true, report: r });
+});
+
+/** GET /api/agents/reports —— 历史报告列表 */
+app.get('/api/agents/reports', (req, res) => {
+  res.json({ ok: true, list: agentReportStore.listReports({ symbol: req.query.symbol, limit: Number(req.query.limit) || 20 }) });
 });
 
 /** GET /api/feed/:symbol —— 量化看板右侧面板数据（资金流/财务/估值/公告） */

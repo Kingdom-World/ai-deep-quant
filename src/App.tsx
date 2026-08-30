@@ -9,6 +9,7 @@ import BacktestPage from './pages/BacktestPage';
 import AssistantPage from './pages/AssistantPage';
 import PaperTradingPage from './pages/PaperTradingPage';
 import AgentTeamPage from './pages/AgentTeamPage';
+import AgentReportPage from './pages/AgentReportPage';
 import LoginPage from './pages/LoginPage';
 
 /**
@@ -69,6 +70,7 @@ function App() {
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/paper" element={<PaperTradingPage />} />
           <Route path="/agents" element={<AgentTeamPage />} />
+          <Route path="/agents/report/:id" element={<AgentReportPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ErrorBoundary>

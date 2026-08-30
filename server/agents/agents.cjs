@@ -1,22 +1,17 @@
 // ─────────────────────────────────────────────────────────────
-// Agent 团队分析系统（主理人调度制 · 五阶段流水线）
-//   ── 铁律：成员之间严禁直连，所有信息必须经主理人中转 ──
+// Agent 团队分析系统 v3（主理人调度制 · 五阶段 · 两轮辩论 · 场景推演 · 报告持久化）
+//   参考 TradingAgents（tauricresearch）与 ai-hedge-fund（virattt）的多 Agent 架构模式：
+//   分析师全文报告 → 结构化多轮辩论 → 交易员场景推演 → 风险辩论与终审 → 报告落盘可分享
+//   ── 铁律（内部执行，前端不展示）：成员间严禁直连，所有信息经主理人中转 ──
 //
-//   主理人 Arbiter：不做分析，只负责调度 / 中转 / 编报告
-//   第一阶段 数据收集（四分析师并行）：技术 Alpha · 基本面 Beta · 新闻 Gamma · 情绪 Delta
-//   第二阶段 多空辩论：多头 Bull-1 → 空头 Bear-1 → 研究主管 Sensus 裁决（铁律：不和稀泥，必须 BUY/SELL/HOLD）
-//   第三阶段 交易决策：交易员 Vector（入场/目标/止损，风险回报比 < 1:1 直接 pass）
-//   第四阶段 风险评估：激进 Ra / 保守 Co / 中性 Ne（分批建仓方案）
-//   第五阶段 风险主管 Aegis：综合三方 → 最终决策
-//
-//   四种模式：full 完整分析 / quick 快速分析（技术+基本面+交易员）/ debate 辩论模式 / risk 风险诊断
-//   以及 single：单点调用某类分析师
-//
-//   合规（脱敏）：全部输出为程序化规则生成的研究演示；免费行情源无财报/新闻/资金流，
-//   对应分析师基于价格行为代理指标工作，并在 limitations 中明确标注；结论一律标注"非投资建议"。
+//   合规（脱敏）：全部输出为本地程序化规则引擎生成的学术研究演示，不构成投资建议；
+//   数据来自公开行情与东方财富公开接口（财务/公告/资金流/融资融券/新闻），未覆盖项明确标注降级。
 // ─────────────────────────────────────────────────────────────
+const reportstore = require('./reportstore.cjs');
+
 const DISCLAIMER =
-  '本页所有内容（含各 Agent 的报告、辩论与结论）均为本地程序化规则引擎生成的学术研究演示，不构成任何投资建议，不代表任何真实机构或分析师观点。数据来自公开行情接口，未接入财报、新闻与资金流数据。';
+  '本报告及全部 Agent 内容由本地程序化规则引擎自动生成的学术研究演示，不构成任何投资建议，不代表任何真实机构或分析师观点。' +
+  '数据来自公开行情接口与东方财富公开数据（财务/公告/资金流/融资融券/新闻），未覆盖项已在文中明确标注降级。';
 
 const sma = (arr, n) => {
   if (arr.length < n) return null;
@@ -69,7 +64,6 @@ function atr14(klines) {
   return last.reduce((a, b) => a + b, 0) / Math.max(last.length, 1);
 }
 
-/** 250 日线性回归斜率（%/根），衡量长期趋势方向与强度 */
 function trendSlope(closes, n = 120) {
   const seg = closes.slice(-n);
   if (seg.length < 20) return null;
@@ -95,7 +89,9 @@ function maxDrawdown(closes, n = 250) {
   return mdd * 100;
 }
 
-// ═══════════ 第一阶段 · 数据收集 ═══════════
+const yi = (v) => (Number.isFinite(v) ? (v / 1e8).toFixed(2) + ' 亿' : '--');
+
+// ═══════════ 第一阶段 · 数据收集（四分析师，各出全文报告） ═══════════
 
 function techAnalyst(symbol, klines, quote) {
   const closes = klines.map((k) => k.close);
@@ -144,26 +140,40 @@ function techAnalyst(symbol, klines, quote) {
     }
   }
 
-  // 趋势健康值：近 20 日站上 MA20 的比例 + 低点抬升次数
   const seg = closes.slice(-20);
-  const ma20Seg = closes.slice(-24);
   let above = 0;
   for (let i = 0; i < seg.length; i++) {
-    const m = sma(ma20Seg.slice(0, 20 + i + 1).slice(-(20)), 20);
+    const m = sma(closes.slice(Math.max(0, closes.length - 24 + i + 1)), 20);
     if (m != null && seg[i] > m) above += 1;
   }
-  const health = Math.round((above / seg.length) * 60 + Math.min(Math.max(bull - bear, 0), 2) * 20);
-  findings.push(`趋势健康值 ${Math.min(health, 100)}/100（近20日站上MA20比例 ${Math.round((above / seg.length) * 100)}%）`);
+  const health = Math.min(100, Math.round((above / seg.length) * 60 + Math.min(Math.max(bull - bear, 0), 2) * 20));
+  findings.push(`趋势健康值 ${health}/100（近20日站上MA20比例 ${Math.round((above / seg.length) * 100)}%）`);
 
   const bias = bull > bear ? 'bullish' : bear > bull ? 'bearish' : 'neutral';
+  const report = [
+    `## 摘要`,
+    `${symbol} 当前价 ${price?.toFixed?.(2) ?? price}。技术面偏 ${bias === 'bullish' ? '多' : bias === 'bearish' ? '空' : '中性'}，趋势健康值 ${health}/100。`,
+    `## 核心发现`,
+    ...findings.map((f) => `- ${f}`),
+    `## 数据快照`,
+    `- MA5/MA20/MA60: ${ma5?.toFixed(2) ?? '--'} / ${ma20?.toFixed(2) ?? '--'} / ${ma60?.toFixed(2) ?? '--'}`,
+    `- MACD: DIF ${macd?.dif?.toFixed(3) ?? '--'} | DEA ${macd?.dea?.toFixed(3) ?? '--'} | 柱 ${macd?.hist?.toFixed(3) ?? '--'}`,
+    `- RSI(14): ${rsi?.toFixed(1) ?? '--'}`,
+    `- 样本: 日 K ${klines.length} 根（${klines[0]?.date} ~ ${klines[klines.length - 1]?.date}）`,
+    `## 局限`,
+    `- 仅基于日线行情数据，未覆盖盘中 tick 与更高维度量价结构`,
+  ].join('\n');
+
   return {
     name: 'Alpha · 技术分析师',
     role: '盯 K 线 / MACD / RSI，评估趋势与健康值',
     findings,
+    report,
     bias,
     confidence: Math.min(55 + Math.abs(bull - bear) * 15, 90),
-    metrics: { ma5, ma20, ma60, rsi, health: Math.min(health, 100), macdHist: macd?.hist ?? null, price },
+    metrics: { ma5, ma20, ma60, rsi, health, macdHist: macd?.hist ?? null, price },
     limitations: ['仅基于日线行情数据，未覆盖盘中 tick 与更高维度量价结构'],
+    sources: ['腾讯/新浪公开行情（日线）'],
   };
 }
 
@@ -173,7 +183,6 @@ function fundamentalAnalyst(symbol, klines, quote, feed) {
   const fund = feed?.fundamentals ?? null;
   const val = feed?.valuation ?? null;
 
-  // 真实数据分支：东财财务主要指标 + 估值快照
   if (fund && (fund.roe != null || val?.pe != null)) {
     const findings = [];
     let bull = 0;
@@ -197,50 +206,70 @@ function fundamentalAnalyst(symbol, klines, quote, feed) {
     }
     if (val?.pb != null) findings.push(`市净率 ${val.pb.toFixed(2)}${val.marketCap ? ` · 总市值 ${(val.marketCap / 1e8).toFixed(0)} 亿` : ''}`);
     const bias = bull > bear ? 'bullish' : bear > bull ? 'bearish' : 'neutral';
+
+    const trendLines = (fund.trend ?? []).slice(0, 4).map((t) => `- ${t.date}: 归母净利 ${t.profit != null ? yi(t.profit) : '--'} · ROE ${t.roe != null ? t.roe.toFixed(1) + '%' : '--'}`);
+    const report = [
+      `## 摘要`,
+      `基于 ${fund.reportDate} 财报与最新估值快照：基本面偏 ${bias === 'bullish' ? '多' : bias === 'bearish' ? '空' : '中性'}。`,
+      `## 核心发现`,
+      ...findings.map((f) => `- ${f}`),
+      `## 财务趋势（近几期）`,
+      ...trendLines,
+      `## 数据来源`,
+      `- 东方财富 F10 主要财务指标（报告期 ${fund.reportDate}）`,
+      `- 东方财富估值快照（PE(动)/PB/总市值）`,
+      `## 局限`,
+      fund.quarters < 4 ? ['- 公开财报期数较少，历史可比性有限'] : ['- 期数充足，但未覆盖非财务维度的基本面信息'],
+    ].join('\n');
+
     return {
       name: 'Beta · 基本面分析师',
       role: '财报 ROE / EPS / 毛利率 / 估值（东方财富真实数据）',
       findings,
+      report,
       bias,
       confidence: Math.min(60 + Math.abs(bull - bear) * 8, 82),
       metrics: { roe: fund.roe, eps: fund.eps, pe: val?.pe ?? null, pb: val?.pb ?? null, profitYoY: fund.profitYoY },
       limitations: fund.quarters < 4 ? ['公开财报期数较少，历史可比性有限'] : [],
+      sources: ['东方财富 F10 主要财务指标', '东方财富估值快照'],
     };
   }
 
-  // 降级分支：价格行为代理指标（无真实基本面数据时）
+  // 降级分支：价格行为代理指标
   const slope = trendSlope(closes, 120);
   const mdd = maxDrawdown(closes, 250);
   const high52 = Math.max(...klines.slice(-250).map((k) => k.high));
   const drawdownFromHigh = ((high52 - price) / high52) * 100;
-
   const findings = [];
   let bias = 'neutral';
   if (slope != null) {
-    if (slope > 0.08) {
-      findings.push(`120 日趋势斜率 +${slope.toFixed(3)}%/根，长期定价中枢持续上移`);
-      bias = 'bullish';
-    } else if (slope < -0.08) {
-      findings.push(`120 日趋势斜率 ${slope.toFixed(3)}%/根，长期定价中枢下移`);
-      bias = 'bearish';
-    } else {
-      findings.push(`长期趋势斜率 ${slope?.toFixed(3)}%/根，接近零轴，基本面定价变化平淡`);
-    }
+    if (slope > 0.08) { findings.push(`120 日趋势斜率 +${slope.toFixed(3)}%/根，长期定价中枢持续上移`); bias = 'bullish'; }
+    else if (slope < -0.08) { findings.push(`120 日趋势斜率 ${slope.toFixed(3)}%/根，长期定价中枢下移`); bias = 'bearish'; }
+    else findings.push(`长期趋势斜率 ${slope?.toFixed(3)}%/根，接近零轴，基本面定价变化平淡`);
   }
   findings.push(`现价距 52 周高点回撤 ${drawdownFromHigh.toFixed(1)}%，250 日最大回撤 ${mdd.toFixed(1)}%`);
   if (mdd < 20) findings.push('历史回撤特征温和，价格行为显示经营波动预期较低（代理判断）');
   if (mdd > 45) findings.push('历史回撤剧烈，价格行为隐含较高的基本面不确定性（代理判断）');
 
+  const report = [
+    `## 摘要`,
+    `⚠️ 本次财务与估值数据源不可用，已降级为价格行为代理分析，置信度受限。`,
+    `## 核心发现`,
+    ...findings.map((f) => `- ${f}`),
+    `## 局限`,
+    `- 无法计算真实 ROE / PE / PB，不能替代基本面研究`,
+  ].join('\n');
+
   return {
     name: 'Beta · 基本面分析师',
     role: '财报 / ROE / 真实价值评估（数据受限，使用价格行为代理指标）',
     findings,
+    report,
     bias,
     confidence: 45,
     metrics: { slope, maxDrawdown: mdd, drawdownFromHigh },
-    limitations: [
-      '本次财务/估值数据源暂时不可用，已降级为价格行为代理指标，不能替代基本面研究',
-    ],
+    limitations: ['本次财务/估值数据源暂时不可用，已降级为价格行为代理指标，不能替代基本面研究'],
+    sources: ['公开行情（代理指标）'],
   };
 }
 
@@ -248,62 +277,80 @@ function newsAnalyst(symbol, klines, quote, feed) {
   const recent = klines.slice(-10);
   const avgVol20 = sma(klines.slice(-30).map((k) => k.volume), 20) ?? 0;
   const anns = feed?.announcements ?? null;
+  const news = feed?.stockNews ?? null;
 
   const findings = [];
   let bias = 'neutral';
-  let events = 0;
   let good = 0;
   let bad = 0;
+  let events = 0;
 
-  // 真实公告关键词情绪扫描
+  const GOOD = /中标|预增|增长|增持|回购|分红|派息|合作|获批|签订|向好|突破/;
+  const BAD = /减持|质押|诉讼|处罚|亏损|预减|下滑|警示|问询|违规|退市/;
   if (anns && anns.length) {
-    const GOOD = /中标|预增|增长|增持|回购|分红|派息|合作|获批|签订|向好|胜利|突破/;
-    const BAD = /减持|质押|诉讼|处罚|亏损|预减|下滑|警示|问询|违规|退市/;
     for (const a of anns) {
       if (GOOD.test(a.title)) good += 1;
       if (BAD.test(a.title)) bad += 1;
     }
     if (good + bad > 0) {
-      findings.push(`近 12 条公告情绪扫描：利好类关键词 ${good} 条 / 利空类关键词 ${bad} 条`);
+      findings.push(`近 ${anns.length} 条公告情绪扫描：利好类关键词 ${good} 条 / 利空类 ${bad} 条`);
       for (const a of anns.slice(0, 3)) findings.push(`· [${a.date}] ${a.title.slice(0, 40)}`);
       if (good > bad) bias = 'bullish';
       else if (bad > good) bias = 'bearish';
     } else {
-      findings.push(`近 12 条公告未检出明显利好/利空关键词，消息面平静`);
+      findings.push(`近 ${anns.length} 条公告未检出明显利好/利空关键词，消息面平静`);
     }
   }
+  if (news && news.length) {
+    findings.push(`全网新闻检索到 ${news.length} 条相关报道（${news[0].date} 起），已纳入事件交叉验证`);
+    for (const n of news.slice(0, 3)) findings.push(`· [${n.date}] ${n.title.slice(0, 40)}（${n.media}）`);
+  }
 
-  // 量价事件检测（与公告互相印证）
   for (const k of recent) {
     const volRatio = avgVol20 > 0 ? k.volume / avgVol20 : 0;
     const chg = ((k.close - k.open) / k.open) * 100;
     if (volRatio > 2 && chg > 5) {
-      findings.push(`${k.date} 放量上涨（量比 ${volRatio.toFixed(1)}×，涨幅 ${chg.toFixed(1)}%），与公告面互相印证价值高`);
+      findings.push(`${k.date} 放量上涨（量比 ${volRatio.toFixed(1)}×，涨幅 ${chg.toFixed(1)}%），与消息面互相印证价值高`);
       events += 1;
       if (bias === 'neutral') bias = 'bullish';
     } else if (volRatio > 2 && chg < -5) {
-      findings.push(`${k.date} 放量下跌（量比 ${volRatio.toFixed(1)}×，跌幅 ${chg.toFixed(1)}%），注意与公告面交叉验证`);
+      findings.push(`${k.date} 放量下跌（量比 ${volRatio.toFixed(1)}×，跌幅 ${chg.toFixed(1)}%），注意与消息面交叉验证`);
       events += 1;
       if (bias === 'neutral') bias = 'bearish';
     }
   }
-  if (events === 0 && !anns) findings.push('近 10 个交易日未检出放量异动事件，价格走势平稳，无异常事件信号');
-  findings.push(`近 10 日量价异动 ${events} 起${anns ? ` · 公告样本 ${anns.length} 条（真实公告标题，来自东方财富）` : ''}`);
+  if (events === 0 && !anns && !news) findings.push('近 10 个交易日未检出放量异动事件，价格走势平稳，无异常事件信号');
+
+  const report = [
+    `## 摘要`,
+    anns || news ? `消息面样本：公告 ${anns?.length ?? 0} 条 / 全网新闻 ${news?.length ?? 0} 条；量价异动 ${events} 起。` : '⚠️ 公告与新闻数据源本次均不可用，已降级为量价事件检测。',
+    `## 核心发现`,
+    ...findings.map((f) => `- ${f}`),
+    `## 数据来源`,
+    anns ? `- 东方财富公告接口（${anns.length} 条）` : '- 公告接口本次不可用',
+    news ? `- 东方财富新闻搜索（${news.length} 条）` : '- 新闻搜索本次不可用',
+    `## 局限`,
+    `- 仅扫描标题关键词，未做全文语义理解，存在误判可能`,
+  ].join('\n');
 
   return {
     name: 'Gamma · 新闻分析师',
-    role: anns ? '公告标题情绪扫描 + 量价事件检测（真实公告数据）' : '追公告 / 政策 / 行业风向（数据受限，使用量价事件检测代理）',
+    role: anns || news ? '公告情绪扫描 + 全网新闻检索 + 量价事件检测（真实数据）' : '追公告 / 政策 / 行业风向（数据受限，使用量价事件检测代理）',
     findings,
+    report,
     bias,
-    confidence: anns ? Math.min(50 + (good + bad) * 4, 72) : 40,
-    metrics: { events, good, bad, annCount: anns?.length ?? 0 },
-    limitations: anns ? ['仅扫描公告标题关键词，未做全文语义理解，存在误判可能'] : ['本次公告数据源不可用，已降级为量价事件检测，无法获取真实消息面'],
+    confidence: anns || news ? Math.min(50 + (good + bad) * 4 + (news?.length ? 8 : 0), 74) : 40,
+    metrics: { events, good, bad, annCount: anns?.length ?? 0, newsCount: news?.length ?? 0 },
+    limitations: ['仅扫描标题关键词，未做全文语义理解，存在误判可能'],
+    sources: ['东方财富公告接口', ...(news ? ['东方财富新闻搜索'] : [])],
   };
 }
 
 function sentimentAnalyst(symbol, klines, quote, feed) {
   const closes = klines.map((k) => k.close);
   const flow = feed?.moneyFlow ?? null;
+  const margin = feed?.marginData ?? null;
+  const north = feed?.northHold ?? null;
   const price = quote?.price ?? closes[closes.length - 1];
   const high52 = Math.max(...klines.slice(-250).map((k) => k.high));
   const low52 = Math.min(...klines.slice(-250).map((k) => k.low));
@@ -322,21 +369,25 @@ function sentimentAnalyst(symbol, klines, quote, feed) {
   const findings = [];
   let bias = 'neutral';
 
-  // 真实主力资金分支（东方财富资金流）
   if (flow) {
-    const y = (v) => (v / 1e8).toFixed(2);
     if (flow.streak > 0) {
-      findings.push(`主力资金已连续 ${flow.streak} 日净流入，近 5 日合计 ${y(flow.sum5)} 亿，近 10 日 ${y(flow.sum10)} 亿`);
+      findings.push(`主力资金已连续 ${flow.streak} 日净流入，近 5 日合计 ${yi(flow.sum5)}，近 10 日 ${yi(flow.sum10)}`);
       if (flow.sum10 > 0) bias = 'bullish';
     } else if (flow.streak < 0) {
-      findings.push(`主力资金已连续 ${-flow.streak} 日净流出，近 5 日合计 ${y(flow.sum5)} 亿，近 10 日 ${y(flow.sum10)} 亿`);
+      findings.push(`主力资金已连续 ${-flow.streak} 日净流出，近 5 日合计 ${yi(flow.sum5)}，近 10 日 ${yi(flow.sum10)}`);
       if (flow.sum10 < 0) bias = 'bearish';
     } else {
-      findings.push(`主力资金近 5 日 ${y(flow.sum5)} 亿 / 近 10 日 ${y(flow.sum10)} 亿，方向反复，多空分歧大`);
+      findings.push(`主力资金近 5 日 ${yi(flow.sum5)} / 近 10 日 ${yi(flow.sum10)}，方向反复，多空分歧大`);
     }
-    if (flow.lastPct != null) findings.push(`最新交易日主力净占比 ${flow.lastPct.toFixed(1)}%`);  }
-
-  // 量价结构代理（与资金流互相印证）
+  }
+  if (margin) {
+    findings.push(`融资余额 ${yi(margin.rzye)}（${margin.latestDate}）${margin.change5 != null ? `，近 10 日变动 ${margin.change5 > 0 ? '+' : ''}${margin.change5.toFixed(1)}%` : ''}，杠杆资金情绪${(margin.change5 ?? 0) > 0 ? '偏积极' : '偏谨慎'}`);
+    if ((margin.change5 ?? 0) > 3 && bias === 'neutral') bias = 'bullish';
+    if ((margin.change5 ?? 0) < -3 && bias === 'neutral') bias = 'bearish';
+  }
+  if (north) {
+    findings.push(`北向持股${north.date ? `（${north.date}）` : ''}：${north.marketValue ? yi(north.marketValue) : '数据缺失'}${north.ratio ? ` · 占流通比 ${north.ratio.toFixed(2)}%` : ''}`);
+  }
   if (pvRatio > 1.25) {
     findings.push(`量价配合度 ${pvRatio.toFixed(2)}：上涨日平均成交量显著大于下跌日，参与意愿偏多（代理指标）`);
     if (bias === 'neutral') bias = 'bullish';
@@ -349,18 +400,33 @@ function sentimentAnalyst(symbol, klines, quote, feed) {
   if (rsi != null && rsi > 75) findings.push(`RSI=${rsi.toFixed(1)} 情绪过热，追高意愿拥挤，警惕情绪退潮`);
   if (posInRange > 90) findings.push(`现价处于 52 周区间 ${posInRange.toFixed(0)}% 分位，接近年内高位，市场关注度高位`);
 
+  const report = [
+    `## 摘要`,
+    `情绪面偏 ${bias === 'bullish' ? '多' : bias === 'bearish' ? '空' : '中性'}。数据覆盖：${[flow && '主力资金', margin && '融资融券', north && '北向持股'].filter(Boolean).join('、') || '无真实资金数据（降级为量价代理）'}。`,
+    `## 核心发现`,
+    ...findings.map((f) => `- ${f}`),
+    `## 数据来源`,
+    flow ? '- 东方财富个股资金流（近 20 日）' : '- 资金流接口本次不可用',
+    margin ? '- 东方财富融资融券明细' : '',
+    north ? '- 东方财富北向持股统计' : '- 北向持股接口不可用（自动降级）',
+    `## 局限`,
+    `- 北向资金分时 / 融资融券全网口径未完整覆盖，情绪画像仍有盲区`,
+  ].filter(Boolean).join('\n');
+
   return {
     name: 'Delta · 情绪分析师',
-    role: flow ? '主力资金流向（东方财富真实数据）+ 量价结构情绪' : '主力资金 / 北向资金 / 市场情绪（数据受限，使用量价结构代理）',
+    role: `主力资金 / 融资融券${north ? ' / 北向持股' : ''} + 量价结构情绪`,
     findings,
+    report,
     bias,
-    confidence: flow ? Math.min(55 + Math.abs(flow.streak) * 4, 78) : 42,
-    metrics: { pvRatio, rsi, posInRange, sum5: flow?.sum5 ?? null, streak: flow?.streak ?? null },
-    limitations: flow ? ['北向资金 / 融资融券数据未接入，情绪画像仍不完整'] : ['本次资金流数据源不可用，已降级为量价代理，可能与真实资金行为背离'],
+    confidence: Math.min(45 + (flow ? 15 : 0) + (margin ? 10 : 0) + (north ? 8 : 0), 80),
+    metrics: { pvRatio, rsi, posInRange, sum5: flow?.sum5 ?? null, streak: flow?.streak ?? null, rzye: margin?.rzye ?? null },
+    limitations: [north ? '' : '北向持股数据不可用（已降级）', '资金面全网口径未完整覆盖，情绪画像仍有盲区'].filter(Boolean),
+    sources: [flow ? '东方财富个股资金流' : '', margin ? '东方财富融资融券明细' : '', north ? '东方财富北向持股统计' : ''].filter(Boolean),
   };
 }
 
-// ═══════════ 主理人中转摘要（Stage 2 只能看到这个） ═══════════
+// ═══════════ 主理人中转摘要 ═══════════
 
 function buildDigest(reports, quote, klines) {
   const closes = klines.map((k) => k.close);
@@ -374,7 +440,6 @@ function buildDigest(reports, quote, klines) {
   }
   return {
     relayedBy: 'Arbiter · 主理人',
-    note: '以下为四份报告经主理人提炼后的中转摘要（成员间无直连，空头研究员看不到多头报告原文）',
     weightedBias: +(w / reports.length).toFixed(3),
     votes,
     keyPoints,
@@ -383,13 +448,13 @@ function buildDigest(reports, quote, klines) {
   };
 }
 
-// ═══════════ 第二阶段 · 多空辩论 ═══════════
+// ═══════════ 第二阶段 · 两轮多空辩论 ═══════════
 
 function bullResearcher(digest) {
   const args = [];
   if (digest.votes.bullish > 0) args.push(`${digest.votes.bullish} 份收集报告倾向多方，加权偏多度 ${digest.weightedBias}，趋势与资金结构存在共振基础`);
   digest.keyPoints.forEach((kp) => {
-    const p = kp.points.find((x) => /多头|向上|增强|偏多|反弹|放大|上移|温和|关注度高/.test(x));
+    const p = kp.points.find((x) => /多头|向上|增强|偏多|反弹|放大|上移|温和|关注度高|优秀|低估值|高增长|净流入/.test(x));
     if (p) args.push(p);
   });
   args.push('量价结构若延续，动量策略存在顺周期空间；回撤可控时风险收益占优');
@@ -400,31 +465,56 @@ function bearResearcher(digest, bull) {
   const args = [];
   if (digest.votes.bearish > 0) args.push(`${digest.votes.bearish} 份收集报告倾向空方，反向信号不可忽视`);
   digest.keyPoints.forEach((kp) => {
-    const p = kp.points.find((x) => /超买|超卖|回撤|走弱|下移|退潮|抛压|不确定性/.test(x));
+    const p = kp.points.find((x) => /超买|超卖|回撤|走弱|下移|退潮|抛压|不确定性|杠杆偏高|估值偏高/.test(x));
     if (p) args.push(p);
   });
-  args.push(`对多头论点的反驳：其论据多为顺周期外推，一旦量价配合度回落，动量逻辑将迅速失效`);
-  args.push('四份报告中三份置信度被数据局限强制压低（≤45），证据链并不牢固');
+  if (bull?.arguments?.length) args.push(`对多头第一条论点的反驳："${bull.arguments[0].slice(0, 40)}…"——顺周期外推在量价背离时会迅速失效`);
+  args.push(`四份报告中置信度受数据局限压低的越多，多头证据链越不牢固`);
   return { name: 'Bear-1 · 空头研究员', arguments: args.slice(0, 4), stance: '卖出/防守逻辑：证伪多头证据链的薄弱环节' };
 }
 
-function researchChief(digest, bull, bear) {
+function bullRebut(digest, bear) {
+  const args = [];
+  const keep = digest.keyPoints
+    .flatMap((kp) => kp.points)
+    .find((x) => /健康值|净流入|ROE|毛利率|低估值|高增长|多头排列/.test(x));
+  if (keep) args.push(`结构性证据未被空头推翻：${keep}`);
+  if (bear?.arguments?.length) args.push(`空头引用的"${bear.arguments[0].slice(0, 30)}…"属于静态风险描述，并不构成方向性证据`);
+  args.push('多头立场维持：只要趋势健康值不跌破中位，回调即是吸纳窗口');
+  return { name: 'Bull-1 · 第二轮陈述', arguments: args.slice(0, 3) };
+}
+
+function bearFinal(digest, bullRebuttal) {
+  const args = [];
+  args.push('最终陈述：静态证据（均线/量价）外推的胜率依赖市场环境维持，而环境中最大的不可控变量是消息面与资金面突变');
+  args.push('维持防守立场：在研究与教学语境下，HOLD/观望比追价更具长期期望值');
+  return { name: 'Bear-1 · 最终陈述', arguments: args.slice(0, 2) };
+}
+
+function researchChief(digest, bull, bear, bullRebuttal, bearFinal) {
   const w = digest.weightedBias;
   let verdict = 'HOLD';
   let reason;
   if (w >= 0.35) {
     verdict = 'BUY';
-    reason = `多方证据加权优势明显（加权偏多度 ${w}），且无足够强的反向证据，裁决为 BUY（研究倾向）`;
+    reason = `多方证据加权优势明显（加权偏多度 ${w}），两轮辩论中多头结构性证据未被有效证伪，裁决为 BUY（研究倾向）`;
   } else if (w <= -0.35) {
     verdict = 'SELL';
     reason = `空方证据加权优势明显（加权偏多度 ${w}），多头论证未能自洽，裁决为 SELL（研究倾向）`;
   } else {
-    reason = `多空证据加权后接近均衡（加权偏多度 ${w}），但依据"不和稀泥"铁律，明确裁决为 HOLD（研究倾向），等待更强的方向信号`;
+    reason = `多空证据加权后接近均衡（加权偏多度 ${w}），依据"不和稀泥"铁律，明确裁决为 HOLD（研究倾向），等待更强的方向信号`;
   }
-  return { name: 'Sensus · 研究主管', verdict, reason, score: w, rule: '铁律：不和稀泥，必须给出 BUY / SELL / HOLD 之一' };
+  return {
+    name: 'Sensus · 研究主管',
+    verdict,
+    reason,
+    score: w,
+    rounds: 2,
+    rule: '铁律：不和稀泥，必须给出 BUY / SELL / HOLD 之一',
+  };
 }
 
-// ═══════════ 第三阶段 · 交易决策 ═══════════
+// ═══════════ 第三阶段 · 交易决策（场景推演） ═══════════
 
 function trader(verdict, price, klines) {
   if (verdict === 'HOLD') {
@@ -432,27 +522,33 @@ function trader(verdict, price, klines) {
       name: 'Vector · 交易员',
       approved: false,
       note: '研究主管裁决为 HOLD，不出具委托参数，进入观望',
-      entry: price, target: null, stop: null, rr: null,
+      entry: price, target: null, stop: null, rr: null, scenarios: null,
     };
   }
   const atr = atr14(klines) ?? price * 0.02;
   const dir = verdict === 'BUY' ? 1 : -1;
   const entry = price;
   const stop = entry - dir * 2 * atr;
-  const target = entry + dir * 3 * atr;
-  const rr = Math.abs((target - entry) / (entry - stop));
+  const scenarios = [
+    { name: '乐观', move: dir * 3 * atr, prob: 0.25 },
+    { name: '中性', move: dir * 1.5 * atr, prob: 0.5 },
+    { name: '悲观', move: -dir * 2 * atr, prob: 0.25 },
+  ].map((s) => ({ ...s, price: +(entry + s.move).toFixed(2), pnlPct: +((s.move / entry) * 100).toFixed(2) }));
+  const expected = scenarios.reduce((a, s) => a + s.move * s.prob, 0);
+  const rr = Math.abs((dir * 3 * atr) / (dir * 2 * atr));
   return {
     name: 'Vector · 交易员',
-    approved: rr >= 1,
-    note: rr >= 1 ? `风险回报比 1:${rr.toFixed(2)} ≥ 1:1，委托参数通过审核` : `风险回报比 1:${rr.toFixed(2)} < 1:1，该笔直接 pass`,
+    approved: expected * dir > 0 && rr >= 1,
+    note: `期望收益 ${dir * expected >= 0 ? '+' : ''}${(dir * expected).toFixed(2)}（按概率加权），风险回报比 1:${rr.toFixed(2)}${expected * dir > 0 && rr >= 1 ? ' ≥ 1:1，委托参数通过审核' : '，不达标，该笔直接 pass'}`,
     entry: +entry.toFixed(2),
-    target: +target.toFixed(2),
+    target: +(entry + dir * 3 * atr).toFixed(2),
     stop: +stop.toFixed(2),
     rr: +rr.toFixed(2),
+    scenarios,
   };
 }
 
-// ═══════════ 第四阶段 · 风险评估 ═══════════
+// ═══════════ 第四阶段 · 风险辩论 ═══════════
 
 function riskTrio(trade, digest, klines) {
   const entry = trade?.entry ?? digest.price;
@@ -480,14 +576,33 @@ function riskTrio(trade, digest, klines) {
           ? `建议三分批建仓：首批 40% 于 ${entry.toFixed(2)}，二批 30% 于 ${(entry - 0.8 * atr).toFixed(2)}，三批 30% 于 ${(entry - 1.6 * atr).toFixed(2)}；跌破 ${(entry - 2 * atr).toFixed(2)} 全部止损`
           : '当前不满足分批建仓前提，建议仅跟踪观察，等待更优的赔率结构',
     },
+    _worstPct: worstPct,
   };
 }
 
-function riskChief(trade, trio, verdict, digest) {
+function riskDebate(trade, trio, digest) {
+  const rounds = [];
+  rounds.push({
+    round: '第一轮',
+    aggressive: trio.aggressive.opinion,
+    conservative: trio.conservative.opinion,
+  });
+  rounds.push({
+    round: '第二轮',
+    aggressive: `保守派的跳空与流动性担忧成立，但可以通过"预设熔断 + 避免重仓单一标的"管理，而非放弃信号；${digest.weightedBias >= 0 ? '当前加权证据仍偏正面' : '当前加权证据偏弱恰说明更不该恋战'}`,
+    conservative: `激进派承认了需要熔断机制——这正是本方立场的胜利；在研究与演示语境下，任何仓位的讨论都应默认带上"最坏情形 ${trio._worstPct.toFixed(1)}%"的脚注`,
+  });
+  rounds.push({
+    round: '中性方案',
+    neutral: trio.neutral.plan,
+  });
+  return rounds;
+}
+
+function riskChief(trade, trio, debate, verdict, digest) {
   let decision = verdict;
   let sizing = '——';
-  const worst = /止损触发亏损 ([0-9.]+)%/.exec(trio.conservative.opinion);
-  const worstPct = worst ? parseFloat(worst[1]) : 5;
+  const worstPct = trio._worstPct;
   if (!trade?.approved) {
     decision = '观望';
     sizing = '0（无信号不出手）';
@@ -504,50 +619,56 @@ function riskChief(trade, trio, verdict, digest) {
     name: 'Aegis · 风险主管',
     decision,
     sizing,
-    notes: `综合激进（机会成本）、保守（最坏情形 ${worstPct.toFixed(1)}%）、中性（分批节奏）三方意见；加权偏多度 ${digest.weightedBias}；最终决策 ${decision}（研究结论 · 非投资建议）`,
+    notes: `综合两轮风险辩论与加权偏多度 ${digest.weightedBias}：激进派的机会成本论、保守派的最坏情形论（${worstPct.toFixed(1)}%）、中性派的分批节奏已全部纳入；最终决策 ${decision}（研究结论 · 非投资建议）`,
   };
 }
 
 // ═══════════ 主理人编排器 ═══════════
 
-function run({ symbol, klines, quote, mode = 'full', agent, entryPrice, feed }) {
+function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed }) {
   const price = quote?.price ?? klines[klines.length - 1]?.close ?? null;
   const stages = {};
   let final = null;
 
   const ALL_ANALYSTS = [
-    techAnalyst(symbol, klines, quote, feed),
+    techAnalyst(symbol, klines, quote),
     fundamentalAnalyst(symbol, klines, quote, feed),
     newsAnalyst(symbol, klines, quote, feed),
     sentimentAnalyst(symbol, klines, quote, feed),
   ];
 
+  const finish = (stages_, final_) => {
+    const trace = {
+      ok: true,
+      symbol,
+      name: name ?? quote?.name ?? '',
+      mode,
+      ranAt: new Date().toISOString(),
+      price,
+      stages: stages_,
+      final: final_,
+      disclaimer: DISCLAIMER,
+    };
+    const reportId = reportstore.saveReport(trace);
+    return { ...trace, reportId };
+  };
+
   if (mode === 'single') {
     const map = { tech: '技术', fundamental: '基本面', news: '新闻', sentiment: '情绪' };
     const key = map[agent];
     const one = ALL_ANALYSTS.find((a) => a.name.includes(key)) ?? ALL_ANALYSTS[0];
-    stages.collect = {
-      title: '单点调用 · ' + key + '分析师',
-      rule: '单点模式：只调度该类分析师，报告直接回传主理人',
-      agents: [one],
-    };
+    stages.collect = { title: '单点调用 · ' + key + '分析师', agents: [one] };
     final = {
       decision: '——',
-      note: `单点调研完成。${one.name} 的报告已归档至主理人，可供后续完整分析调用`,
-      disclaimer: DISCLAIMER,
+      note: `单点调研完成。${one.name} 的全文报告已归档，可通过报告链接查看`,
     };
-    return { symbol, mode, ranAt: new Date().toISOString(), price, stages, final, disclaimer: DISCLAIMER };
+    return finish(stages, final);
   }
 
   if (mode === 'quick') {
     const two = [ALL_ANALYSTS[0], ALL_ANALYSTS[1]];
     const digest = buildDigest(two, quote, klines);
-    stages.collect = {
-      title: '第一阶段 · 数据收集（快速模式：技术 + 基本面）',
-      rule: '两名分析师并行开工，报告只交主理人',
-      agents: two,
-      digest,
-    };
+    stages.collect = { title: '第一阶段 · 数据收集（快速模式：技术 + 基本面）', agents: two, digest };
     const w = digest.weightedBias;
     const verdict = w >= 0.3 ? 'BUY' : w <= -0.3 ? 'SELL' : 'HOLD';
     stages.debate = { title: '（快速模式跳过多空辩论，主理人直接加权裁决）', chief: { name: 'Arbiter · 主理人', verdict, reason: `快速模式：按加权偏多度 ${w} 直接裁决`, score: w } };
@@ -556,67 +677,59 @@ function run({ symbol, klines, quote, mode = 'full', agent, entryPrice, feed }) 
     final = {
       decision: trade.approved ? verdict : '观望',
       note: `快速分析：${verdict}（研究倾向），${trade.note}`,
-      disclaimer: DISCLAIMER,
+      teamScore: Math.round(50 + w * 50),
     };
-    return { symbol, mode, ranAt: new Date().toISOString(), price, stages, final, disclaimer: DISCLAIMER };
+    return finish(stages, final);
   }
 
-  // 完整 / 辩论 / 风险模式：先跑第一阶段
   stages.collect = {
-    title: '第一阶段 · 数据收集（四分析师并行开工）',
-    rule: '四份报告全部交回主理人，才进入下一站；成员间严禁直连',
+    title: '第一阶段 · 数据收集（四分析师并行开工，各出全文报告）',
     agents: ALL_ANALYSTS,
     digest: buildDigest(ALL_ANALYSTS, quote, klines),
   };
 
   if (mode === 'risk') {
-    // 风险诊断：跳过多空辩论，基于当前价格生成委托参数再做风控
     const assumedVerdict = digestWeight(stages.collect.digest) >= 0 ? 'BUY' : 'SELL';
     const trade = trader(assumedVerdict, entryPrice ?? price, klines);
     stages.trade = { ...trade, note: `风险诊断模式：按持仓成本/现价 ${trade.entry} 假设 ${assumedVerdict} 方向。${trade.note}` };
     const trio = riskTrio(trade, stages.collect.digest, klines);
-    stages.risk = { ...trio, chief: riskChief(trade, trio, assumedVerdict, stages.collect.digest) };
-    final = {
-      decision: stages.risk.chief.decision,
-      note: stages.risk.chief.notes,
-      disclaimer: DISCLAIMER,
-    };
-    return { symbol, mode, ranAt: new Date().toISOString(), price, stages, final, disclaimer: DISCLAIMER };
+    const debate = riskDebate(trade, trio, stages.collect.digest);
+    stages.risk = { ...trio, debate, chief: riskChief(trade, trio, debate, assumedVerdict, stages.collect.digest) };
+    final = { decision: stages.risk.chief.decision, note: stages.risk.chief.notes };
+    return finish(stages, final);
   }
 
-  // debate / full：第二阶段多空辩论
-  const bull = bullResearcher(stages.collect.digest);
-  const bear = bearResearcher(stages.collect.digest, bull);
-  const chief = researchChief(stages.collect.digest, bull, bear);
+  // debate / full：两轮多空辩论
+  const bull1 = bullResearcher(stages.collect.digest);
+  const bear1 = bearResearcher(stages.collect.digest, bull1);
+  const bull2 = bullRebut(stages.collect.digest, bear1);
+  const bear2 = bearFinal(stages.collect.digest, bull2);
+  const chief = researchChief(stages.collect.digest, bull1, bear1, bull2, bear2);
   stages.debate = {
-    title: '第二阶段 · 多空辩论（多头先行 → 空头反驳 → 主管裁决）',
-    rule: '多头与空头互不直连，论战材料均经主理人中转',
-    bull,
-    bear,
+    title: '第二阶段 · 多空辩论（两轮）',
+    round1: { bull: bull1, bear: bear1 },
+    round2: { bull: bull2, bear: bear2 },
+    bull: bull1,
+    bear: bear1,
     chief,
   };
 
   if (mode === 'debate') {
-    final = {
-      decision: chief.verdict,
-      note: `辩论模式完成：研究主管裁决 ${chief.verdict} —— ${chief.reason}`,
-      disclaimer: DISCLAIMER,
-    };
-    return { symbol, mode, ranAt: new Date().toISOString(), price, stages, final, disclaimer: DISCLAIMER };
+    final = { decision: chief.verdict, note: `辩论模式完成：研究主管裁决 ${chief.verdict} —— ${chief.reason}` };
+    return finish(stages, final);
   }
 
-  // full：第三至第五阶段
   const trade = trader(chief.verdict, digestPrice(stages.collect.digest), klines);
   stages.trade = trade;
   const trio = riskTrio(trade, stages.collect.digest, klines);
-  stages.risk = { ...trio, chief: riskChief(trade, trio, chief.verdict, stages.collect.digest) };
+  const riskDebateRounds = riskDebate(trade, trio, stages.collect.digest);
+  stages.risk = { ...trio, debate: riskDebateRounds, chief: riskChief(trade, trio, riskDebateRounds, chief.verdict, stages.collect.digest) };
   final = {
     decision: stages.risk.chief.decision,
     note: stages.risk.chief.notes,
     teamScore: Math.round(50 + stages.collect.digest.weightedBias * 50),
-    disclaimer: DISCLAIMER,
   };
-  return { symbol, mode, ranAt: new Date().toISOString(), price, stages, final, disclaimer: DISCLAIMER };
+  return finish(stages, final);
 }
 
 function digestWeight(digest) {

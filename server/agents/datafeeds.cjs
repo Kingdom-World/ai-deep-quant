@@ -119,6 +119,12 @@ function getFundamentals(symbol) {
       profit: latest.PARENTNETPROFIT,
       profitYoY,
       quarters: rows.length,
+      trend: rows.map((r) => ({
+        date: String(r.REPORT_DATE || '').slice(0, 10),
+        profit: r.PARENTNETPROFIT,
+        roe: r.ROEJQ,
+        revenue: r.TOTALOPERATEREVE,
+      })),
     };
   });
 }
@@ -165,14 +171,97 @@ function getValuation(symbol) {
   });
 }
 
+/** 个股新闻（东方财富全文搜索接口，返回标题/媒体/日期/摘要） */
+function getStockNews(symbol) {
+  return cached('snews:' + symbol, TTL.news, async () => {
+    const digits = String(symbol).replace(/^(sh|sz|hk)/i, '');
+    if (!/^\d{6}$/.test(digits)) return null;
+    const param = JSON.stringify({
+      uid: '',
+      keyword: digits,
+      type: ['cmsArticleWebOld'],
+      client: 'web',
+      clientType: 'web',
+      clientVersion: 'cur',
+      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: 1, pageSize: 10, preTag: '', postTag: '' } },
+    });
+    const url = `https://search-api-web.eastmoney.com/search/jsonp?cb=&param=${encodeURIComponent(param)}`;
+    const raw = await getJSON(url, 'https://so.eastmoney.com/');
+    // jsonp 包裹（cb= 为空时仍可能返回 jsonp(...) 或直接 JSON）
+    const text = typeof raw === 'string' ? raw.replace(/^[\w$]+\(/, '').replace(/\);?\s*$/, '') : JSON.stringify(raw);
+    const j = JSON.parse(text);
+    const arts = j?.result?.cmsArticleWebOld;
+    if (!Array.isArray(arts) || !arts.length) return null;
+    return arts.map((a) => ({
+      date: String(a.date || '').slice(0, 10),
+      title: String(a.title || '').replace(/<[^>]+>/g, ''),
+      media: String(a.mediaName || ''),
+      snippet: String(a.content || '').replace(/<[^>]+>/g, '').slice(0, 120),
+      url: String(a.url || ''),
+    }));
+  });
+}
+
+/** 融资融券明细（近 10 个交易日：融资余额 / 融资买入额 / 偿还额） */
+function getMarginData(symbol) {
+  return cached('margin:' + symbol, TTL.fund, async () => {
+    const digits = String(symbol).replace(/^(sh|sz|hk)/i, '');
+    if (!/^\d{6}$/.test(digits)) return null;
+    const url =
+      `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_RZRQ_GGMX` +
+      `&columns=ALL&filter=(scode%3D%22${digits}%22)&pageNumber=1&pageSize=10&sortColumns=DATE&sortTypes=-1&source=WEB&client=WEB`;
+    const j = await getJSON(url, 'https://data.eastmoney.com/');
+    const rows = j?.result?.data;
+    if (!Array.isArray(rows) || !rows.length) return null;
+    const items = rows.map((r) => ({
+      date: String(r.DATE || '').slice(0, 10),
+      rzye: Number(r.RZYE), // 融资余额（元）
+      rzrqye: Number(r.RZRQYE), // 融资融券余额
+      rzbuy: Number(r.RZMRE), // 融资买入额
+    }));
+    const first = items[0];
+    const oldest = items[items.length - 1];
+    return {
+      rows: items,
+      latestDate: first.date,
+      rzye: first.rzye,
+      change5: oldest.rzye ? ((first.rzye - oldest.rzye) / oldest.rzye) * 100 : null,
+    };
+  });
+}
+
+/** 北向持股（尝试接口，失败自动降级 null） */
+function getNorthHold(symbol) {
+  return cached('north:' + symbol, TTL.fund, async () => {
+    const digits = String(symbol).replace(/^(sh|sz|hk)/i, '');
+    if (!/^\d{6}$/.test(digits)) return null;
+    const url =
+      `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_MUTUAL_HOLDSTOCKNORTH_STA` +
+      `&columns=ALL&filter=(SECURITY_CODE%3D%22${digits}%22)&pageNumber=1&pageSize=5&sortColumns=HOLD_DATE&sortTypes=-1&source=WEB&client=WEB`;
+    const j = await getJSON(url, 'https://data.eastmoney.com/');
+    const rows = j?.result?.data;
+    if (!Array.isArray(rows) || !rows.length) return null;
+    const first = rows[0];
+    return {
+      date: String(first.HOLD_DATE || '').slice(0, 10),
+      holdShares: Number(first.HOLD_SHARES) || null,
+      marketValue: Number(first.HOLD_MARKET_CAP) || null,
+      ratio: Number(first.FREESHARES_RATIO ?? first.HOLD_SHARES_RATIO) || null,
+    };
+  });
+}
+
 async function getAll(symbol) {
-  const [moneyFlow, fundamentals, announcements, valuation] = await Promise.all([
+  const [moneyFlow, fundamentals, announcements, valuation, stockNews, marginData, northHold] = await Promise.all([
     getMoneyFlow(symbol).catch(() => null),
     getFundamentals(symbol).catch(() => null),
     getAnnouncements(symbol).catch(() => null),
     getValuation(symbol).catch(() => null),
+    getStockNews(symbol).catch(() => null),
+    getMarginData(symbol).catch(() => null),
+    getNorthHold(symbol).catch(() => null),
   ]);
-  return { moneyFlow, fundamentals, announcements, valuation };
+  return { moneyFlow, fundamentals, announcements, valuation, stockNews, marginData, northHold };
 }
 
-module.exports = { getAll, getMoneyFlow, getFundamentals, getAnnouncements, getValuation };
+module.exports = { getAll, getMoneyFlow, getFundamentals, getAnnouncements, getValuation, getStockNews, getMarginData, getNorthHold };

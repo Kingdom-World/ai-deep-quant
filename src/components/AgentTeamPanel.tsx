@@ -4,6 +4,7 @@
 //   · 鲜明脱敏声明：所有内容为程序化规则生成的学术研究演示，非投资建议
 // ─────────────────────────────────────────────────────────────
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { agentsApi, type AgentTrace } from '../api/dataService';
 
 const CARD = {
@@ -81,6 +82,7 @@ function AgentCard({ a }: { a: any }) {
 }
 
 export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false }: { defaultSymbol?: string; compact?: boolean }) {
+  const navigate = useNavigate();
   const [symbol, setSymbol] = useState(defaultSymbol);
   const [mode, setMode] = useState('full');
   const [agent, setAgent] = useState('tech');
@@ -222,6 +224,14 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
               </div>
             )}
           </div>
+          {trace.reportId && (
+            <button
+              onClick={() => navigate(`/agents/report/${trace.reportId}`)}
+              style={{ width: '100%', marginTop: 10, padding: '10px 0', fontSize: '13px', fontWeight: 700, color: '#93c5fd', backgroundColor: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 10, cursor: 'pointer' }}
+            >
+              📄 查看完整研究报告（全部 Agent 全文 · 两轮辩论 · 场景推演）
+            </button>
+          )}
 
           {/* 调度中枢 */}
           <div style={{ ...CARD, marginBottom: 14, textAlign: 'center', padding: '12px' }}>

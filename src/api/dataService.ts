@@ -753,6 +753,7 @@ export interface AgentTrace {
   stages: Record<string, any>;
   final: { decision: string; note?: string; teamScore?: number; disclaimer?: string };
   disclaimer: string;
+  reportId?: string;
   error?: string;
 }
 
@@ -760,6 +761,12 @@ export interface AgentTrace {
 export const agentsApi = {
   analyze: (body: { symbol: string; mode?: string; agent?: string; entryPrice?: number }) =>
     apiPost<AgentTrace>('/agents/analyze', body),
+  report: (id: string) =>
+    apiGet<{ ok: boolean; report: AgentTrace }>(`/agents/report/${encodeURIComponent(id)}`),
+  list: (symbol?: string) =>
+    apiGet<{ ok: boolean; list: { id: string; symbol: string; name?: string; mode: string; decision: string; ranAt: string }[] }>(
+      `/agents/reports${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`,
+    ),
 };
 
 /** 13. 看板数据面板（资金流 / 财务 / 估值 / 公告，东方财富公开接口，缺失自动为 null） */

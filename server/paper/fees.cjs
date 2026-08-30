@@ -23,7 +23,7 @@ function calcFees(market, side, value) {
 
 function marketOf(symbol) {
   const s = String(symbol).toLowerCase();
-  if (/^(sh|sz)/.test(s)) return 'CN';
+  if (/^(sh|sz|bj)/.test(s)) return 'CN';
   if (/^hk/.test(s)) return 'HK';
   return 'US';
 }

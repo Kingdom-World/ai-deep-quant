@@ -27,10 +27,13 @@ export const currencyFor = (m: Market) => (m === 'US' ? '$' : m === 'HK' ? 'HK$'
  */
 export const detectMarket = (symbol: string): Market => {
   const s = symbol.trim().toLowerCase();
-  if (s.startsWith('sh') || s.startsWith('sz')) return 'CN';
+  if (s.startsWith('sh') || s.startsWith('sz') || s.startsWith('bj')) return 'CN'; // bj = 北交所
   if (s.startsWith('hk')) return 'HK';
   if (s.startsWith('us')) return 'US';
-  if (/^\d{6}$/.test(symbol)) return 'CN';
+  if (/^\d{6}$/.test(symbol)) {
+    if (/^(43|83|87|88|92)/.test(symbol)) return 'CN'; // 北交所代码段
+    return 'CN';
+  }
   if (/^\d{5}$/.test(symbol)) return 'HK';
   return 'US';
 };

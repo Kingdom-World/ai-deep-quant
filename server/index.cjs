@@ -200,9 +200,12 @@ async function mapPool(items, limit, fn) {
 function toTencentCode(symbol) {
   const raw = String(symbol).trim();
   const lower = raw.toLowerCase();
-  if (/^(sh|sz|hk)/.test(lower)) return lower;
+  if (/^(sh|sz|bj|hk)/.test(lower)) return lower; // bj = 北交所（920/43/83/87/88 开头）
   if (/^us/i.test(lower)) return `us${raw.slice(2)}`;
-  if (/^\d{6}$/.test(raw)) return /^[69]/.test(raw) ? `sh${raw}` : `sz${raw}`;
+  if (/^\d{6}$/.test(raw)) {
+    if (/^(43|83|87|88|92)/.test(raw)) return `bj${raw}`; // 北交所代码段
+    return /^[69]/.test(raw) ? `sh${raw}` : `sz${raw}`;
+  }
   if (/^\d{5}$/.test(raw)) return `hk${raw}`;
   return `us${raw.toUpperCase()}`;
 }
@@ -614,6 +617,26 @@ app.get('/api/mkline/:symbol', async (req, res) => {
       klines = parseTencentMkline(json, code, `m${step}`);
       source = 'tencent-mkline';
     }
+    if (!klines.length) {
+      // 新股/北交所兜底：mkline 无数据时用当日分时聚合生成分钟 K（如 920288 上市首日）
+      try {
+        const mUrl = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`;
+        const mText = await fetchText(mUrl, { 'User-Agent': UA, Referer: 'http://finance.qq.com' });
+        const mJson = JSON.parse(mText);
+        const bjDate = mJson?.data?.[code]?.data?.date;
+        const bjDay = bjDate ? `${bjDate.slice(0, 4)}-${bjDate.slice(4, 6)}-${bjDate.slice(6, 8)}` : null;
+        const pts = parseTencentMinute(mJson, code)
+          .map((p) => ({
+            date: `${bjDay ?? ''} ${p.time}`,
+            open: p.price, close: p.price, high: p.price, low: p.price, volume: p.volume,
+          }))
+          .filter((p) => p.date.trim() !== '');
+        if (pts.length) {
+          klines = aggregateMinuteKlines(pts, step);
+          source = 'tencent-minute-agg';
+        }
+      } catch { /* 兜底失败保持空 */ }
+    }
     if (!klines.length) throw new Error('分钟 K 线数据为空');
     const result = { symbol: code, period: `m${step}`, source, klines: klines.slice(-count) };
     setCache(cacheKey, result);
@@ -836,33 +859,49 @@ app.get('/api/search/:keyword', async (req, res) => {
   const cached = getCached(cacheKey, SEARCH_TTL);
   if (cached) return res.json(cached);
 
+  const items = [];
+
+  // 源 1：新浪 sugest（沪深港美主流代码）
   try {
     const url = `https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15&key=${encodeURIComponent(keyword)}`;
     const text = await fetchText(url, { 'User-Agent': UA, Referer: 'https://finance.sina.com.cn' });
-    const items = parseSinaSearch(text);
+    items.push(...parseSinaSearch(text));
+  } catch { /* 新浪失败继续东财 */ }
 
-    const upper = keyword.trim().toUpperCase();
-    const isCodeLike = /^[A-Z0-9.]{1,10}$/.test(upper);
-    if (isCodeLike) {
-      const direct = US_FALLBACK[upper];
-      if (direct) {
-        items.length = 0;
-        items.push({ name: direct, code: upper, market: 'US' });
-      } else if (/^\d{6}$/.test(upper)) {
-        items.length = 0;
-        items.push({ name: upper, code: upper, market: 'CN' });
-      } else if (/^\d{5}$/.test(upper)) {
-        items.length = 0;
-        items.push({ name: upper, code: upper, market: 'HK' });
-      } else if (/^[A-Z]{1,6}$/.test(upper) && items.every((it) => it.code.toUpperCase() !== upper)) {
-        items.push({ name: upper, code: upper, market: 'US' });
+  // 源 2：东财 suggest（兜底：覆盖北交所 920/43/83/87/88 等新浪缺失的代码段；名称=代码的弱结果也尝试补全）
+  const isWeakName = (it) => it.name === it.code || /^(sh|sz|bj)\d{5,6}$/.test(it.name); // 名称是"交易所前缀+代码"=无效名称
+  if (items.length === 0 || items.every(isWeakName)) {
+    items.length = 0; // 清空"名称=代码"的弱结果，用东财补全名称
+    try {
+      const emUrl = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(keyword)}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=8`;
+      const em = (await axios.get(emUrl, { headers: { 'User-Agent': UA, Referer: 'https://www.eastmoney.com/' }, timeout: 6000 })).data;
+      const list = em?.QuotationCodeTable?.Data ?? [];
+      for (const d of list) {
+        if (!d.Code) continue;
+        const secid = String(d.QuoteID || '');
+        const market = /^0\.|^1\./.test(secid) ? 'CN' : 'US';
+        items.push({ name: d.Name, code: String(d.Code), market });
       }
-    }
-    setCache(cacheKey, items);
-    res.json(items);
-  } catch (e) {
-    res.status(500).json({ error: `搜索失败: ${e.message?.slice(0, 80)}` });
+    } catch { /* 东财也失败则走代码直填兜底 */ }
   }
+
+  const upper = keyword.trim().toUpperCase();
+  const isCodeLike = /^[A-Z0-9.]{1,10}$/.test(upper);
+  if (isCodeLike) {
+    const direct = US_FALLBACK[upper];
+    if (direct) {
+      items.length = 0;
+      items.push({ name: direct, code: upper, market: 'US' });
+    } else if (/^\d{6}$/.test(upper)) {
+      if (items.length === 0) items.push({ name: upper, code: upper, market: 'CN' }); // 已有结果（如东财补全）不覆盖
+    } else if (/^\d{5}$/.test(upper)) {
+      if (items.length === 0) items.push({ name: upper, code: upper, market: 'HK' });
+    } else if (/^[A-Z]{1,6}$/.test(upper) && items.every((it) => it.code.toUpperCase() !== upper)) {
+      items.push({ name: upper, code: upper, market: 'US' });
+    }
+  }
+  setCache(cacheKey, items);
+  res.json(items);
 });
 
 // ───────────── 5. 策略回测 ─────────────

@@ -20,6 +20,7 @@ function emSecid(symbol) {
   const s = String(symbol).toLowerCase();
   if (/^sh/.test(s)) return '1.' + s.replace(/^sh/, '');
   if (/^sz/.test(s)) return '0.' + s.replace(/^sz/, '');
+  if (/^bj/.test(s)) return '0.' + s.replace(/^bj/, ''); // 北交所与深市同用 0 市场前缀
   return null;
 }
 
@@ -27,6 +28,7 @@ function emSecucode(symbol) {
   const s = String(symbol).toLowerCase();
   if (/^sh/.test(s)) return s.replace(/^sh/, '') + '.SH';
   if (/^sz/.test(s)) return s.replace(/^sz/, '') + '.SZ';
+  if (/^bj/.test(s)) return s.replace(/^bj/, '') + '.BJ';
   return null;
 }
 

@@ -219,6 +219,29 @@ function parseTencentQuote(text, symbol) {
   const isCN = /^(sh|sz)/.test(String(symbol).toLowerCase());
   const volume = num(parts[6]) * (isCN ? 100 : 1);
   const changePercent = prevClose && prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+
+  // 五档盘口（仅 A 股）：腾讯字段 9-18 = 买一~买五价/量（手），19-28 = 卖一~卖五价/量；30 = 行情时间
+  let bids = null;
+  let asks = null;
+  let quoteTime = null;
+  if (isCN && parts.length > 30) {
+    const bidsRaw = [];
+    const asksRaw = [];
+    for (let i = 0; i < 5; i++) {
+      const bp = num(parts[9 + i * 2]);
+      const bv = num(parts[10 + i * 2]);
+      const ap = num(parts[19 + i * 2]);
+      const av = num(parts[20 + i * 2]);
+      if (bp != null && bv != null) bidsRaw.push({ price: bp, qty: bv * 100 });
+      if (ap != null && av != null) asksRaw.push({ price: ap, qty: av * 100 });
+    }
+    bids = bidsRaw.sort((a, b) => b.price - a.price);
+    asks = asksRaw.sort((a, b) => a.price - b.price);
+    quoteTime = parts[30] && /^\d{14}$/.test(parts[30])
+      ? `${parts[30].slice(8, 10)}:${parts[30].slice(10, 12)}:${parts[30].slice(12, 14)}`
+      : null;
+  }
+
   return {
     symbol: parts[2] || symbol,
     name,
@@ -231,6 +254,9 @@ function parseTencentQuote(text, symbol) {
     changePercent,
     timestamp: Date.now(),
     source: 'tencent',
+    bids,
+    asks,
+    quoteTime,
   };
 }
 

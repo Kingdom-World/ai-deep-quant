@@ -98,6 +98,10 @@ export interface UnifiedQuote {
   prevClose: number | null;
   timestamp: number;
   _source: 'backend';
+  /** A 股五档盘口（腾讯源提供；美股/港股为 null） */
+  bids?: { price: number; qty: number }[] | null;
+  asks?: { price: number; qty: number }[] | null;
+  quoteTime?: string | null;
 }
 
 /** 统一 K 线 */
@@ -123,6 +127,9 @@ interface BackendQuote {
   low: number | null;
   volume: number | null;
   changePercent: number;
+  bids?: { price: number; qty: number }[] | null;
+  asks?: { price: number; qty: number }[] | null;
+  quoteTime?: string | null;
 }
 
 /** 后端 K 线响应 */
@@ -162,6 +169,9 @@ export const getQuote = async (
     prevClose: raw.prevClose,
     timestamp: Date.now(),
     _source: 'backend',
+    bids: raw.bids ?? null,
+    asks: raw.asks ?? null,
+    quoteTime: raw.quoteTime ?? null,
   };
   setCached(cacheKey, result);
   return result;

@@ -353,6 +353,59 @@ export default function PaperTradingPage() {
   // 交易时段状态（随选中标的的市场变化；每次轮询重渲染时自动刷新）
   const mktStatus = getMarketStatus(detectMarket(selectedSymbol || 'sh600519'));
 
+  // 表单代码 → 行情面板/五档盘口联动（600ms 防抖）
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const s = symbol.trim();
+      if (s) setSelectedSymbol(s);
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [symbol]);
+
+  // 快捷仓位计算：参考价 = 行情面板最新价；A 股按 100 股整手；预算限制在"单笔 ≤ 总资产 20%"风控内
+  const refPrice = quote?.price ?? null;
+  const isCNLot = detectMarket(symbol.trim() || 'sh600519') === 'CN';
+  const lotFloor = (q: number) => Math.max(0, isCNLot ? Math.floor(q / 100) * 100 : Math.floor(q));
+  const maxByRisk = account && refPrice ? lotFloor(((account.totalAssets * 0.2) * 0.98) / refPrice) : 0;
+
+  /** 一键撤销全部挂单 */
+  const cancelAll = async () => {
+    const resting = (account?.orders ?? []).filter((o) => o.status === 'resting');
+    if (!resting.length) return;
+    for (const o of resting) {
+      try {
+        await paperApi.cancelOrder(o.id);
+      } catch {
+        /* 单笔失败继续撤下一笔 */
+      }
+    }
+    setMsg({ text: `已撤销 ${resting.length} 笔挂单`, ok: true });
+    await refresh();
+  };
+
+  // 五档盘口
+  const maxLvlQty = Math.max(
+    ...(quote?.bids ?? []).map((b) => b.qty),
+    ...(quote?.asks ?? []).map((a) => a.qty),
+    1,
+  );
+  const LvlRow = ({ label, lvl, color }: { label: string; lvl: { price: number; qty: number }; color: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '1.5px 0' }}>
+      <span style={{ width: 26, color: '#64748b' }}>{label}</span>
+      <span
+        style={{ width: 66, textAlign: 'right', color, fontFamily: 'Consolas, monospace', cursor: 'pointer', fontWeight: 600 }}
+        onClick={() => { setLimitPrice(lvl.price); setType('limit'); }}
+        title="点击填入限价"
+      >
+        {lvl.price.toFixed(2)}
+      </span>
+      <div style={{ flex: 1, height: 8, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${(lvl.qty / maxLvlQty) * 100}%`, height: '100%', backgroundColor: color, opacity: 0.35 }} />
+      </div>
+      <span style={{ width: 56, textAlign: 'right', color: '#94a3b8' }}>{lvl.qty.toLocaleString()}</span>
+    </div>
+  );
+
   /** 可点击的代码标签：页内选中行情 + 保留详情页入口 */
   const CodeTag = ({ code, label }: { code: string; label?: string }) => (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -502,6 +555,28 @@ export default function PaperTradingPage() {
                 ))}
               </div>
               <input style={INPUT} type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 0)))} placeholder="数量（股）" />
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[
+                  { label: '满额', q: maxByRisk },
+                  { label: '半仓', q: Math.floor(maxByRisk / 2) },
+                  { label: '1/4仓', q: Math.floor(maxByRisk / 4) },
+                  { label: '100股', q: isCNLot ? 100 : 100 },
+                ].map((b) => (
+                  <button
+                    key={b.label}
+                    style={{ flex: 1, padding: '6px 0', fontSize: '11px', color: '#93c5fd', backgroundColor: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 6, cursor: 'pointer' }}
+                    onClick={() => { if (b.q > 0) setQty(b.q); }}
+                    disabled={!refPrice}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+              {refPrice && (
+                <div style={{ fontSize: '11px', color: '#475569' }}>
+                  参考价 {refPrice.toFixed(2)} · 最大可买 <b style={{ color: '#93c5fd' }}>{maxByRisk.toLocaleString()}</b> 股（单笔 ≤ 总资产20%{isCNLot ? ' · 100股整手' : ''}）
+                </div>
+              )}
               {type === 'limit' && (
                 <input style={INPUT} type="number" min={0} value={limitPrice || ''} onChange={(e) => setLimitPrice(Number(e.target.value) || 0)} placeholder="限价（元）" />
               )}
@@ -509,9 +584,46 @@ export default function PaperTradingPage() {
                 提交{side === 'buy' ? '买入' : '卖出'}委托
               </button>
               <div style={{ fontSize: '11px', color: '#475569' }}>
-                市价单按最新行情立即成交；限价单未成交将持续挂单（每 5 秒重试）。
-                点击持仓/委托里的代码可在右侧查看实时行情。
+                市价单按最新行情立即成交；限价单未成交将持续挂单（每 5 秒重试）。点按五档价格可快速填入限价。
               </div>
+
+              {/* 五档盘口（仅 A 股提供） */}
+              {quote?.bids?.length && quote?.asks?.length ? (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b', marginBottom: 4 }}>
+                    <span>五档盘口{quote.quoteTime ? ` · ${quote.quoteTime}` : ''}</span>
+                    <span>点价格填限价</span>
+                  </div>
+                  {[...quote.asks].slice(0, 5).reverse().map((a, i) => (
+                    <LvlRow key={`a${i}`} label={`卖${5 - i}`} lvl={a} color="#22c55e" />
+                  ))}
+                  <div
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b',
+                      padding: '3px 0', borderTop: '1px dashed #1e293b', borderBottom: '1px dashed #1e293b', margin: '3px 0',
+                    }}
+                  >
+                    <span>最新</span>
+                    <span
+                      style={{ color: '#f1f5f9', fontFamily: 'Consolas, monospace', cursor: 'pointer', fontWeight: 700 }}
+                      onClick={() => { setLimitPrice(quote.price); setType('limit'); }}
+                      title="点击填入限价"
+                    >
+                      {quote.price.toFixed(2)}
+                    </span>
+                    <span>{mktStatus.open ? '🔴' : '⚪'}</span>
+                  </div>
+                  {quote.bids.slice(0, 5).map((b, i) => (
+                    <LvlRow key={`b${i}`} label={`买${i + 1}`} lvl={b} color="#ef4444" />
+                  ))}
+                </div>
+              ) : (
+                quote && selectedSymbol && (
+                  <div style={{ marginTop: 10, fontSize: '11px', color: '#475569' }}>
+                    当前市场（{detectMarket(selectedSymbol)}）无五档盘口数据
+                  </div>
+                )
+              )}
             </div>
           </div>
 
@@ -682,7 +794,13 @@ export default function PaperTradingPage() {
                       <td style={{ padding: '8px', color: pctColor(p.unrealizedPnl) }}>
                         {p.unrealizedPnl >= 0 ? '+' : ''}{fmtMoney(p.unrealizedPnl)}（{p.unrealizedPct >= 0 ? '+' : ''}{p.unrealizedPct}%）
                       </td>
-                      <td style={{ padding: '8px' }}>
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                        <button
+                          style={{ ...BTN('#9f1239'), padding: '4px 8px', fontSize: '11px', marginRight: 4 }}
+                          onClick={() => act(() => paperApi.placeOrder({ symbol: p.symbol, name: p.name, side: 'sell', type: 'market', qty: Math.max(1, Math.floor(p.qty / 2)) }), '减半卖出已提交')}
+                        >
+                          减半
+                        </button>
                         <button
                           style={{ ...BTN('#dc2626'), padding: '4px 10px', fontSize: '11px' }}
                           onClick={() => act(() => paperApi.placeOrder({ symbol: p.symbol, name: p.name, side: 'sell', type: 'market', qty: p.qty }), '市价卖出已提交')}
@@ -700,7 +818,17 @@ export default function PaperTradingPage() {
           </div>
 
           <div style={CARD}>
-            <div style={{ fontWeight: 700, marginBottom: '10px' }}>📜 委托与成交记录</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontWeight: 700 }}>📜 委托与成交记录</span>
+              {(account?.orders ?? []).some((o) => o.status === 'resting') && (
+                <button
+                  style={{ ...BTN('#92400e'), padding: '5px 12px', fontSize: '11px' }}
+                  onClick={cancelAll}
+                >
+                  一键撤单
+                </button>
+              )}
+            </div>
             {account && account.orders.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '300px', overflowY: 'auto' }}>
                 {account.orders.slice(0, 30).map((o: PaperOrder) => {

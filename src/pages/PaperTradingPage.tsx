@@ -6,7 +6,7 @@
 //   · 自动策略（maCross / rsiReversal / gridTrading）启停
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import {
   paperApi,
@@ -89,6 +89,16 @@ export default function PaperTradingPage() {
   const [type, setType] = useState<'market' | 'limit'>('market');
   const [qty, setQty] = useState(100);
   const [limitPrice, setLimitPrice] = useState(0);
+
+  // 支持 /paper?symbol=XXX&side=buy|sell 直达预填（个股页"模拟交易直达"入口）
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const sym = searchParams.get('symbol');
+    if (sym) setSymbol(sym);
+    const s = searchParams.get('side');
+    if (s === 'buy' || s === 'sell') setSide(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 搜索联想
   const [suggestions, setSuggestions] = useState<{ name: string; code: string; market: string }[]>([]);

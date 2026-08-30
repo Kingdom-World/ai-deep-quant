@@ -15,6 +15,7 @@ import {
 import {
   aggregateData,
   aggregatePoints,
+  analyzeStockPotential,
   calcMACD,
   calcMA,
   calcMASeries,
@@ -1016,18 +1017,31 @@ export default function StockDetailPage() {
     return '#94a3b8';
   };
 
+  // ── 价格横幅派生值（最后一根日 K 的 OHLCV）与五因子评分 ──
+  const lastBar = allPoints.length ? allPoints[allPoints.length - 1] : null;
+  const prevClose = allPoints.length > 1 ? allPoints[allPoints.length - 2].close : null;
+  const dailyCloses = useMemo(() => allPoints.map((p) => p.close), [allPoints]);
+  const factorScore = useMemo(() => {
+    if (allPoints.length < 60) return null;
+    try {
+      return analyzeStockPotential(symbol, allPoints, {
+        price: latestPrice ?? allPoints[allPoints.length - 1]?.close ?? 0,
+        changePercent: changePercent ?? 0,
+      });
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, allPoints, latestPrice]);
+
   // ── 深色主题通用样式 ──
   const cardStyle: React.CSSProperties = {
-    backgroundColor: '#111827',
+    backgroundColor: 'rgba(17,24,39,0.6)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
     borderRadius: '12px',
-    border: '1px solid #1e293b',
-  };
-  const labelStyle: React.CSSProperties = {
-    fontSize: '12px',
-    color: '#64748b',
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    border: '1px solid rgba(96,165,250,0.16)',
+    boxShadow: '0 10px 36px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)',
   };
 
   // 14. 渲染
@@ -1234,114 +1248,87 @@ export default function StockDetailPage() {
         </button>
       </div>
 
-      <main style={{ maxWidth: '980px', margin: '0 auto', padding: '24px 20px 32px' }}>
-        {/* ── 数据卡片：基础行情 ── */}
+      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '24px 20px 32px' }}>
+        {/* ── 价格横幅（同花顺式）：现价大字 + 关键指标横排 ── */}
         <div
           style={{
             display: 'flex',
-            justifyContent: 'center',
-            gap: '40px',
-            marginBottom: '16px',
+            alignItems: 'center',
+            gap: '26px',
             flexWrap: 'wrap',
-            padding: '16px 20px',
+            marginBottom: '14px',
+            padding: '14px 20px',
             ...cardStyle,
           }}
         >
-          <div style={{ textAlign: 'center' }}>
-            <div style={labelStyle}>最新价</div>
-            <div
-              style={{
-                fontSize: '28px',
-                fontWeight: '700',
-                letterSpacing: '0.5px',
-                color: '#f8fafc',
-              }}
-            >
-              {formatCurrency(latestPrice)}
+          <div style={{ minWidth: '160px' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: 2 }}>
+              最新价{updateTime ? ` · ${updateTime}` : ''}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <span
+                style={{
+                  fontSize: '30px',
+                  fontWeight: 800,
+                  color: pctColor(changePercent),
+                  fontFamily: 'Consolas, monospace',
+                }}
+              >
+                {formatCurrency(latestPrice)}
+              </span>
+              <span style={{ fontSize: '18px', fontWeight: 700, color: pctColor(changePercent) }}>
+                {formatPercent(changePercent)}
+              </span>
             </div>
           </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={labelStyle}>当日涨跌幅</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: pctColor(changePercent) }}>
-              {formatPercent(changePercent)}
-            </div>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={labelStyle}>近{HISTORY_COUNT}日涨幅</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: pctColor(rangeChange) }}>
-              {formatPercent(rangeChange)}
-            </div>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={labelStyle}>最后更新</div>
-            <div style={{ fontSize: '16px', fontWeight: '500', color: '#e2e8f0' }}>
-              {updateTime || '--'}
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(100px, auto))', gap: '8px 24px', fontSize: '13px' }}>
+            {[
+              { label: '今开', value: lastBar ? formatCurrency(lastBar.open) : '--', color: '#e2e8f0' },
+              { label: '昨收', value: prevClose ? formatCurrency(prevClose) : '--', color: '#e2e8f0' },
+              { label: '最高', value: lastBar ? formatCurrency(lastBar.high) : '--', color: '#ef4444' },
+              { label: '最低', value: lastBar ? formatCurrency(lastBar.low) : '--', color: '#22c55e' },
+              { label: '成交量', value: lastBar?.volume != null ? formatVolume(lastBar.volume) : '--', color: '#e2e8f0' },
+              { label: `近${HISTORY_COUNT}日`, value: formatPercent(rangeChange), color: pctColor(rangeChange) },
+            ].map((it) => (
+              <div key={it.label}>
+                <span style={{ color: '#64748b', marginRight: 8 }}>{it.label}</span>
+                <span style={{ color: it.color, fontWeight: 600, fontFamily: 'Consolas, monospace' }}>{it.value}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* ── 数据卡片：价格变化摘要 ── */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '16px',
-            marginBottom: '24px',
-            flexWrap: 'wrap',
-          }}
-        >
+        {/* ── 阶段涨跌幅摘要 ── */}
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
           {[
-            { label: '今日变化', value: todayChange },
-            { label: '本周变化', value: weekChange },
-            { label: '本月变化', value: monthChange },
-            { label: '年初至今 (YTD)', value: ytdChange },
+            { label: '今日', value: todayChange },
+            { label: '本周', value: weekChange },
+            { label: '本月', value: monthChange },
+            { label: '年初至今', value: ytdChange },
           ].map((item) => {
             const v = item.value;
-            const bg =
-              v === null
-                ? 'rgba(100, 116, 139, 0.12)'
-                : v >= 0
-                  ? 'rgba(239, 68, 68, 0.12)'
-                  : 'rgba(34, 197, 94, 0.12)';
             return (
               <div
                 key={item.label}
                 style={{
-                  flex: '1 1 160px',
-                  maxWidth: '200px',
+                  flex: '1 1 140px',
                   textAlign: 'center',
-                  padding: '12px 14px',
-                  backgroundColor: bg,
+                  padding: '10px 14px',
+                  backgroundColor: v === null ? 'rgba(100,116,139,0.12)' : v >= 0 ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)',
                   borderRadius: '10px',
-                  border: `1px solid ${v === null ? '#1e293b' : v >= 0 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+                  border: `1px solid ${v === null ? '#1e293b' : v >= 0 ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`,
                 }}
               >
-                <div
-                  style={{
-                    fontSize: '12px',
-                    color: '#94a3b8',
-                    fontWeight: '500',
-                    letterSpacing: '0.3px',
-                  }}
-                >
-                  {item.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: '20px',
-                    fontWeight: '700',
-                    color: pctColor(v),
-                    marginTop: '2px',
-                  }}
-                >
-                  {formatPercent(v)}
-                </div>
+                <span style={{ fontSize: '12px', color: '#94a3b8', marginRight: 8 }}>{item.label}</span>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: pctColor(v) }}>{formatPercent(v)}</span>
               </div>
             );
           })}
         </div>
 
-        {/* ── 实时走势图（分时历史 + 实时跟踪，独立 ECharts 实例） ── */}
+        {/* ── 同花顺式两栏：左图表 / 右信息面板 ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
         <div
           style={{
             position: 'relative',
@@ -1526,6 +1513,108 @@ export default function StockDetailPage() {
             padding: '4px',
           }}
         />
+
+          </div>
+
+          {/* 右侧信息面板 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* 关键均线 */}
+            <div style={{ ...cardStyle, padding: '14px 16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>📐 关键均线（日）</div>
+              {[5, 10, 20, 60].map((n) => {
+                const v = calcMA(dailyCloses, n);
+                return (
+                  <div
+                    key={n}
+                    style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1e293b', fontSize: '13px' }}
+                  >
+                    <span style={{ color: '#94a3b8' }}>MA{n}</span>
+                    <span
+                      style={{
+                        color: v != null && latestPrice != null ? (latestPrice >= v ? '#ef4444' : '#22c55e') : '#e2e8f0',
+                        fontFamily: 'Consolas, monospace',
+                      }}
+                    >
+                      {v != null ? v.toFixed(2) : '--'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 五因子评分 */}
+            <div style={{ ...cardStyle, padding: '14px 16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '10px' }}>🧮 五因子评分</div>
+              {factorScore ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <svg width="56" height="56" style={{ flexShrink: 0 }}>
+                    <circle cx="28" cy="28" r="22" stroke="#1e293b" strokeWidth="5" fill="none" />
+                    <circle
+                      cx="28"
+                      cy="28"
+                      r="22"
+                      stroke={
+                        factorScore.total >= 80
+                          ? '#ef4444'
+                          : factorScore.total >= 65
+                            ? '#f59e0b'
+                            : factorScore.total >= 45
+                              ? '#60a5fa'
+                              : '#94a3b8'
+                      }
+                      strokeWidth="5"
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeDasharray={(2 * Math.PI * 22).toFixed(1)}
+                      strokeDashoffset={(2 * Math.PI * 22 * (1 - Math.min(factorScore.total, 100) / 100)).toFixed(1)}
+                      transform="rotate(-90 28 28)"
+                    />
+                    <text x="28" y="32" textAnchor="middle" fontSize="13" fontWeight="700" fill="#e2e8f0">
+                      {factorScore.total}
+                    </text>
+                  </svg>
+                  <div style={{ fontSize: '12px', lineHeight: 1.7 }}>
+                    <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '15px' }}>{factorScore.rating}</div>
+                    <div style={{ color: '#64748b' }}>五因子综合评估</div>
+                    <span style={{ color: '#60a5fa', cursor: 'pointer' }} onClick={() => navigate(`/analyze?symbol=${displaySymbol}`) }>
+                      查看完整分析 →
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#475569' }}>历史数据不足，暂无法评分</div>
+              )}
+            </div>
+
+            {/* 模拟交易直达 */}
+            <div style={{ ...cardStyle, padding: '14px 16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '10px' }}>💰 模拟交易直达</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  style={{
+                    flex: 1, padding: '10px 0', fontSize: '13px', fontWeight: 700, color: '#fff',
+                    backgroundColor: '#16a34a', border: 'none', borderRadius: '8px', cursor: 'pointer',
+                  }}
+                  onClick={() => navigate(`/paper?symbol=${displaySymbol}&side=buy`)}
+                >
+                  买入
+                </button>
+                <button
+                  style={{
+                    flex: 1, padding: '10px 0', fontSize: '13px', fontWeight: 700, color: '#fff',
+                    backgroundColor: '#dc2626', border: 'none', borderRadius: '8px', cursor: 'pointer',
+                  }}
+                  onClick={() => navigate(`/paper?symbol=${displaySymbol}&side=sell`)}
+                >
+                  卖出
+                </button>
+              </div>
+              <div style={{ fontSize: '11px', color: '#475569', marginTop: '8px' }}>
+                跳转模拟盘并自动填入 {displaySymbol}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* ── 分钟短期副图（1/5/15/30/60/120 分钟 K 线，多日真实数据） ── */}
         <div

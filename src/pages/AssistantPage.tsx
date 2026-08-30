@@ -13,6 +13,43 @@ interface ChatMessage {
   engine?: string;
 }
 
+/** 轻量 markdown 渲染（标题/加粗/列表/行内代码，供气泡使用） */
+function renderMdLite(text: string): React.ReactNode[] {
+  const lines = String(text || '').split('\n');
+  const out: React.ReactNode[] = [];
+  let bullets: string[] = [];
+  const inline = (s: string, key: string): React.ReactNode[] => {
+    const parts = s.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+    return parts.map((p, i) => {
+      if (p.startsWith('**') && p.endsWith('**'))
+        return <strong key={key + i} style={{ color: '#f1f5f9' }}>{p.slice(2, -2)}</strong>;
+      if (p.startsWith('`') && p.endsWith('`'))
+        return <code key={key + i} style={{ fontFamily: 'Consolas, monospace', fontSize: '12px', color: '#93c5fd', backgroundColor: 'rgba(96,165,250,0.08)', borderRadius: 4, padding: '0 4px' }}>{p.slice(1, -1)}</code>;
+      return <span key={key + i}>{p}</span>;
+    });
+  };
+  lines.forEach((line, i) => {
+    const key = 'md' + i;
+    if (/^#{1,4}\s/.test(line)) {
+      if (bullets.length) { out.push(<ul key={key + 'u'} style={{ margin: '4px 0', paddingLeft: 16 }}>{bullets.map((b, j) => <li key={j} style={{ fontSize: '13.5px', color: '#cbd5e1', lineHeight: 1.7 }}>{inline(b, key + j)}</li>)}</ul>); bullets = []; }
+      out.push(<div key={key} style={{ fontSize: '13.5px', fontWeight: 700, color: '#93c5fd', margin: '8px 0 4px' }}>{inline(line.replace(/^#{1,4}\s/, ''), key)}</div>);
+    } else if (/^[-*·]\s/.test(line)) {
+      bullets.push(line.replace(/^[-*·]\s/, ''));
+    } else if (/^─+$|^---+$/.test(line.trim())) {
+      if (bullets.length) { out.push(<ul key={key + 'u'} style={{ margin: '4px 0', paddingLeft: 16 }}>{bullets.map((b, j) => <li key={j} style={{ fontSize: '13.5px', color: '#cbd5e1', lineHeight: 1.7 }}>{inline(b, key + j)}</li>)}</ul>); bullets = []; }
+      out.push(<div key={key} style={{ borderTop: '1px solid #1e293b', margin: '6px 0' }} />);
+    } else if (line.trim()) {
+      if (bullets.length) { out.push(<ul key={key + 'u'} style={{ margin: '4px 0', paddingLeft: 16 }}>{bullets.map((b, j) => <li key={j} style={{ fontSize: '13.5px', color: '#cbd5e1', lineHeight: 1.7 }}>{inline(b, key + j)}</li>)}</ul>); bullets = []; }
+      out.push(<div key={key} style={{ fontSize: '13.5px', color: '#cbd5e1', lineHeight: 1.7, marginBottom: 3 }}>{inline(line, key)}</div>);
+    }
+  });
+  if (bullets.length) out.push(<ul key="tail" style={{ margin: '4px 0', paddingLeft: 16 }}>{bullets.map((b, j) => <li key={j} style={{ fontSize: '13.5px', color: '#cbd5e1', lineHeight: 1.7 }}>{inline(b, 't' + j)}</li>)}</ul>);
+  return out;
+}
+
+/** 问候语 */
+const GREETING_TEXT = '🤖 你好！我是 AI深度量化 的站内智能助手（离线规则引擎，无需联网 AI）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！';
+
 /** 快捷提问 */
 const QUICK_QUESTIONS = ['分析 AAPL', '600519 怎么样', '今天观察什么', '平台怎么用', '回测怎么用'];
 
@@ -33,8 +70,30 @@ export default function AssistantPage() {
   const [teachQ, setTeachQ] = useState('');
   const [teachA, setTeachA] = useState('');
   const [teachMsg, setTeachMsg] = useState<string | null>(null);
-
   const [me, setMe] = useState<{ username: string | null; isAdmin?: boolean } | null>(null);
+
+  // 会话持久化：切页/刷新不丢（sessionStorage 上限 40 条）
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('pq_ai_chat');
+      if (saved) {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr) && arr.length) setMessages(arr);
+      }
+    } catch { /* 忽略 */ }
+  }, []);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('pq_ai_chat', JSON.stringify(messages.slice(-40)));
+    } catch { /* 容量满忽略 */ }
+  }, [messages]);
+
+  const clearChat = () => {
+    sessionStorage.removeItem('pq_ai_chat');
+    setMessages([{ role: 'assistant', text: GREETING_TEXT }]);
+    setFbDone({});
+  };
+
   const loadStats = () => {
     if (!me?.isAdmin) return;
     aiApi.stats().then((s) => setAiStats(s)).catch(() => {});
@@ -167,7 +226,7 @@ export default function AssistantPage() {
                 >
                   {m.engine === 'cloud' && <span style={{ display: 'inline-block', fontSize: 10, color: '#93c5fd', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🛰️ 云端专家模型</span>}
                   {m.engine === 'knowledge' && <span style={{ display: 'inline-block', fontSize: 10, color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🧠 学习知识库</span>}
-                  {m.text}
+                  {renderMdLite(m.text)}
                   {m.symbol && (
                     <div style={{ marginTop: '10px' }}>
                       <button
@@ -224,6 +283,17 @@ export default function AssistantPage() {
               <span>正在分析真实行情数据，请稍候...</span>
             </div>
           )}
+        </div>
+
+        {/* 会话操作 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+          <button
+            onClick={clearChat}
+            style={{ fontSize: 11, color: '#64748b', backgroundColor: 'transparent', border: '1px solid #334155', borderRadius: 8, padding: '4px 12px', cursor: 'pointer' }}
+          >
+            🗑️ 清空对话
+          </button>
+          <span style={{ fontSize: 10.5, color: '#475569' }}>对话在本次访问内保留（切页/刷新不丢）</span>
         </div>
 
         {/* 学习统计 + 教学（仅管理员可见） */}

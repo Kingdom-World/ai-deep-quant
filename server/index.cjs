@@ -102,6 +102,13 @@ const AUTH_ENABLED = Boolean(SITE_PASSWORD);
 auth.init();
 auth.ensureBootstrapAdmin(AUTH_ENABLED ? SITE_USERNAME : '', SITE_PASSWORD);
 brain.init();
+// 云端模型配置观测（启动即打印实际使用的端点，方便排查）
+if (cloudAI.configured()) {
+  const cc = cloudAI.resolve();
+  console.log(`🛰️ [AI云端] ${cc.provider} · ${cc.model} · ${cc.base}`);
+} else {
+  console.log('🧠 [AI云端] 未配置云端模型，AI 助手使用本地规则引擎+知识库（.env 填 AI_CLOUD_* 启用）');
+}
 
 /** 冒烟测试/内部调用的认证头（Basic 形式，auth 系统按用户表兼容校验） */
 const authHeaderValue = () =>

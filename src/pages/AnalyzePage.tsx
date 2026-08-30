@@ -4,6 +4,7 @@ import * as echarts from 'echarts';
 import { getHistory, getQuote } from '../api/dataService';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
+import AgentTeamPanel from '../components/AgentTeamPanel';
 import {
   analyzeStockPotential,
   detectMarket,
@@ -438,6 +439,22 @@ export default function AnalyzePage() {
               </div>
             </div>
           </>
+        )}
+
+        {/* ── Agent 团队深度分析（评分由团队流水线提供） ── */}
+        {report && !loading && (
+          <section style={{ marginTop: '32px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: '700', margin: '0 0 4px', color: '#f1f5f9' }}>
+              🤖 Agent 团队深度分析
+              <span style={{ fontSize: '12px', color: '#f59e0b', marginLeft: 10, fontWeight: 500 }}>
+                学术研究演示 · 不构成投资建议
+              </span>
+            </h2>
+            <p style={{ fontSize: '12.5px', color: '#64748b', margin: '0 0 12px' }}>
+              五阶段流水线：数据收集 → 多空辩论 → 交易决策 → 风险评估 → 风险主管终审；成员之间严禁直连，所有信息经主理人中转
+            </p>
+            <AgentTeamPanel defaultSymbol={symbol} />
+          </section>
         )}
       </main>
     </div>

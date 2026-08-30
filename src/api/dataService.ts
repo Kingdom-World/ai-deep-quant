@@ -721,6 +721,37 @@ export const authApi = {
   logout: () => apiPost<{ ok: boolean }>('/auth/logout', {}),
 };
 
+// ───────────── Agent 团队分析 ─────────────
+
+export interface AgentReport {
+  name: string;
+  role: string;
+  findings: string[];
+  bias?: 'bullish' | 'bearish' | 'neutral';
+  confidence?: number;
+  metrics?: Record<string, number | null>;
+  limitations?: string[];
+}
+
+export interface AgentTrace {
+  ok: boolean;
+  symbol: string;
+  name?: string;
+  mode: string;
+  ranAt: string;
+  price: number | null;
+  stages: Record<string, any>;
+  final: { decision: string; note?: string; teamScore?: number; disclaimer?: string };
+  disclaimer: string;
+  error?: string;
+}
+
+/** 12. Agent 团队分析（主理人调度制五阶段流水线，程序化规则引擎） */
+export const agentsApi = {
+  analyze: (body: { symbol: string; mode?: string; agent?: string; entryPrice?: number }) =>
+    apiPost<AgentTrace>('/agents/analyze', body),
+};
+
 export default {
   getQuote,
   getQuotesBatch,

@@ -1146,6 +1146,26 @@ app.get('/api/qa', async (req, res) => {
   }
 });
 
+// ───────────── 6b. Agent 团队分析（主理人调度制五阶段流水线） ─────────────
+const agentTeam = require('./agents/agents.cjs');
+
+/** POST /api/agents/analyze  body: { symbol, mode?: full|quick|debate|risk|single, agent?, entryPrice? } */
+app.post('/api/agents/analyze', async (req, res) => {
+  const body = req.body || {};
+  const symbol = String(body.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ ok: false, error: '缺少股票代码' });
+  const mode = ['full', 'quick', 'debate', 'risk', 'single'].includes(String(body.mode)) ? String(body.mode) : 'full';
+  try {
+    const code = toTencentCode(symbol);
+    const [klines, quote] = await Promise.all([fetchDailyRows(code, 300), getQuoteInternal(code, symbol)]);
+    if (!klines.length) return res.status(404).json({ ok: false, error: `未获取到 ${symbol} 的行情数据` });
+    const trace = agentTeam.run({ symbol, klines, quote, mode, agent: String(body.agent || ''), entryPrice: Number(body.entryPrice) || null });
+    res.json({ ok: true, name: quote?.name, ...trace });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: `Agent 团队分析失败: ${e.message?.slice(0, 80)}` });
+  }
+});
+
 // ───────────── 7. 健康检查 ─────────────
 app.get('/api/health', (req, res) => {
   res.json({

@@ -319,6 +319,10 @@ export default function BacktestPage() {
               {statCard('年化收益', `${result.annualized >= 0 ? '+' : ''}${result.annualized}%`, pctColor(result.annualized))}
               {statCard('最大回撤', `-${result.maxDrawdownPct}%`, '#f59e0b')}
               {statCard('胜率', `${result.winRate}%`, result.winRate >= 50 ? '#22c55e' : '#ef4444')}
+              {statCard('夏普比率', result.sharpe != null ? String(result.sharpe) : '--', (result.sharpe ?? 0) >= 1 ? '#4ade80' : (result.sharpe ?? 0) >= 0 ? '#facc15' : '#f87171')}
+              {statCard('盈亏比', result.profitFactor != null ? String(result.profitFactor) : '--')}
+              {statCard('年化波动率', result.annualVol != null ? `${result.annualVol}%` : '--')}
+              {statCard('卡玛比率', result.calmar != null ? String(result.calmar) : '--', (result.calmar ?? 0) >= 1 ? '#4ade80' : '#e2e8f0')}
               {statCard('交易次数', `${result.tradeCount} 次`)}
               {statCard('基准(买入持有)', `${result.benchmarkReturn >= 0 ? '+' : ''}${result.benchmarkReturn}%`, '#94a3b8')}
               {statCard('期末资金', `$${result.finalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)}

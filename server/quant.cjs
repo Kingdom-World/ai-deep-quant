@@ -150,6 +150,21 @@ function runBacktest(klines, strategy, fast, slow, capital) {
   const annualized = (Math.pow(finalValue / capital, 1 / years) - 1) * 100;
   const wins = trades.filter((t) => t.pnlPct > 0).length;
   const winRate = trades.length ? (wins / trades.length) * 100 : 0;
+
+  // 风险调整指标（对标开源回测框架标准口径）
+  const rets = [];
+  for (let i = 1; i < equity.length; i++) rets.push(equity[i].value / equity[i - 1].value - 1);
+  const meanRet = rets.length ? rets.reduce((a, b) => a + b, 0) / rets.length : 0;
+  const std = rets.length ? Math.sqrt(rets.reduce((a, b) => a + (b - meanRet) ** 2, 0) / rets.length) : 0;
+  const annualVol = std * Math.sqrt(252) * 100;
+  const sharpe = annualVol > 0 ? +((annualized - 2) / annualVol).toFixed(2) : null; // 无风险利率按 2%
+  const downside = rets.filter((r) => r < 0);
+  const downDev = downside.length ? Math.sqrt(downside.reduce((a, b) => a + b * b, 0) / downside.length) * Math.sqrt(252) * 100 : 0;
+  const sortino = downDev > 0 ? +((annualized - 2) / downDev).toFixed(2) : null;
+  const calmar = maxDrawdownPct > 0 ? +(annualized / maxDrawdownPct).toFixed(2) : null;
+  const grossWin = trades.filter((t) => t.pnlPct > 0).reduce((a, t) => a + t.pnlPct, 0);
+  const grossLoss = Math.abs(trades.filter((t) => t.pnlPct <= 0).reduce((a, t) => a + t.pnlPct, 0));
+  const profitFactor = grossLoss > 0 ? +(grossWin / grossLoss).toFixed(2) : trades.length ? null : null;
   const buyholdReturn = (closes[n - 1] / closes[0] - 1) * 100;
   const buyholdEquity = closes.map((c, i) => ({
     date: klines[i].date,
@@ -167,6 +182,11 @@ function runBacktest(klines, strategy, fast, slow, capital) {
     maxDrawdown: +maxDrawdown.toFixed(2),
     tradeCount: trades.length,
     winRate: +winRate.toFixed(1),
+    annualVol: +annualVol.toFixed(2),
+    sharpe,
+    sortino,
+    calmar,
+    profitFactor,
     avgWinPct: trades.filter((t) => t.pnlPct > 0).reduce((a, t) => a + t.pnlPct, 0) /
       Math.max(1, wins),
     avgLossPct: trades.filter((t) => t.pnlPct <= 0).reduce((a, t) => a + t.pnlPct, 0) /

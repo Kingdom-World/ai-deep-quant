@@ -538,6 +538,11 @@ export interface BacktestResult {
   maxDrawdown: number;
   tradeCount: number;
   winRate: number;
+  annualVol?: number;
+  sharpe?: number | null;
+  sortino?: number | null;
+  calmar?: number | null;
+  profitFactor?: number | null;
   avgWinPct: number;
   avgLossPct: number;
   benchmarkReturn: number;

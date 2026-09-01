@@ -22,6 +22,8 @@ const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const auth = require('./auth.cjs');
 const brain = require('./ai/brain.cjs');
+const reviewMod = require('./agents/review.cjs');
+const review = require('./agents/review.cjs');
 const cloudAI = require('./ai/cloud.cjs');
 const reasoning = require('./ai/reasoning.cjs');
 
@@ -1280,6 +1282,7 @@ ${hit.entry.a}` });
 // ───────────── 6b. Agent 团队分析（主理人调度制五阶段流水线） ─────────────
 const agentTeam = require('./agents/agents.cjs');
 const datafeeds = require('./agents/datafeeds.cjs');
+const alerts = require('./paper/alerts.cjs');
 const sectors = require('./sectors.cjs');
 const agentReportStore = require('./agents/reportstore.cjs');
 
@@ -1531,9 +1534,25 @@ strategies.init({
   fetchDailyRows: (symbol, count) => fetchDailyRows(toTencentCode(symbol), count),
 });
 
+// 价格告警系统初始化
+alerts.load();
+
 // 撮合循环 5s / 策略评估循环（Vercel Serverless 与 --maintain-once 不启动）
 if (!IS_VERCEL && !MAINTAIN_ONCE) {
-  setInterval(() => broker.runMatcher(), 5_000).unref();
+  setInterval(async () => {
+    await broker.runMatcher();
+    // 告警检查：收集告警标的的实时价格
+    const alertSyms = [...new Set(alerts.list('').map((a) => a.symbol).concat(alerts.list('admin').map((a) => a.symbol)))];
+    if (alertSyms.length) {
+      const priceMap = new Map();
+      for (const sym of alertSyms) {
+        const q = await getQuoteInternal(toTencentCode(sym), sym);
+        if (q?.price) priceMap.set(sym, q.price);
+      }
+      const fired = alerts.checkAlerts(priceMap);
+      for (const evt of fired) console.log(`🔔 [告警] ${evt.symbol} ${evt.condition === 'above' ? '≥' : '≤'} ${evt.triggeredPrice}`);
+    }
+  }, 5_000).unref();
   strategies.startLoop();
 }
 
@@ -1586,6 +1605,46 @@ app.get('/api/paper/logs', (req, res) => {
   res.json(broker.store.state.logs.filter((l) => l.uid === uid).slice(-200).reverse());
 });
 
+// ── 价格监控告警 ──
+app.get('/api/paper/alerts', (req, res) => {
+  const uid = broker.uidOf(req);
+  res.json({ ok: true, alerts: alerts.list(uid), triggered: alerts.listTriggered(uid).reverse() });
+});
+
+app.post('/api/paper/alerts', (req, res) => {
+  const { symbol, name, condition, price } = req.body || {};
+  const r = alerts.add(broker.uidOf(req), { symbol, name, condition, price });
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.delete('/api/paper/alerts/:id', (req, res) => {
+  const r = alerts.remove(broker.uidOf(req), req.params.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.get('/api/agents/daily-review', async (req, res) => {
+  try {
+    const idxRes = await axios.get('http://qt.gtimg.cn/q=sh000001,sz399001,sh000300', { headers: { 'User-Agent': UA }, timeout: 6000 });
+    const indices = ['sh000001', 'sz399001', 'sh000300'].map((code) => {
+      const m = idxRes.data.match(new RegExp('v_' + code + '="([^"]*)"'));
+      if (!m) return null;
+      const p = m[1].split('~');
+      return { name: { sh000001: '上证指数', sz399001: '深证成指', sh000300: '沪深300' }[code], price: parseFloat(p[3]), chg: parseFloat(p[4]) > 0 ? +(((parseFloat(p[3]) - parseFloat(p[4])) / parseFloat(p[4])) * 100).toFixed(2) : 0 };
+    }).filter(Boolean);
+    const sf = await sectors.getFlow('industry');
+    const cf = await sectors.getFlow('concept');
+    const fmt = (v) => (Number.isFinite(v) ? (v / 1e8).toFixed(1) + ' 亿' : '--');
+    const out = ['📊 AI 盘后复盘', '', '一、大盘概况', ...indices.map((d) => '  · ' + d.name + ': ' + d.price), '', '二、行业主力资金', sf ? '  净流入前3：' + sf.inflow.slice(0, 3).map((x) => x.name + ' +' + fmt(x.mainNet)).join('、') : '', sf ? '  净流出前3：' + sf.outflow.slice(0, 3).map((x) => x.name + ' ' + fmt(x.mainNet)).join('、') : '', '', '三、概念热点', cf ? '  净流入前3：' + cf.inflow.slice(0, 3).map((x) => x.name + ' +' + fmt(x.mainNet)).join('、') : '', '', '⚠️ 本复盘由程序化规则引擎自动生成，属学术研究演示，不构成任何投资建议。'];
+    res.json({ ok: true, review: out.join('\n'), generatedAt: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: '复盘生成失败: ' + (e.message || '').slice(0, 80) });
+  }
+});
+
+app.post('/api/paper/alerts/clear-triggered', (req, res) => {
+  alerts.clearTriggered(broker.uidOf(req));
+  res.json({ ok: true });
+});
 // ───────────── 9. 静态托管（生产模式：单端口整站） ─────────────
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const MIME = {

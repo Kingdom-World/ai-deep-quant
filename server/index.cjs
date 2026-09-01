@@ -104,6 +104,42 @@ const AUTH_ENABLED = Boolean(SITE_PASSWORD);
 auth.init();
 auth.ensureBootstrapAdmin(AUTH_ENABLED ? SITE_USERNAME : '', SITE_PASSWORD);
 brain.init();
+
+// ── AI 助手平台上下文与会话历史 ──
+const PLATFORM_KNOWLEDGE = [
+  '你是「AI深度量化」平台的内置AI助手，运行在平台网站上。用户提问时，你应该理解他们在问关于本平台的功能使用、量化知识或市场数据。',
+  '',
+  '## 平台功能全景',
+  '- 量化看板（/stock/:symbol）：输入股票代码进入，K线图+MA5/10/20/60/120/250+成交量+MACD/RSI/KDJ副图切换+形态标注（突破/破位/双底/头肩顶）+五档盘口+资金流/财务面板+实时走势',
+  '- 量化因子分析（/analyze）：五因子模型（趋势30/动量25/量能15/波动15/位置15）给股票打0-100综合评分',
+  '- 策略回测（/backtest）：输入代码选择策略（MA双均线5-20/RSI超买超卖/买入持有），输出收益曲线/最大回撤/夏普比率/盈亏比/交易明细，含买卖点标记',
+  '- 模拟交易（/paper）：100万虚拟资金真实行情撮合，市价/限价单，五档盘口联动下单，快捷仓位按钮，Agent团队自动策略（MA双均线/RSI反转/网格交易），价格告警',
+  '- Agent团队（/agents）：主理人调度制五阶段流水线——数据收集（技术/基本面/公告/情绪四分析师）→多空辩论→交易决策→风险评估→终审',
+  '- AI助手（当前页面）：量化知识问答，支持上下文对话',
+  '- 首页（/）：市场概况+我的收藏+今日观察（因子评分Top5）+板块与资金（行业/概念/地域主力净流入+涨跌幅排行）+功能中心',
+  '',
+  '## 数据说明',
+  '- 行情数据来自腾讯/新浪公开接口，K线默认前复权',
+  '- 模拟盘手续费：佣金万2.5（最低5元）+卖出印花税千1',
+  '- Agent团队风险控制：单笔≤20%、单标的≤30%、当日同标的买入≤3次',
+  '',
+  '## 回答要求',
+  '- 用户问「XX怎么用」时，理解为问本平台的XX功能，给出具体操作步骤',
+  '- 涉及投资建议时，说明本平台为学术研究演示，不构成投资建议',
+  '- 可以结合实时行情数据（如大盘指数、板块资金流）回答市场相关问题',
+];
+
+// 会话历史（per-uid 内存存储，保留最近 10 轮）
+const chatHistory = new Map(); // uid -> [{role, content}]
+function getHistory(uid) {
+  if (!chatHistory.has(uid)) chatHistory.set(uid, []);
+  return chatHistory.get(uid);
+}
+function pushHistory(uid, role, content) {
+  const h = getHistory(uid);
+  h.push({ role, content });
+  if (h.length > 20) h.splice(0, h.length - 20); // 保留最近 10 轮（20 条消息）
+}
 // 云端模型配置观测（启动即打印实际使用的端点，方便排查）
 if (cloudAI.configured()) {
   const cc = cloudAI.resolve();
@@ -1148,8 +1184,6 @@ async function getQuoteInternal(code, symbol) {
   }
   return null;
 }
-
-/** GET /api/qa?q=问题 */
 app.get('/api/qa', async (req, res) => {
   const q = String(req.query.q || '').trim();
   const reply = (obj) => {

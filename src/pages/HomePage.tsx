@@ -502,6 +502,7 @@ export default function HomePage() {
       style={{
         ...theme.page,
         position: 'relative',
+        overflow: 'hidden',
         color: '#e2e8f0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
@@ -523,8 +524,19 @@ export default function HomePage() {
       {/* ── 顶部导航栏（全站统一） ── */}
       <TopNav />
 
-      {/* 跑马灯动画关键帧 */}
-      <style>{`@keyframes pq-ticker { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }`}</style>
+      {/* 全站动画关键帧 + 网格纹理 */}
+      <style>{`
+        @keyframes pq-ticker { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
+        @keyframes pq-glow { 0%,100% { box-shadow: 0 0 20px rgba(37,99,235,0.15) } 50% { box-shadow: 0 0 40px rgba(37,99,235,0.3) } }
+        @keyframes pq-shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+      `}</style>
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        backgroundImage: 'linear-gradient(rgba(148,163,184,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.03) 1px, transparent 1px)',
+        backgroundSize: '48px 48px',
+        maskImage: 'radial-gradient(ellipse at 50% 0%, black 15%, transparent 70%)',
+        WebkitMaskImage: 'radial-gradient(ellipse at 50% 0%, black 15%, transparent 70%)',
+      }} />
 
       {/* ── 指数跑马灯 ── */}
       {indices.some((q) => q.price !== null) && (
@@ -550,22 +562,34 @@ export default function HomePage() {
       {/* ── 主体 ── */}
       <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '28px 24px 48px' }}>
         {/* Hero 标语 */}
-        <section style={{ textAlign: 'center', margin: '10px 0 36px' }}>
+        <section style={{ textAlign: 'center', margin: '14px 0 40px', position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
+            {['实时行情', '多因子评分', '策略回测', '模拟撮合', 'Agent 团队'].map((tag) => (
+              <span key={tag} style={{
+                fontSize: 11, color: '#64748b', backgroundColor: 'rgba(96,165,250,0.06)',
+                border: '1px solid rgba(96,165,250,0.15)', borderRadius: 999, padding: '3px 12px',
+                fontFamily: 'Consolas, monospace', letterSpacing: '0.5px',
+              }}>{tag}</span>
+            ))}
+          </div>
           <h1
             style={{
-              fontSize: '34px',
+              fontSize: '36px',
               fontWeight: 800,
-              margin: '0 0 10px',
-              letterSpacing: '1px',
-              background: 'linear-gradient(90deg, #f8fafc 20%, #93c5fd 60%, #38bdf8)',
+              margin: '0 0 12px',
+              letterSpacing: '1.5px',
+              background: 'linear-gradient(90deg, #f8fafc 15%, #93c5fd 50%, #38bdf8 85%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}
           >
-            AI深度量化 · 数据驱动 量化决策
+            AI深度量化
           </h1>
-          <p style={{ fontSize: '15px', color: '#94a3b8', margin: 0 }}>
-            真实市场数据 · 多因子量化分析 · 策略回测 · 每 10 秒自动更新
+          <p style={{ fontSize: 14, color: '#64748b', margin: '0 0 6px', letterSpacing: '2px', fontFamily: 'Consolas, monospace' }}>
+            DATA-DRIVEN QUANTITATIVE RESEARCH
+          </p>
+          <p style={{ fontSize: '14px', color: '#94a3b8', margin: 0 }}>
+            真实市场数据 · 多因子量化分析 · 策略回测 · 模拟撮合 · 每 10 秒自动更新
           </p>
         </section>
 

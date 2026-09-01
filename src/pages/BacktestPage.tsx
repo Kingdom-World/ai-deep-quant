@@ -119,6 +119,21 @@ export default function BacktestPage() {
           smooth: true,
           lineStyle: { width: 1.1, color: '#64748b', type: 'dashed' },
         },
+        {
+          name: '交易点',
+          type: 'scatter',
+          data: result.trades.flatMap((t) => {
+            const pts: any[] = [];
+            const entry = result.equity.find((e) => e.date === t.entryDate);
+            const exit = result.equity.find((e) => e.date === t.exitDate);
+            if (entry) pts.push({ value: [t.entryDate, entry.value], itemStyle: { color: '#ef4444' } });
+            if (exit) pts.push({ value: [t.exitDate, exit.value], itemStyle: { color: '#22c55e' } });
+            return pts;
+          }),
+          symbolSize: 9,
+          z: 5,
+          tooltip: { show: false },
+        },
       ],
     });
     return cleanup;

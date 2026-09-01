@@ -141,6 +141,36 @@ export default function SectorMarketPanel() {
             <div ref={chartRef} style={{ height: '240px' }} />
           </div>
 
+          {/* 涨跌幅排行（异动感知） */}
+          {(flow.gainers ?? flow.losers) && (
+            <div style={{ ...theme.glass, borderRadius: 14, padding: '12px 14px', marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                涨跌幅排行 · 更新 {String(flow.updatedAt).slice(11, 19)}
+                {flow.__stale ? '（数据源恢复中，展示最近有效数据）' : ''}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 4 }}>▲ 领涨</div>
+                  {(flow.gainers ?? []).map((r: any) => (
+                    <div key={r.code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                      <span style={{ color: '#cbd5e1' }}>{r.name}</span>
+                      <span style={{ color: '#ef4444', fontFamily: 'Consolas,monospace' }}>+{(r.changePct ?? 0).toFixed(2)}%</span>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 4 }}>▼ 领跌</div>
+                  {(flow.losers ?? []).map((r: any) => (
+                    <div key={r.code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                      <span style={{ color: '#cbd5e1' }}>{r.name}</span>
+                      <span style={{ color: '#22c55e', fontFamily: 'Consolas,monospace' }}>{(r.changePct ?? 0).toFixed(2)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 板块卡片 */}
           {cards?.cards?.length ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>

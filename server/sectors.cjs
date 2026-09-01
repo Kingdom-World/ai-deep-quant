@@ -77,11 +77,14 @@ function getFlow(type = 'industry') {
       .filter((r) => r.mainNet != null);
     if (!rows.length) return null;
     const byIn = [...rows].sort((a, b) => b.mainNet - a.mainNet);
+    const byPct = [...rows].sort((a, b) => (b.changePct ?? -999) - (a.changePct ?? -999));
     return {
       typeName: TYPE_NAME[type] ?? type,
       updatedAt: new Date().toISOString(),
       inflow: byIn.slice(0, 5), // 净流入前5
       outflow: [...rows].reverse().slice(0, 5), // 净流出前5
+      gainers: byPct.slice(0, 5), // 涨幅榜前5（异动感知）
+      losers: byPct.slice(-5).reverse(), // 跌幅榜前5
     };
   });
 }

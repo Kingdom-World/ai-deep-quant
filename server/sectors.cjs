@@ -10,9 +10,10 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const TYPE_MAP = { industry: 'm:90+t:2', concept: 'm:90+t:3', region: 'm:90+t:1' };
 const TYPE_NAME = { industry: '行业板块', concept: '概念板块', region: '地域板块' };
 const cache = new Map();
+const lastGood = new Map(); // 上游限流/断连时的最后有效数据（10 分钟内兜底）
 
 async function getJSON(url) {
-  // 东财接口偶发断连：自动重试 2 次（间隔 300ms）
+  // 东财接口间歇性断连/限流：重试 + push2delay 备用域名
   let lastErr = null;
   for (let i = 0; i < 3; i++) {
     try {
@@ -20,7 +21,15 @@ async function getJSON(url) {
       return res.data;
     } catch (e) {
       lastErr = e;
-      await new Promise((r) => setTimeout(r, 300));
+      if (url.includes('push2.eastmoney.com')) {
+        try {
+          const res2 = await axios.get(url.replace('push2.eastmoney.com', 'push2delay.eastmoney.com'), { headers: { 'User-Agent': UA }, timeout: 6000 });
+          return res2.data;
+        } catch (e2) {
+          lastErr = e2;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 400));
     }
   }
   throw lastErr;
@@ -36,8 +45,14 @@ function cached(key, ttl, loader) {
     } catch (e) {
       data = null;
     }
-    cache.set(key, { ts: Date.now(), data });
-    return data;
+    if (data != null) {
+      cache.set(key, { ts: Date.now(), data });
+      lastGood.set(key, { ts: Date.now(), data });
+      return data;
+    }
+    const g = lastGood.get(key);
+    if (g && Date.now() - g.ts < 10 * 60_000) return { ...g.data, __stale: true };
+    return null;
   })();
 }
 

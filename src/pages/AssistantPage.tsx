@@ -80,6 +80,8 @@ export default function AssistantPage() {
   const [teachA, setTeachA] = useState('');
   const [teachMsg, setTeachMsg] = useState<string | null>(null);
   const [thinkStep, setThinkStep] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [me, setMe] = useState<{ username: string | null; isAdmin?: boolean } | null>(null);
 
   // 会话持久化：切页/刷新不丢（sessionStorage 上限 40 条）
@@ -152,24 +154,46 @@ export default function AssistantPage() {
     return () => clearInterval(t);
   }, [sending]);
 
-  const send = async (text?: string) => {
+  const send = async (text?: string, signal?: AbortSignal) => {
     const q = (text ?? input).trim();
     if (!q || sending) return;
     setInput('');
     setSending(true);
     setMessages((prev) => [...prev, { role: 'user', text: q }]);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    if (signal) {
+      if (signal.aborted) {
+        setSending(false);
+        return;
+      }
+      signal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
     try {
-      const res = await askAssistant(q);
-      setMessages((prev) => [...prev, { role: 'assistant', text: res.answer, symbol: res.symbol, question: q, type: res.type, engine: res.engine, reasoning: res.reasoning ?? null }]);
-    } catch (e: any) {
+      const res = await askAssistant(q, ctrl.signal);
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          text: `⚠️ 服务暂时不可用：${e?.message || '请确认数据服务已启动（npm start）'}`,
+          text: res.answer,
+          symbol: res.symbol,
+          question: q,
+          type: res.type,
+          engine: res.engine,
+          reasoning: res.reasoning ?? null,
         },
       ]);
+    } catch (e: any) {
+      if ((e as Error)?.name === 'AbortError') {
+        setMessages((prev) => [...prev, { role: 'assistant', text: '⏹ 已停止生成。' }]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', text: `⚠️ 服务暂时不可用：${(e as Error)?.message || '请确认数据服务已启动'}` },
+        ]);
+      }
     } finally {
+      abortRef.current = null;
       setSending(false);
     }
   };
@@ -275,8 +299,8 @@ export default function AssistantPage() {
                   )}
                 </div>
                 {i > 0 && m.question && (
-                  <div style={{ display: 'flex', gap: 10, marginTop: 4, marginLeft: 34, alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: '#475569' }}>这次回答有帮助吗？</span>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4, marginLeft: 34, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, color: '#475569' }}>有帮助吗？</span>
                     {(['up', 'down'] as const).map((r) => (
                       <button
                         key={r}
@@ -299,15 +323,39 @@ export default function AssistantPage() {
                         {fbDone[i] === r ? '已反馈，谢谢' : r === 'up' ? '👍 有用' : '👎 没用'}
                       </button>
                     ))}
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(m.text).catch(() => {});
+                        setCopiedIdx(i);
+                      }}
+                      style={{ fontSize: 11, color: copiedIdx === i ? '#4ade80' : '#64748b', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                    >
+                      {copiedIdx === i ? '✓ 已复制' : '📋 复制'}
+                    </button>
+                    {i === messages.length - 1 && (
+                      <button
+                        onClick={() => send(m.question)}
+                        disabled={sending}
+                        style={{ fontSize: 11, color: '#93c5fd', backgroundColor: 'transparent', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 6, padding: '2px 8px', cursor: sending ? 'default' : 'pointer' }}
+                      >
+                        🔄 重新生成
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             ),
           )}
           {sending && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#93c5fd', fontSize: '13px' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', color: '#93c5fd', fontSize: '13px' }}>
               <span style={{ fontSize: '22px', animation: 'pq-pulse 1.4s ease-in-out infinite' }}>🤖</span>
               <span>{THINKING_STEPS[thinkStep % THINKING_STEPS.length]}<span style={{ animation: 'pq-pulse 1s infinite' }}>…</span></span>
+              <button
+                onClick={() => abortRef.current?.abort()}
+                style={{ marginLeft: 8, fontSize: 11, color: '#f87171', backgroundColor: 'transparent', border: '1px solid #7f1d1d', borderRadius: 6, padding: '3px 10px', cursor: 'pointer' }}
+              >
+                ⏹ 停止
+              </button>
             </div>
           )}
         </div>

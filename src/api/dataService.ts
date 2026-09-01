@@ -569,11 +569,16 @@ export const runBacktest = async (params: {
 /** 5f. 网站 AI 问答（云端模型生成较慢，专用 75s 超时；思考链独立返回） */
 export const askAssistant = async (
   question: string,
+  externalSignal?: AbortSignal,
 ): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string; reasoning?: string | null }> => {
   const qs = new URLSearchParams();
   qs.set('q', question);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 75000);
+  if (externalSignal) {
+    if (externalSignal.aborted) { clearTimeout(timer); throw new DOMException('Aborted', 'AbortError'); }
+    externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
   try {
     const res = await fetch(`${CONFIG.basePath}/qa?${qs.toString()}`, { signal: controller.signal });
     if (!res.ok) {

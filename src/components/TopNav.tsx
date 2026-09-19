@@ -15,7 +15,9 @@ const NAV_ITEMS = [
   { path: '/screener', label: '选股' },
   { path: '/analyze', label: '因子分析' },
   { path: '/backtest', label: '策略回测' },
-  { path: '/research', label: '研究中心' },
+  // match 前缀：/research 下含 5 个子页签（/research/consistency 等）。
+  // 缺 match 时需 pathname 精确等于 '/research'，进子页签就匹配不到 → 指示器回落首页。
+  { path: '/research', label: '研究中心', match: '/research' },
   { path: '/stock/sh600519', label: '量化看板', match: '/stock' },
   { path: '/paper', label: '模拟交易' },
   { path: '/agents', label: 'Agent 团队' },
@@ -158,38 +160,47 @@ export default function TopNav() {
 
   return (
     <>
-      {/* 顶部区域 fixed 置顶（声明条+导航滚动时固定）：
-          fixed 不受祖先 overflow/sticky 陷阱影响，比 sticky 更可靠；
-          下方 spacer 占位等高，使各页内容自然从导航下沿开始（全站自动，无需逐页补偿） */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100 }}>
-      {/* 全站统一声明条（样式 = 原首页声明条，用户确认） */}
+      {/* 顶部分层（用户 2026-09-19 反馈：不应整块固定）：
+          · **合规声明条** —— 全站必须始终可见（合规要求），故唯一固定；
+          · **导航栏** —— 常规文档流，随页面滚动。导航是高频操作入口，
+            长期占据首屏高度会挤压内容区，且与「只有声明该固定」的直觉不符。
+          声明条与导航是兄弟节点，故用两个占位：声明条 fixed 需等高 spacer，
+          导航回归文档流后不再需要占位（原实现整块 fixed + 92px spacer）。 */}
       <div
         style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
           textAlign: 'center',
           padding: '8px 16px',
           fontSize: '12px',
           color: '#f59e0b',
-          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          backgroundColor: 'rgba(20,16,8,0.96)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
           borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
         }}
       >
         📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
       </div>
+      {/* 占位：仅补声明条高度（8+8 padding + 约 17 行高 ≈ 33px） */}
+      <div style={{ height: 34 }} aria-hidden />
+
       <nav
         style={{
           display: 'flex',
-        alignItems: 'center',
-        gap: '20px',
-        padding: '0 28px',
-        height: '58px',
-        backgroundColor: 'rgba(10,14,23,0.88)',
-        backdropFilter: 'blur(14px)',
-        WebkitBackdropFilter: 'blur(14px)',
-        borderBottom: '1px solid rgba(96,165,250,0.14)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
-      }}
-      className="pq-topnav"
-    >
+          alignItems: 'center',
+          gap: '20px',
+          padding: '0 28px',
+          height: '58px',
+          backgroundColor: 'rgba(10,14,23,0.88)',
+          borderBottom: '1px solid rgba(96,165,250,0.14)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+        }}
+        className="pq-topnav"
+      >
       <style>{`
         .pq-topnav-scroll { overflow-x: auto; scrollbar-width: none; }
         .pq-topnav-scroll::-webkit-scrollbar { display: none; }
@@ -378,9 +389,6 @@ export default function TopNav() {
       {/* 用户菜单 */}
       <UserMenu />
       </nav>
-      </div>
-      {/* 占位：顶部区域为 fixed，撑出等高空间使各页内容从导航下沿开始 */}
-      <div style={{ height: 92 }} aria-hidden />
     </>
   );
 }

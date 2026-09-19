@@ -25,7 +25,7 @@
 
 ### 5. 独立单 URL 运行
 - `server/index.cjs` 一体化：API + dist 静态托管（含 gzip 预压缩）+ SPA 路由回退
-- **一个端口 3001 即整站**：`npm start` 或双击 `start.bat`（自动装依赖→构建→启动→开浏览器）
+- **一个端口 3001 即整站**：`npm start` 或双击 `AI深度量化-打开网站.bat`（探活→按需装依赖/构建→启动→开浏览器）
 - 移除 MCP 桥接、stock-sdk、cheerio、@modelcontextprotocol/sdk 等全部遗留依赖
 
 ### 6. 阉割版维护模块（平台关闭也能自检）

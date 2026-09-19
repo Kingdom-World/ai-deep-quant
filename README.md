@@ -137,7 +137,7 @@ ai-deep-quant/
 │   └── components/          # 数据源指示器等
 ├── dist/                    # 构建产物（npm run build 生成）
 ├── reports/                 # 自检报告（自动生成）
-├── start.bat / start.sh     # 一键启动
+├── AI深度量化-打开网站.bat  # 唯一启动入口（探活→按需装依赖/构建→开浏览器）
 └── register-maintenance.bat # 每日自检计划任务注册
 ```
 

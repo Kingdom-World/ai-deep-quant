@@ -36,6 +36,7 @@ export default function KnowledgeTab() {
   /** 关联条目就地展开：id -> 条目 */
   const [related, setRelated] = useState<Record<string, KnowledgeEntry>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [relatedErr, setRelatedErr] = useState('');
   const seq = useRef(0); // 请求序号，防乱序覆盖
 
   const run = useCallback(async (query: string, cat: string) => {
@@ -66,23 +67,40 @@ export default function KnowledgeTab() {
     return () => clearTimeout(t);
   }, [q, category, run]);
 
-  /** 展开关联条目：先查缓存，缺的批量拉取 */
+  /**
+   * 展开关联条目：先查缓存，缺的批量拉取。
+   *
+   * ⚠️ 2026-09-19 修：此前展开标记按**目标条目 id** 写入 `expanded`，
+   * 而渲染判断读的是 `expanded[entry.id]`（**卡片自身 id**）——键不一致，
+   * 于是 showRelated 永远为 undefined，关联区永远不出现（用户反馈"点了没反应"）。
+   * 现改为按**卡片自身 id** 记录展开态，目标条目只用于 `related` 缓存。
+   * 同时把静默 catch 改为可见错误：拉取失败不能假装"加载中"。
+   */
   const openRelated = useCallback(
-    async (ids: string[]) => {
+    async (ownerId: string, ids: string[]) => {
+      // 先翻转展开态（键 = 卡片自身 id），让用户立刻看到响应
+      setExpanded((prev) => ({ ...prev, [ownerId]: !prev[ownerId] }));
+
       const missing = ids.filter((id) => !related[id]);
-      if (missing.length) {
-        try {
-          const r = await knowledgeApi.entries(missing);
-          setRelated((prev) => {
-            const next = { ...prev };
-            for (const e of r.items) next[e.id] = e;
-            return next;
-          });
-        } catch {
-          /* 关联拉取失败不影响主列表 */
+      if (!missing.length) return;
+      setRelatedErr('');
+      try {
+        const r = await knowledgeApi.entries(missing);
+        const got = r.items ?? [];
+        setRelated((prev) => {
+          const next = { ...prev };
+          for (const e of got) next[e.id] = e;
+          return next;
+        });
+        // 拉到了但仍有缺口（后端缺该 id）→ 显式告知，不装作还在加载
+        if (got.length < missing.length) {
+          const gotIds = new Set(got.map((e) => e.id));
+          const lost = missing.filter((id) => !gotIds.has(id));
+          setRelatedErr(`有 ${lost.length} 条关联条目未取到（${lost.join('、')}）`);
         }
+      } catch (e) {
+        setRelatedErr(`关联条目拉取失败：${String((e as Error).message || e).slice(0, 80)}`);
       }
-      setExpanded((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, !prev[id]])) }));
     },
     [related],
   );
@@ -163,8 +181,9 @@ export default function KnowledgeTab() {
           entry={e}
           relatedMap={related}
           expandedMap={expanded}
-          onToggleRelated={() => openRelated(e.related)}
-          onOpenRelated={(ids) => openRelated(ids)}
+          relatedErr={relatedErr}
+          onToggleRelated={() => openRelated(e.id, e.related)}
+          onOpenRelated={(ids) => openRelated(e.id, ids)}
         />
       ))}
 
@@ -202,17 +221,20 @@ function EntryCard({
   entry,
   relatedMap,
   expandedMap,
+  relatedErr,
   onToggleRelated,
   onOpenRelated,
 }: {
   entry: KnowledgeEntry;
   relatedMap: Record<string, KnowledgeEntry>;
   expandedMap: Record<string, boolean>;
+  relatedErr?: string;
   onToggleRelated: () => void;
   onOpenRelated: (ids: string[]) => void;
 }) {
   const color = CATEGORY_COLOR[entry.category] || '#94a3b8';
-  const showRelated = expandedMap[entry.id];
+  // 展开态按**卡片自身 id** 读（与 openRelated 的写入键一致，2026-09-19 修正错位）
+  const showRelated = !!expandedMap[entry.id];
   const rel = entry.related.map((id) => relatedMap[id]).filter(Boolean);
 
   return (
@@ -269,7 +291,10 @@ function EntryCard({
           </button>
           {showRelated && (
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {rel.length === 0 && <div style={{ fontSize: 11, color: '#475569' }}>关联条目加载中…</div>}
+              {rel.length === 0 && !relatedErr && <div style={{ fontSize: 11, color: '#475569' }}>关联条目加载中…</div>}
+              {relatedErr && (
+                <div style={{ fontSize: 11, color: '#f87171', lineHeight: 1.7 }}>✗ {relatedErr}</div>
+              )}
               {rel.map((r) => (
                 <div key={r.id} style={{ padding: '9px 12px', backgroundColor: 'rgba(13,19,34,0.6)', borderRadius: 8, border: '1px solid rgba(51,65,85,0.5)' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: CATEGORY_COLOR[r.category] || '#94a3b8', marginBottom: 4 }}>

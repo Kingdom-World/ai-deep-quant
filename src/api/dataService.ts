@@ -1172,6 +1172,10 @@ export const aiApi = {
 export interface CrossBacktestResult {
   engine: string;
   factor: string;
+  /** 'preset' = 预置因子；'expr' = 自定义表达式（M3）。历史响应可能无此字段 */
+  factorKind?: 'preset' | 'expr';
+  /** 表达式元数据（仅 factorKind==='expr' 时有值）：算子列表、最长窗口、推断方向 */
+  factorExprMeta?: { ops: string[]; maxWindow: number; direction: string | null } | null;
   factorWindow: number;
   topN: number;
   rebalanceEvery: number;
@@ -1321,6 +1325,16 @@ export interface LayerAnalysisResult {
   engine?: string;
   factor?: string;
   factorWindow?: number;
+  /** 'preset' | 'expr'（M3） */
+  factorKind?: 'preset' | 'expr';
+  /**
+   * 表达式**方向是否不定**（M3）。true 时 `mono.strategyAligned` 为 null——
+   *   如 `mom60 - mom20` 混合了动量语义，无法判定"是否与策略方向一致"。
+   * ⚠️ UI **必须**区分「null = 不可判」与「false = 判定为相反」，不可都显示成"不一致"。
+   */
+  directionUncertain?: boolean;
+  /** 表达式元数据（仅 expr 时有值） */
+  exprMeta?: { ops: string[]; maxWindow: number; direction: string | null } | null;
   /** 该因子是否属反转族（决定 mono.strategyAligned 的判定方向） */
   isReversal?: boolean;
   /**
@@ -1356,9 +1370,10 @@ export interface LayerAnalysisResult {
     factorDirection: string | null;
     /**
      * 因子方向与**当前策略方向**是否一致（已按 mom/rev 分判）。
-     * **判定「这个因子能不能用」看这个字段**，不要只看 spearman 符号。
+     * true = 一致（有利）；false = 相反（按此选股会系统性亏损）；
+     * **null = 方向不定不可判**（如 mom60 - mom20），此时不得显示成"相反"。
      */
-    strategyAligned: boolean;
+    strategyAligned: boolean | null;
     strategyNote: string | null;
     /** 第 1 层 − 第 N 层 的期均收益差（pp）。注意这是**期均**而非累计收益差 */
     longShortSpreadPct: number;

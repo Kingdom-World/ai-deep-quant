@@ -1202,7 +1202,15 @@ app.get('/api/experiments', (req, res) => {
   }
 });
 
-/** 多标的横截面回测（评审 P2-5）：消费 Baostock 本地归档，支持 mom*（动量）/ rev*（反转）因子族 */
+/**
+ * GET /api/crossbacktest —— 多标的横截面回测（评审 P2-5）
+ *   factor 支持三种写法（M3 起）：
+ *     · 预置因子族（mom 系列 / rev 系列）—— 走 crosssect 硬编码动量口径
+ *     · 自定义表达式          —— 如 `mom60 - mom20`、`-vol20`、(mom20+rev60)/2
+ *     · 两者由 crosssect.resolveFactor 统一分派，下游消费同一截面，口径不会分叉
+ *   ⚠️ 表达式非法或全截面为空时返回 400 + error（**不回净值**）——
+ *      调用方必须走错误分支，不可把"算不出"显示成"收益 0"。
+ */
 app.get('/api/crossbacktest', (req, res) => {
   try {
     const result = require('./crosssect.cjs').runCrossBacktest({
@@ -1223,6 +1231,9 @@ app.get('/api/crossbacktest', (req, res) => {
 
 /**
  * GET /api/factor-layers —— 因子分层回测（M2.1）
+ *   factor 同 /api/crossbacktest，支持预置因子与自定义表达式（M3）。
+ *   ⚠️ 表达式方向不定时（如 `mom60 - mom20`）mono.strategyAligned 为 **null**，
+ *      表示"不可判"而非"相反"——前端必须区分显示。
  *   用途：判定因子有效性是**贯穿全截面**还是只集中在头部/尾部。
  *   单看 topN 组合净值无法区分这两种情形——后者往往是数据噪声或市值效应。
  *   query: factor | layers(2-10，默认5) | rebalanceEvery | startDate | endDate

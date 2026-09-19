@@ -154,6 +154,34 @@ function makePriceAt(universe, rowIndex) {
 }
 
 /**
+ * 空截面守卫工厂：包一层 crossSection，记录「曾非空 / 全空」的事实。
+ * 仅在**全程为空**时报错——个别股票算不出属正常（数据不足），不该打断。
+ * 用于把「表达式恒除零/恒无解」与「因子真的没效果」区分开。
+ */
+function makeEmptyCrossSectionGuard(factor) {
+  const seen = { anyNonEmpty: false, nonEmptyPeriods: 0 };
+  const wrap = (fn) => (universe, rowIndex, prevDate) => {
+    const out = fn(universe, rowIndex, prevDate);
+    if (out.length > 0) {
+      seen.anyNonEmpty = true;
+      seen.nonEmptyPeriods += 1;
+    }
+    return out;
+  };
+  const check = () =>
+    seen.anyNonEmpty
+      ? null
+      : {
+          error:
+            `因子「${factor}」在所有调仓期的截面**全为空**——没有任何股票可算出该值。` +
+            `常见原因：①表达式含恒零分母（如 mom60 + rev60 ≡ 0，因 rev 即 −mom）；` +
+            `②所有算子窗口都超出归档长度；③表达式把所有取值都算成了非有限数。` +
+            `请检查表达式而非视作"因子无效"。`,
+        };
+  return { wrap, check };
+}
+
+/**
  * 构建横截面公共上下文：交易日轴、日期索引、取价器、区间端点。
  * 抽出原因：分层回测（layerAnalysis）与净值回测（runCrossBacktest）必须共享**完全同一套**
  * 日期轴与取价口径，否则两者给出的「因子有效性」结论不可比——这正是 method-single-source 要防的口径分裂。
@@ -209,6 +237,73 @@ function factorCrossSection(universe, rowIndex, prevDate, factorWin) {
 }
 
 /**
+ * 因子解析器（M3.2）——把「预置因子名」或「自定义表达式」统一成一个截面函数。
+ *
+ * 为什么需要它：预置因子走 `factorCrossSection`（硬编码动量），表达式走 `factorexpr`。
+ * 若两处各写一套"如何取截面"，就会产出两套口径——项目曾因 5 套 RSI 吃亏。
+ * 故此处是**唯一分流点**：两条路都被规约成
+ *   `(prevDate) => [{ code, value }]`
+ * 之后回测/分层/IC/稳健性全部消费同一个数组，口径不可能分叉。
+ *
+ * @returns {{ ok:true, kind:'preset'|'expr', factor:string, factorWin:number, isReversal:boolean,
+ *             crossSection:Function, meta?:object } | { ok:false, error:string }}
+ */
+function resolveFactor(spec) {
+  const fe = require('./factorexpr.cjs');
+  const raw = String(spec ?? '').trim();
+
+  // ── 路 1：预置因子（mom20 / rev60 / ...）──
+  if (FACTOR_WINDOWS[raw]) {
+    const factorWin = FACTOR_WINDOWS[raw];
+    return {
+      ok: true,
+      kind: 'preset',
+      factor: raw,
+      factorWin,
+      isReversal: REVERSAL_FACTORS.has(raw),
+      crossSection: (universe, rowIndex, prevDate) =>
+        factorCrossSection(universe, rowIndex, prevDate, factorWin),
+    };
+  }
+
+  // ── 路 2：自定义表达式 ──
+  //   识别条件：含四则运算符或算子调用形式（即非纯预置名）。
+  //   空串与纯预置名之外的一切都尝试按表达式解析，失败即回显原因（不静默回退到 mom20）。
+  if (!raw) {
+    return { ok: false, error: '因子为空——请传预置因子名（如 mom20）或表达式（如 mom60 - mom20）' };
+  }
+  const parsed = fe.parseExpression(raw);
+  if (!parsed.ok) return { ok: false, error: `表达式解析失败：${parsed.error}` };
+
+  const factorWin = parsed.meta.maxWindow;
+  const dir = fe.inferDirection(parsed.meta, parsed.ast);
+  const isReversal = dir === 'reversal';
+  return {
+    ok: true,
+    kind: 'expr',
+    factor: raw,
+    factorWin,
+    isReversal,
+    // dir===null 表方向不定（mom 与 rev 混用），由上层按实际 IC 判方向，不强行归类
+    directionUncertain: dir === null,
+    exprMeta: { ops: parsed.meta.ops, maxWindow: factorWin, direction: dir },
+    crossSection: (universe, rowIndex, prevDate) => {
+      const out = [];
+      for (const [code, rows] of universe) {
+        const i = rowIndex.get(code)?.get(prevDate);
+        if (i === undefined || i < factorWin) continue;
+        const v = fe.evalOnStock(parsed.ast, rows, i);
+        // 字段名统一为 mom —— 下游（回测/分层/IC）一律读 .mom，两条路因此完全同构。
+        // 「mom」在此是「因子值」的占位名，对表达式而言不再特指动量；改名会牵动
+        // 三处消费点且无实质收益，故保留并在接口层以 factor 字段标识真实口径。
+        if (v !== null) out.push({ code, mom: v });
+      }
+      return out;
+    },
+  };
+}
+
+/**
  * 横截面回测
  * @param opts { factor='mom20', topN=5, rebalanceEvery=20, capital=1000000, slippage=0.001 }
  */
@@ -218,13 +313,18 @@ function runCrossBacktest(opts = {}) {
   if (universe.size < 2) {
     return { error: `本地归档不足（${universe.size} 只，至少 2 只）——先运行 Baostock 同步：python scripts/sync_baostock.py` };
   }
-  const factor = FACTOR_WINDOWS[opts.factor] ? opts.factor : 'mom20';
-  const factorWin = FACTOR_WINDOWS[factor];
+  // M3.2：预置因子与自定义表达式在此分派，之后全链路消费同一个 crossSection
+  const resolved = resolveFactor(opts.factor ?? 'mom20');
+  if (!resolved.ok) return { error: resolved.error };
+  const factor = resolved.factor;
+  const factorWin = resolved.factorWin;
+  const isRevFactor = resolved.isReversal;
+  const emptyGuard = makeEmptyCrossSectionGuard(factor);
+  const crossSection = emptyGuard.wrap(resolved.crossSection);
   const topN = Math.max(1, Math.min(Number(opts.topN) || 5, 20));
   const rebalanceEvery = Math.max(1, Math.min(Number(opts.rebalanceEvery) || 20, 250));
   const capital = Math.max(Number(opts.capital) || 1_000_000, 10_000);
   const slippage = Math.min(Math.max(Number(opts.slippage ?? 0.001), 0), 0.05);
-
   const ctx = buildContext(universe, factorWin, opts);
   if (ctx.error) return ctx;
   const { dates, rowIndex, priceAt, startDate, lastDate } = ctx;
@@ -242,7 +342,7 @@ function runCrossBacktest(opts = {}) {
     const nextDate = dates[rebalIdx[ri + 1] - 1];
     const xs = [];
     const ys = [];
-    for (const c of factorCrossSection(universe, rowIndex, prevDate, factorWin)) {
+    for (const c of crossSection(universe, rowIndex, prevDate)) {
       const p0 = priceAt(c.code, prevDate, 'close', true);
       const p1 = priceAt(c.code, nextDate, 'close', true);
       if (p0 === null || p1 === null) continue;
@@ -286,9 +386,9 @@ function runCrossBacktest(opts = {}) {
       // 因子排名：T-1 日收盘（无前视），T 日开盘执行
       const prevDate = dates[di - 1];
       // 动量用【前复权收盘价】：不复权价在除权日会出现假跳空（见文件头「价格口径」）
-      const cands = factorCrossSection(universe, rowIndex, prevDate, factorWin);
+      const cands = crossSection(universe, rowIndex, prevDate);
       // 动量买最强（降序）；反转买最弱（升序）
-      cands.sort((a, b) => (REVERSAL_FACTORS.has(factor) ? a.mom - b.mom : b.mom - a.mom));
+      cands.sort((a, b) => (isRevFactor ? a.mom - b.mom : b.mom - a.mom));
       const target = cands.slice(0, topN).map((c) => c.code);
       const targetSet = new Set(target);
 
@@ -392,9 +492,16 @@ function runCrossBacktest(opts = {}) {
   }
   const finalEquity = [...equity, { date: lastDate, value: +cash.toFixed(2) }];
 
+  // 🔴 空截面守卫：全程无任何股票可算 → 这是「表达式算不出」而非「因子无效」，
+  //   必须显式报错。否则返回 totalReturn=0 / ic.n=0，调用方会误读为"该因子没效果"。
+  const emptyErr = emptyGuard.check();
+  if (emptyErr) return emptyErr;
+
   return {
     engine: 'crosssect',
     factor,
+    factorKind: resolved.kind,
+    factorExprMeta: resolved.exprMeta ?? null,
     factorWindow: factorWin,
     topN,
     rebalanceEvery,
@@ -462,11 +569,17 @@ function layerAnalysis(opts = {}) {
   if (universe.size < 2) {
     return { error: `本地归档不足（${universe.size} 只，至少 2 只）——先运行 Baostock 同步：python scripts/sync_baostock.py` };
   }
-  const factor = FACTOR_WINDOWS[opts.factor] ? opts.factor : 'mom20';
-  const factorWin = FACTOR_WINDOWS[factor];
+  // M3.2：与 runCrossBacktest 同一分派点（口径单一来源）
+  const resolved = resolveFactor(opts.factor ?? 'mom20');
+  if (!resolved.ok) return { error: resolved.error };
+  const factor = resolved.factor;
+  const factorWin = resolved.factorWin;
+  const isRev = resolved.isReversal;
+  const directionUncertain = !!resolved.directionUncertain;
+  const emptyGuard = makeEmptyCrossSectionGuard(factor);
+  const crossSection = emptyGuard.wrap(resolved.crossSection);
   const layers = Math.max(2, Math.min(Number(opts.layers) || 5, 10));
   const rebalanceEvery = Math.max(1, Math.min(Number(opts.rebalanceEvery) || 20, 250));
-  const isRev = REVERSAL_FACTORS.has(factor);
 
   const ctx = buildContext(universe, factorWin, opts);
   if (ctx.error) return ctx;
@@ -483,7 +596,7 @@ function layerAnalysis(opts = {}) {
   for (let ri = 0; ri + 1 < rebalIdx.length; ri++) {
     const prevDate = dates[rebalIdx[ri] - 1];
     const nextDate = dates[rebalIdx[ri + 1] - 1];
-    const cs = factorCrossSection(universe, rowIndex, prevDate, factorWin);
+    const cs = crossSection(universe, rowIndex, prevDate);
     if (cs.length < layers) continue;
     // 统一按动量**降序**（最强在前）——与 runCrossBacktest 的反转分支相反，
     // 但层号语义固定为「1=最强」；反转因子的单调性会自然呈现为反向，这是要观察的信息本身。
@@ -538,6 +651,9 @@ function layerAnalysis(opts = {}) {
     });
   }
 
+  const emptyErr = emptyGuard.check();
+  if (emptyErr) return emptyErr;
+
   // 单调性：各层收益（期均）与层号的 Spearman —— 完全单调时 |ρ| = 1
   const layerNos = result.map((r) => r.layer);
   const layerRets = result.map((r) => r.meanPeriodRetPct);
@@ -550,13 +666,21 @@ function layerAnalysis(opts = {}) {
   //   rev* 策略买「最弱」，期望弱层收益高（rho>0 才对）
   //   两层含义必须分开说，否则 rev* 时会给出与策略相反的误导性结论。
   const strongWins = Number.isFinite(rho) && rho < 0;
-  const alignedWithStrategy = Number.isFinite(rho) && (isRev ? rho > 0 : rho < 0);
+  // 方向分判：表达式可能**方向不定**（如 `mom60 - mom20` 或 mom/rev 混用），
+  //   此时没有"策略方向"可言，强行给 aligned=true/false 都是编造。
+  //   故 strategyAligned = null（而非 false），并给出 reason —— 见响应字段。
+  const alignedWithStrategy = Number.isFinite(rho)
+    ? (directionUncertain ? null : (isRev ? rho > 0 : rho < 0))
+    : null;
 
   return {
     engine: 'crosssect-layer',
     factor,
     factorWindow: factorWin,
     isReversal: isRev,
+    factorKind: resolved.kind,
+    directionUncertain,
+    exprMeta: resolved.exprMeta ?? null,
     layers,
     rebalanceEvery,
     range: { start: startDate, end: lastDate, bars: dates.length, periods },
@@ -572,13 +696,16 @@ function layerAnalysis(opts = {}) {
       factorDirection: Number.isFinite(rho)
         ? (strongWins ? '因子值越高、下期收益越高' : '因子值越高、下期收益越低')
         : null,
-      // 策略层面的描述（取决于当前 factor 是动量还是反转）
+      // 策略层面的描述；方向不定时为 null —— 不猜、不编造
       strategyAligned: alignedWithStrategy,
-      strategyNote: Number.isFinite(rho)
-        ? (alignedWithStrategy
-            ? `因子方向与 ${factor} 策略方向一致（${isRev ? '买最弱层' : '买最强层'}），该因子在本次样本中对策略是有利的`
-            : `因子方向与 ${factor} 策略方向**相反**（${isRev ? '买最弱层' : '买最强层'}），继续按此方向选股将系统性亏损`)
-        : null,
+      strategyNote: !Number.isFinite(rho)
+        ? null
+        : directionUncertain
+          ? `表达式 ${factor} 混合了动量与反转类算子，**方向不定**——无法判定"是否与策略方向一致"。` +
+            `本次样本中因子值越高、下期收益${strongWins ? '越高' : '越低'}，请据此外部判断是否要取负号。`
+          : (alignedWithStrategy
+              ? `因子方向与 ${factor} 策略方向一致（${isRev ? '买最弱层' : '买最强层'}），该因子在本次样本中对策略是有利的`
+              : `因子方向与 ${factor} 策略方向**相反**（${isRev ? '买最弱层' : '买最强层'}），继续按此方向选股将系统性亏损`),
       longShortSpreadPct: longShortSpread, // 第1层 − 第N层（期均收益差）
       interpretation: monotonic
         ? '分层收益呈单调分布，因子在全截面有效'
@@ -587,4 +714,4 @@ function layerAnalysis(opts = {}) {
   };
 }
 
-module.exports = { runCrossBacktest, layerAnalysis, FACTOR_WINDOWS, REVERSAL_FACTORS };
+module.exports = { runCrossBacktest, layerAnalysis, resolveFactor, FACTOR_WINDOWS, REVERSAL_FACTORS };

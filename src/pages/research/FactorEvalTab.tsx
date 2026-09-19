@@ -281,13 +281,17 @@ function LayerPanel({ data, loading, err, onReload }: {
   const mono = data.mono;
   const aligned = mono?.strategyAligned === true;
   const monoOk = mono?.monotonic === true;
-  // 单调但与策略方向相反 = 最危险的情形：结论看起来「很单调」，
-  // 但按策略方向选股会系统性亏损。必须给出与「单调有效」不同的措辞。
-  const verdictTone = !monoOk
-    ? { fg: theme.color.warn, label: '非单调（有效性可能只在极值端）' }
-    : aligned
-      ? { fg: theme.color.accent, label: '单调且与策略方向一致' }
-      : { fg: theme.color.down, label: '单调但与策略方向相反' };
+  // 三态判定：单调+一致 / 单调+相反 / **方向不定（null，不可判）** / 非单调。
+  // 「方向不定」必须与「相反」分开显示——前者是"算不出方向"，后者是"算出来是反的"，
+  // 混为一谈会让用户以为表达式一定有问题。
+  const uncertain = mono?.strategyAligned === null;
+  const verdictTone = uncertain
+    ? { fg: theme.color.textMuted, label: '方向不定（不可判是否与策略一致）' }
+    : !monoOk
+      ? { fg: theme.color.warn, label: '非单调（有效性可能只在极值端）' }
+      : aligned
+        ? { fg: theme.color.accent, label: '单调且与策略方向一致' }
+        : { fg: theme.color.down, label: '单调但与策略方向相反' };
 
   return (
     <div style={{ ...theme.card, marginBottom: 22 }}>

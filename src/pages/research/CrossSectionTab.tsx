@@ -10,7 +10,26 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { researchApi, type CrossBacktestResult } from '../../api/dataService';
+import { theme } from '../../lib/theme';
 import { card, sectionTitle, sectionSub, label, input, btn, Metric, pctColorOf } from './shared';
+
+/**
+ * 表达式前端**预检**（不替代后端解析）。
+ *   只挡三类明显错误，给出即时反馈；真正的语法裁决权在后端 factorexpr 解析器
+ *   （单一实现）。此处绝不复刻算子表/优先级——那会造出第二套语法。
+ */
+function precheckExpr(s: string): string {
+  const t = s.trim();
+  if (!t) return '表达式为空';
+  if (t.length > 240) return `表达式过长（${t.length} > 240 字符）`;
+  let depth = 0;
+  for (const ch of t) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') { depth -= 1; if (depth < 0) return '括号不配对（多出右括号）'; }
+  }
+  if (depth !== 0) return '括号不配对（缺少右括号）';
+  return '';
+}
 
 // 模块级缓存：条件渲染下组件会随 Tab 切换卸载，用户跑出的回测结果不能丢——
 // 这是"保活"的轻量等价物：只缓存高价值状态（回测结果），列表类数据幂等重拉可接受
@@ -18,11 +37,20 @@ const resultCache: { value: CrossBacktestResult | null } = { value: null };
 
 function CrossSectionLab() {
   const [factor, setFactor] = useState('mom60');
+  // M3.3：预置因子 / 自定义表达式二选一。表达式语法由后端解析器裁决（单一实现），
+  //   前端只做**极轻量的**预检（空值 / 括号配对 / 长度），避免把解析规则在前端复刻一份
+  //   ——那是典型的口径分裂来源。
+  const [factorMode, setFactorMode] = useState<'preset' | 'expr'>('preset');
+  const [expr, setExpr] = useState('mom60 - mom20');
   const [topN, setTopN] = useState(5);
   const [rebalanceEvery, setRebalanceEvery] = useState(20);
   const [capital, setCapital] = useState(1_000_000);
   const [slippage, setSlippage] = useState(0.001);
   const [result, setResult] = useState<CrossBacktestResult | null>(resultCache.value);
+  // 前端预检结果（仅用于即时提示；最终裁决在后端）
+  const exprError = factorMode === 'expr' ? precheckExpr(expr) : '';
+  // 实际提交给后端的因子串：预置模式用下拉值，表达式模式用输入框原文
+  const effectiveFactor = factorMode === 'preset' ? factor : expr.trim();
   const [err, setErr] = useState('');
   const [running, setRunning] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
@@ -48,10 +76,14 @@ function CrossSectionLab() {
   }, [result]);
 
   const run = async () => {
+    if (exprError) { setErr(exprError); return; } // 前端预检拦下明显的语法错误
     setRunning(true);
     setErr('');
     try {
-      const r = await researchApi.crossBacktest({ factor, topN, rebalanceEvery, capital, slippage });
+      const r = await researchApi.crossBacktest({ factor: effectiveFactor, topN, rebalanceEvery, capital, slippage });
+      // 后端对非法表达式/空截面会返回 error 字段（且不回净值）——
+      // 必须走错误分支，绝不能把"算不出"显示成"收益 0"（铁律 #4）。
+      if (r.error) { setErr(r.error); setResult(null); return; }
       resultCache.value = r;
       setResult(r);
     } catch (e) {
@@ -68,16 +100,53 @@ function CrossSectionLab() {
       <div style={sectionSub}>消费本地 Baostock 归档（不复权+因子），T-1 收盘排名、T 开盘成交；分项费率 + 100 股整手 + 滑点。先运行 scripts/sync_baostock.py 建库。</div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ width: 130 }}>
-          <div style={label}>因子</div>
-          <select value={factor} onChange={(e) => setFactor(e.target.value)} style={input}>
-            <option value="mom20">动量 20 日</option>
-            <option value="mom60">动量 60 日</option>
-            <option value="mom120">动量 120 日</option>
-            <option value="rev20">反转 20 日</option>
-            <option value="rev60">反转 60 日</option>
-            <option value="rev120">反转 120 日</option>
+          <div style={label}>因子类型</div>
+          <select value={factorMode} onChange={(e) => setFactorMode(e.target.value as 'preset' | 'expr')} style={input}>
+            <option value="preset">预置因子</option>
+            <option value="expr">自定义表达式</option>
           </select>
         </div>
+        {factorMode === 'preset' ? (
+          <div style={{ width: 130 }}>
+            <div style={label}>因子</div>
+            <select value={factor} onChange={(e) => setFactor(e.target.value)} style={input}>
+              <option value="mom20">动量 20 日</option>
+              <option value="mom60">动量 60 日</option>
+              <option value="mom120">动量 120 日</option>
+              <option value="rev20">反转 20 日</option>
+              <option value="rev60">反转 60 日</option>
+              <option value="rev120">反转 120 日</option>
+            </select>
+          </div>
+        ) : (
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={label}>表达式</div>
+            <input
+              value={expr}
+              onChange={(e) => setExpr(e.target.value)}
+              placeholder="如 mom60 - mom20"
+              spellCheck={false}
+              style={{
+                ...input,
+                width: '100%',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                borderColor: exprError ? theme.color.down : theme.color.borderStrong,
+              }}
+            />
+            <div style={{ fontSize: 11, marginTop: 5, lineHeight: 1.6, color: exprError ? theme.color.down : theme.color.textFaint }}>
+              {exprError ? (
+                <>{exprError}</>
+              ) : (
+                <>
+                  {'算子：mom{n} / rev{n} / vol{n} / bias{n} / lowvol{n} / turnover{n} / amount{n} / volratio(n,m)'}
+                  <br />
+                  {'支持 + − × ÷ 与括号。{n} 表示窗口天数，如 mom20（也可写 mom(20)）。'}
+                  {expr.trim() === 'mom60 - mom20' && '当前示例为「长期动量减弱期动量」的轮动型因子。'}
+                </>
+              )}
+            </div>
+          </div>
+        )}
         <div style={{ width: 90 }}>
           <div style={label}>持有 TopN</div>
           <input type="number" min={1} max={20} value={topN} onChange={(e) => setTopN(Math.max(1, Number(e.target.value) || 1))} style={input} />

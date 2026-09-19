@@ -225,12 +225,33 @@ function summarizeIC(icSeries, opts = {}) {
   const ic = (icSeries || []).filter((x) => Number.isFinite(x));
   const n = ic.length;
   if (!n) {
-    return { n: 0, icMean: null, icStd: null, icir: null, icPositiveRate: null, t: null, p: null };
+    return {
+      n: 0, icMean: null, icStd: null, icir: null, icPositiveRate: null, t: null, p: null,
+      se: null, seIid: null, neweyWestLag: 0,
+      significant2: false, significant3: false,
+      degraded: true, degradeReason: 'IC 序列为空，无法检验',
+    };
+  }
+  if (n < 2) {
+    return {
+      n, icMean: +mean(ic).toFixed(6), icStd: null, icir: null,
+      icPositiveRate: +(ic.filter((x) => x > 0).length / n).toFixed(4),
+      t: null, p: null, se: null, seIid: null, neweyWestLag: 0,
+      significant2: false, significant3: false,
+      degraded: true, degradeReason: `IC 序列仅 ${n} 期，不足以估计波动与显著性`,
+    };
   }
   const m = mean(ic);
-  const s = n >= 2 ? std(ic) : null;
+  const s = std(ic);
   const tt = tTestMean(ic, opts);
   const pos = ic.filter((x) => x > 0).length;
+  // 零方差（IC 序列恒定）是真实可发生的边界：此时 t 统计量无定义（分母为 0），
+  // 不是「不显著」而是「不可检验」。必须区分开——否则调用方会把"算不出来"当成"没效果"。
+  const zeroVar = !(s > 0);
+  const degraded = !!tt.degraded || zeroVar;
+  const degradeReason = zeroVar
+    ? `IC 序列方差为 0（${n} 期取值恒定），t 统计量无定义——不可检验，非"不显著"`
+    : tt.degradeReason;
   return {
     n,
     icMean: +m.toFixed(6),
@@ -246,8 +267,8 @@ function summarizeIC(icSeries, opts = {}) {
     // 显著性门槛（知识条目 term-stats-significance / method-multiple-testing）
     significant2: tt.t !== null && Math.abs(tt.t) >= 2,
     significant3: tt.t !== null && Math.abs(tt.t) >= 3,
-    degraded: !!tt.degraded,
-    degradeReason: tt.degradeReason,
+    degraded,
+    degradeReason,
   };
 }
 

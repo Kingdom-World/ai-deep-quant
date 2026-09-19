@@ -32,16 +32,30 @@ const CAPS: { name: string; state: State; note: string }[] = [
   { name: '研发能力', state: 'todo', note: '策略硬编码（ma/rsi/buyhold/combo），尚不能自造因子/策略——研究最核心的创造环节' },
 ];
 
+/**
+ * LLM 能力三档（L1 落地，非计划书原定范围）
+ *   诚实边界：T2/T3 都不解决 Serverless 30 秒上限 → 只有 single(1 步) 能跑，
+ *   quick(7)/debate(10)/risk(10)/full(15) 在 Vercel 上均超时，必须本机版。
+ */
+const TIERS: { key: string; name: string; who: string; state: State }[] = [
+  { key: 'T1', name: '规则引擎', who: '无需 LLM，服务端纯计算；所有用户可用', state: 'done' },
+  { key: 'T2', name: '自配 API', who: '你的 Key，浏览器直连供应商，不经本站；所有用户可用', state: 'done' },
+  { key: 'T3', name: '平台 LLM', who: '平台预置模型，消耗平台额度；仅管理员可用', state: 'done' },
+];
+
 /** 路线图（与云端计划书「三、改进措施」一致） */
 const ROADMAP: { phase: string; title: string; goal: string; state: State }[] = [
   { phase: 'M1', title: '知识库 + 名实校准', goal: '结构化条目 + 检索 + Agent 引用 + 本卡', state: 'done' },
+  { phase: 'L1', title: 'LLM 能力三档（前置项）', goal: '规则引擎 / 自配 API / 平台 LLM 分层，算力与风险对齐', state: 'done' },
   { phase: 'M2', title: '验证深度', goal: '5 层分层回测 + 单调性 · IC/IR · Newey-West 显著性检验', state: 'todo' },
   { phase: 'M3', title: '策略研发', goal: '因子表达式沙箱（白名单算子 + 递归下降 AST，绝不用 eval）', state: 'todo' },
 ];
 
 export default function CapabilityBoundaryCard() {
   const [open, setOpen] = useState(false);
-  const doneCount = CAPS.filter((c) => c.state === 'done').length;
+  // 达标数 = 研究能力 + LLM 三档（三档全部落地，故计入总数）
+  const total = CAPS.length + TIERS.length;
+  const doneCount = CAPS.filter((c) => c.state === 'done').length + TIERS.filter((t) => t.state === 'done').length;
 
   return (
     <div style={{ ...card, borderColor: 'rgba(96,165,250,0.35)' }}>
@@ -49,7 +63,7 @@ export default function CapabilityBoundaryCard() {
         <div>
           <div style={sectionTitle}>能力边界与路线图</div>
           <div style={{ ...sectionSub, marginBottom: 0 }}>
-            当前 {doneCount}/{CAPS.length} 项达标。这是一个研究平台，先把"做不到什么"讲清楚。
+            当前 {doneCount}/{total} 项达标。这是一个研究平台，先把"做不到什么"讲清楚。
           </div>
         </div>
         <button onClick={() => setOpen(!open)} style={{ ...btnGhost, padding: '6px 14px', fontSize: 12 }}>
@@ -84,6 +98,32 @@ export default function CapabilityBoundaryCard() {
                 </div>
               );
             })}
+          </div>
+
+          <div style={{ fontSize: 12, color: '#94a3b8', margin: '16px 0 8px' }}>LLM 能力三档</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {TIERS.map((t) => {
+              const m = MARK[t.state];
+              return (
+                <div key={t.key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 12px', backgroundColor: 'rgba(13,19,34,0.6)', borderRadius: 8, border: `1px solid ${m.color}33` }}>
+                  <span style={{ color: m.color, fontWeight: 900, fontSize: 14, lineHeight: '20px', width: 14, textAlign: 'center' }}>{m.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>
+                      {t.key} · {t.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.7, marginTop: 2 }}>{t.who}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: '#64748b', lineHeight: 1.8 }}>
+            三档的划分依据是<b style={{ color: '#94a3b8' }}>谁出算力、谁担风险</b>对齐到同一方：T1 无需算力，
+            T2 用户自担，T3 平台自担故仅管理员。T2 为单角色分析，不参与多角色流水线，也不调用工具。
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11, color: '#64748b', lineHeight: 1.8 }}>
+            ⚠️ 三档都不解决 Serverless 的 30 秒函数上限：只有 single（1 步）可在 Vercel 跑通，
+            quick（7 步）/ debate（10 步）/ risk（10 步）/ full（15 步）需使用本机版。
           </div>
 
           <div style={{ fontSize: 12, color: '#94a3b8', margin: '16px 0 8px' }}>路线图</div>

@@ -367,4 +367,15 @@ async function chat(messages, { maxTokens, temperature = 0.6, thinking, timeoutM
   return null;
 }
 
-module.exports = { configured, chat, resolve, cooldownSnapshot, candidateChain };
+module.exports = {
+  configured,
+  chat,
+  resolve,
+  cooldownSnapshot,
+  candidateChain,
+  // 预设与白名单导出供**口径一致性校验**（T2 自配 API 的前端预设须与此同源，
+  // 见 shared/llm-config.mjs 与 test/llm-config.test.cjs）。改动这两个常量即视为口径变更。
+  PROVIDERS,
+  FREE_MODELS,
+};
+

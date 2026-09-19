@@ -12,7 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const { writeJsonAtomic } = require('./atomic-write.cjs');
 
-const DATA_DIR = path.join(__dirname, '..', 'data', 'auth');
+// 认证数据目录。AUTH_DATA_DIR 供测试隔离（与 PAPER_DATA_DIR 同思路）——
+//   ⚠️ 抽取时发现：本模块此前**不可隔离**，任何集成测试都会读写真实 data/auth/users.json。
+//   这使项目约定「测试必须起隔离实例」对 auth 模块失效，属真实盲区。现补齐。
+const DATA_DIR = process.env.AUTH_DATA_DIR || path.join(__dirname, '..', 'data', 'auth');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;

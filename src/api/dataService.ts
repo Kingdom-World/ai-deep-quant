@@ -35,6 +35,26 @@ const CONFIG = {
 // ============ 缓存（统一内存缓存工具，分级 TTL） ============
 const getCacheKey = (type: string, params: unknown): string => `${type}:${JSON.stringify(params)}`;
 
+/**
+ * 带 HTTP 状态与结构化响应体的错误。
+ * 用于后端「因档位/运行时不可用而拒绝」的场景（403/503）：这类拒绝不是故障，
+ * 而是**能力边界声明**，UI 必须能读到 tier / availableTiers 才能给出正确指引。
+ */
+export class ApiError extends Error {
+  status: number;
+  body: any;
+  constructor(message: string, status: number, body: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+  /** 从任意异常里取出后端结构化体（非 ApiError 返回 null） */
+  static bodyOf(e: unknown): any {
+    return e instanceof ApiError ? e.body : null;
+  }
+}
+
 // ============ 请求去重（相同 in-flight 请求合并） ============
 const inFlight = new Map<string, Promise<unknown>>();
 
@@ -683,7 +703,10 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
+      // 后端在 403/503 时会带回结构化信息（tier / availableTiers），
+      // 前端据此给出「该用哪个档位」的可操作提示，而不是笼统一句失败。
+      // 挂在 ApiError 上而非塞进 message 字符串，避免调用方反解析文案。
+      throw new ApiError((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`, res.status, err);
     }
     return (await res.json()) as T;
   } catch (e) {
@@ -1014,12 +1037,46 @@ export interface AgentTrace {
   llmEnabled?: boolean;
   /** 本次运行的降级情况（显式可观测，避免把规则产出误读为大模型分析） */
   degraded?: AgentDegraded;
+  /**
+   * 本次实际使用的 LLM 能力档位（L1.5）。
+   * 后端在三条路径上分别打标：rule（规则引擎同步返回）/ platform（T3 异步流水线）/
+   * 以及 403 拒绝时的 tier:'platform'（表示「你请求的档位」而非「实际使用的档位」）。
+   * 前端必须据此回显，避免用户把规则产出误认为大模型产出。
+   */
+  tier?: AgentTier;
+}
+
+/** LLM 能力档位（与 server/index.cjs 的 tiers 声明同口径） */
+export type AgentTier = 'rule' | 'byok' | 'platform';
+
+export interface TierDeclaration {
+  key: AgentTier;
+  available: boolean;
+  /** 该档位是否消耗平台侧 LLM 配额 */
+  platformLLM: boolean;
+  label: string;
+  adminOnly?: boolean;
+}
+
+export interface AgentCapabilities {
+  ok: boolean;
+  /** serverless = Vercel（函数 30s 上限生效）；node = 本机自托管 */
+  runtime: 'serverless' | 'node';
+  tiers: TierDeclaration[];
+  /** 各模式在当前 runtime + 档位下是否可跑 */
+  modes: Record<string, { available: boolean; reason?: string }>;
+  hints: { byok?: string; platform?: string };
 }
 
 /** 12. Agent 团队分析（主理人调度制五阶段流水线，程序化规则引擎） */
 export const agentsApi = {
-  analyze: (body: { symbol: string; mode?: string; agent?: string; entryPrice?: number }) =>
+  analyze: (body: { symbol: string; mode?: string; agent?: string; entryPrice?: number; tier?: AgentTier }) =>
     apiPost<AgentTrace & { jobId?: string }>('/agents/analyze', body),
+  /**
+   * 能力档位声明（L1.3/L1.5）。纯声明接口：不消耗 LLM 配额、不触发外部请求。
+   * 前端据此决定档位 Tab 的可见性与模式置灰，而不是等用户点了才撞 503/403。
+   */
+  capabilities: () => apiGet<AgentCapabilities>('/agents/capabilities'),
   job: (id: string) =>
     apiGet<{ ok: boolean; status: 'running' | 'done' | 'error'; stage: string; step: number; total: number; reportId?: string; error?: string; trace?: AgentTrace }>(
       `/agents/job/${encodeURIComponent(id)}`,

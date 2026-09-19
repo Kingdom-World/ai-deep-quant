@@ -28,7 +28,8 @@ const cloudAI = require('./ai/cloud.cjs');
 const llmPipeline = require('./agents/llm_pipeline.cjs');
 const reasoning = require('./ai/reasoning.cjs');
 
-// 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失（配合 start.bat 看门狗）
+// 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失
+// （原注为"配合 start.bat 看门狗"；start.bat 已于 2026-09-19 合并进启动脚本，看门狗取消）
 process.on('uncaughtException', (e) => console.error('[兜底] 未捕获异常:', (e && e.stack) || e));
 process.on('unhandledRejection', (e) => console.error('[兜底] 未处理的 Promise 拒绝:', (e && e.stack) || e));
 
@@ -1152,6 +1153,15 @@ app.post('/api/agent/research', async (req, res) => {
     if (!cloudMod.configured()) {
       return res.status(503).json({ ok: false, error: '云端模型未配置（缺少 AI_CLOUD_API_KEY）' });
     }
+    // ── T3 平台 LLM 档：仅管理员（L1.4，与 /api/agents/analyze 同口径）──
+    if (!isAdminReq(req)) {
+      return res.status(403).json({
+        ok: false,
+        tier: 'platform',
+        error: '平台 LLM 档位仅管理员可用；自配 API 档位请在你的浏览器中直接填写自己的 Key（不经本站服务器）。',
+        availableTiers: ['byok'],
+      });
+    }
 
     const { createAlphaRunner } = require('./agent/alpha.cjs');
     const runner = createAlphaRunner({
@@ -1696,12 +1706,32 @@ app.post('/api/agents/analyze', async (req, res) => {
     ]);
     if (!klines.length) return res.status(404).json({ ok: false, error: `未获取到 ${symbol} 的行情数据` });
     const ctx = { symbol, klines, quote, name: quote?.name, mode, agent: String(body.agent || ''), entryPrice: Number(body.entryPrice) || null, feed, uid };
-    if (!cloudAI.configured()) {
+    // 档位（L1.5）：前端显式下传时按其选择执行；未传则沿用既有行为（向后兼容）。
+    //   · rule     —— 直接走规则引擎，不碰云端配额（用户主动选择，不是降级）
+    //   · platform —— 走 LLM 流水线（下方管理员闸门 + runtime 校验）
+    const reqTier = ['rule', 'platform'].includes(String(body.tier)) ? String(body.tier) : null;
+    if (reqTier === 'rule' || !cloudAI.configured()) {
       const trace = agentTeam.run(ctx);
-      return res.json({ ok: true, name: quote?.name, ...trace });
+      return res.json({ ok: true, name: quote?.name, tier: 'rule', ...trace });
+    }
+    // ── T3 平台 LLM 档：仅管理员（L1.4）──
+    //   抽取前此处对所有登录用户开放，会消耗平台 API 额度；且非管理员在 Vercel 上
+    //   只会撞到 1703 的 503（原因不明）。现改为**明确的档位提示**，指向可用档位，
+    //   既不静默降级也不含糊报错。
+    if (!isAdminReq(req)) {
+      return res.status(403).json({
+        ok: false,
+        tier: 'platform',
+        error: '平台 LLM 档位仅管理员可用；你可以使用「规则引擎」（无需 Key）或「自配 API」（在你的浏览器中填入自己的 Key）档位。',
+        availableTiers: ['rule', 'byok'],
+      });
     }
     if (IS_VERCEL) {
-      return res.status(503).json({ ok: false, error: 'Vercel Serverless 暂不支持长时间 Agent 流水线，请使用队列 Worker 部署方案' });
+      return res.status(503).json({
+        ok: false,
+        error: 'Vercel Serverless 暂不支持长时间 Agent 流水线（本模式需多步 LLM 调用，超出函数 30 秒上限）；请使用本机版，或改用 single 模式。',
+        availableTiers: ['rule', 'byok'],
+      });
     }
     // 自托管 Node：异步任务留在长生命周期进程内，前端轮询 jobId
     const id = `job-${Date.now().toString(36)}-${++agentJobSeq}`;
@@ -1717,7 +1747,8 @@ app.post('/api/agents/analyze', async (req, res) => {
       .then((trace) => {
         if (!trace) throw new Error('LLM 流水线不可用');
         const reportId = agentReportStore.saveReport(trace, uid);
-        job.trace = { ...trace, reportId, uid };
+        // 档位回显：前端据此标注「本次实际由平台 LLM 产出」（L1.5）
+        job.trace = { ...trace, reportId, uid, tier: 'platform' };
         job.reportId = reportId;
         job.status = 'done';
         job.stage = '报告已完成';
@@ -1935,6 +1966,20 @@ app.get('/api/news/health', (_req, res) => {
 });
 
 // ───────────── 6c. AI 助手学习系统（知识库 / 反馈 / 教学 / 自训练） ─────────────
+
+/**
+ * 管理员判定（单一实现，L1.3 抽取）。
+ *   · AUTH_ENABLED=false（未设 SITE_PASSWORD）视为**未启用鉴权**：本机单用户场景，
+ *     此时 req.user 为 undefined，若沿用 `req.user.username !== SITE_USERNAME` 会把
+ *     管理员自己挡在门外——这是抽取前两处调用点共有的缺陷。
+ *   · AUTH_ENABLED=true：仅 SITE_USERNAME 归属者算管理员。
+ * 供 /api/ai/teach、/api/ai/stats、/api/agents/capabilities 与 T3 闸门共用。
+ */
+function isAdminReq(req) {
+  if (!AUTH_ENABLED) return true;
+  return req.user?.username === SITE_USERNAME;
+}
+
 /** POST /api/ai/feedback —— 点赞/点踩，实时调整知识权重 */
 app.post('/api/ai/feedback', (req, res) => {
   const { question, answer, rating, comment } = req.body || {};
@@ -1944,7 +1989,7 @@ app.post('/api/ai/feedback', (req, res) => {
 
 /** POST /api/ai/teach —— 用户教学：直接写入知识库 */
 app.post('/api/ai/teach', (req, res) => {
-  if (req.user?.username !== SITE_USERNAME) return res.status(403).json({ ok: false, error: '仅管理员可教学' });
+  if (!isAdminReq(req)) return res.status(403).json({ ok: false, error: '仅管理员可教学' });
   const { q, a } = req.body || {};
   const r = brain.addEntry(q, a, 'user');
   res.status(r.ok ? 200 : 400).json(r);
@@ -1952,9 +1997,51 @@ app.post('/api/ai/teach', (req, res) => {
 
 /** GET /api/ai/stats —— 知识库规模 / 训练状态 */
 app.get('/api/ai/stats', (req, res) => {
-  if (req.user?.username !== SITE_USERNAME) return res.status(403).json({ ok: false, error: '仅管理员可查看学习统计' });
+  if (!isAdminReq(req)) return res.status(403).json({ ok: false, error: '仅管理员可查看学习统计' });
   res.json({ ok: true, ...brain.stats() });
 });
+
+/**
+ * GET /api/agents/capabilities —— Agent 能力档位（L1.3，方案书「十一」T1/T2/T3）
+ *
+ *   前端据此渲染档位选择器：T1/T2 对所有登录用户开放；T3 仅管理员可见。
+ *   同时透出 runtime，使 Vercel(serverless) 上不可用的模式能被前端明确置灰
+ *   （而非等用户点了才报 503）——符合项目「降级必须可见」铁律。
+ *   本端点为**纯声明**，不消耗任何 LLM 配额、不触发外部请求。
+ */
+app.get('/api/agents/capabilities', (req, res) => {
+  const admin = isAdminReq(req);
+  const runtime = IS_VERCEL ? 'serverless' : 'node';
+  // 各模式在 serverless 下是否可跑：依据方案书 11.4（30s 函数上限 vs 步骤数）
+  const modeSteps = AGENT_JOB_MODE_STEPS;
+  const modeSafe = IS_VERCEL ? 1 : Number.POSITIVE_INFINITY;
+  res.json({
+    ok: true,
+    runtime,
+    tiers: [
+      { key: 'rule', available: true, platformLLM: false, label: '规则引擎' },
+      { key: 'byok', available: true, platformLLM: false, label: '自配 API' },
+      { key: 'platform', available: admin, platformLLM: true, label: '平台 LLM', adminOnly: true },
+    ],
+    /** 按档位给出各模式可用性：仅 platform 档受 serverless 约束 */
+    modes: Object.fromEntries(
+      Object.entries(modeSteps).map(([m, steps]) => [
+        m,
+        steps <= modeSafe
+          ? { available: true }
+          : {
+            available: false,
+            reason: `该模式需 ${steps} 步 LLM 调用，Serverless 函数上限 30 秒；请使用本机版`,
+          },
+      ]),
+    ),
+    hints: {
+      byok: '使用你自己的 API Key：请求由浏览器直接发往供应商，不经过本站服务器，本站不保存你的 Key。',
+      platform: '使用平台预置云端模型，仅管理员可用。',
+    },
+  });
+});
+
 
 // ───────────── 7. 健康检查 ─────────────
 app.get('/api/health', (req, res) => {

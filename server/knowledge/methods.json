@@ -1,0 +1,119 @@
+{
+  "category": "method",
+  "categoryLabel": "方法论",
+  "description": "研究方法与工程实践的短文：常见陷阱、正确做法与判断准则。多数条目源自本项目在实现与评审中真实踩过的坑，是平台方法论承诺的书面依据。",
+  "entries": [
+    {
+      "id": "method-lookahead",
+      "title": "前视偏差（Look-ahead Bias）的三种隐蔽形态",
+      "body": "前视偏差指使用了决策时点尚不可得的信息。最隐蔽的三种形态：① 财务数据按报告期对齐——把 Q4 数据用于次年 1 月的决策（真实披露常在 3~4 月）；② 指标窗口跨界——计算 T 日因子时用到 T 日收盘数据，却在 T 日开盘成交；③ 样本参数污染——用全样本挑选的参数回测全样本（应做样本外验证）。检验方法：把数据截断到某个历史时点重跑，若结论显著变差，则大概率存在前视。防御：PIT 数据层 + 因子计算与成交时点严格分离（T-1 收盘排名、T 开盘成交）。",
+      "source": "教材：López de Prado《Advances in Financial Machine Learning》(Wiley, 2018) 第 7 章；教材：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5), 458-471（回测过拟合的系统性讨论）。",
+      "tags": ["前视偏差", "look-ahead", "回测陷阱", "PIT", "样本外"],
+      "related": ["term-pit", "basis-financial-pubdate"]
+    },
+    {
+      "id": "method-adjust-illusion",
+      "title": "复权幻觉：三个容易混用的价格口径",
+      "body": "同一只股票存在三套价格：不复权（真实成交价）、前复权（以现价为锚回溯调整）、后复权（以首日为锚向前调整）。混用会产生三类错误：① 用复权价算持仓市值——市值虚高或虚低，账户对不上；② 用不复权价算长周期收益——除权日跳空被当成真实跌幅；③ 用前复权价算绝对价格突破——历史价格会随每次除权而变，昨天的信号今天算不出来。正确做法是按用途分口径：成交与市值用不复权，收益统计用后复权或官方 pctChg，画图用前复权。本项目归档保存不复权价 + 复权因子，三种口径均可重建。",
+      "source": "实践依据：交易所除权除息价格计算规则（同 basis-pctchg）；方法讨论：Baostock 官方文档 adjustflag 说明（1 后复权 / 2 前复权 / 3 不复权）与 pctChg 的口径说明。",
+      "tags": ["复权", "复权幻觉", "市值", "收益统计", "pctChg"],
+      "related": ["term-qfq", "basis-pctchg"]
+    },
+    {
+      "id": "method-silent-fallback",
+      "title": "禁止静默降级：降级必须可见",
+      "body": "当最优数据源不可用而退回兜底方案时，若不给用户任何提示，就会造成两种伤害：① 用户以为看到的是权威实时数据，实际是数天前的缓存；② 问题被掩盖，故障长期不被发现。本项目的硬性约定：任何云端不可用导致本地兜底的降级，响应体必须带 degraded 标注，并在前端显式呈现（颜色、文案或角标）。配套原则是 fail-open 必须留痕——如涨跌停守卫在 prevClose 缺失时放行，该行为要在数据质量报告中体现，不能悄悄发生。",
+      "source": "工程实践来源：本项目 server/index.cjs 与 localstore.cjs 的 degraded 标注实现；方法论参考：Nygard, M.T.《Release It! Design and Deploy Production-Ready Software》(2nd ed., Pragmatic Bookshelf, 2018) 关于 stability patterns 与 circuit breaker 的论述。",
+      "tags": ["降级", "degraded", "静默失败", "fail-open", "可观测性"],
+      "related": ["basis-limit-guard", "method-circuitbreaker"]
+    },
+    {
+      "id": "method-multiple-testing",
+      "title": "多重比较：为什么试得越多越容易骗自己",
+      "body": "在 5% 显著性水平下，单独检验一个假设有 5% 概率误报。若同时检验 100 个因子，即使它们全都毫无预测能力，期望仍有约 5 个看起来显著。这就是多重比较（数据窥探）问题。缓解手段：① 提高门槛——Harvey, Liu & Zhu (2016) 建议截面研究中用 |t| > 3；② 控制错误发现率（FDR）——Benjamini-Hochberg 方法；③ 样本外验证与真实交易成本校验；④ 记录所有尝试（含失败的），避免只报告幸存者。本平台的参数稳健性三防（孤峰判据/样本外/成本敏感度）即是该原则在参数层面的落地。",
+      "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
+      "tags": ["多重比较", "数据窥探", "p-hacking", "显著性", "FDR"],
+      "related": ["term-stats-significance", "method-parameter-robust"]
+    },
+    {
+      "id": "method-parameter-robust",
+      "title": "参数稳健性三防：孤峰 / 样本外 / 成本",
+      "body": "参数优化的最大风险是把噪声当成规律。本项目以三项检验构成防线：① 孤峰判据——最优参数是否被邻域参数包围（若邻域表现骤降，说明是尖峰噪声，不可信）；② 样本外验证——用样本内挑出的最优参数在样本外检验（差距过大即过拟合）；③ 成本敏感度——提高费率/滑点后策略是否仍成立（高换手策略常在加成本后转负）。三项全过才认为参数稳健。注意：即使全过也不等于未来有效，只是排除了最粗糙的过拟合形态。",
+      "source": "教材：Pardo, R.《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008) 关于 walk-forward 分析与参数曲面稳健性的方法；工程实现：本项目 server/paramscan.cjs（孤峰判据与样本外对比的落地）。",
+      "tags": ["参数稳健", "过拟合", "孤峰", "样本外", "walk-forward"],
+      "related": ["method-multiple-testing", "method-cost-sensitivity"]
+    },
+    {
+      "id": "method-cost-sensitivity",
+      "title": "成本敏感度：毛收益的幻觉",
+      "body": "许多策略的毛收益来自高频换手捕捉的微小价差，一旦扣除佣金、印花税与滑点就会归零甚至转负。检验做法：把费率与滑点按倍数上调（如 1 倍、2 倍、3 倍），观察净收益的衰减曲线；若 1.5 倍成本即转负，则策略对成本极度敏感，实盘几乎不可能盈利。成本估算的保守性很重要——回测常用固定百分比滑点，而真实冲击成本随下单量与流动性变化，规模越大偏差越大。因此任何策略上线前都应给出成本敏感度结论，而非只报一个扣费后的数字。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, Israel & Moskowitz (2018). Trading Costs, SSRN；Almgren & Chriss (2001). Optimal Execution of Portfolio Transactions, Journal of Risk 3(2)。",
+      "tags": ["成本敏感度", "滑点", "换手", "净收益", "冲击成本"],
+      "related": ["term-turnover", "basis-slippage", "method-parameter-robust"]
+    },
+    {
+      "id": "method-layer-monotonic",
+      "title": "分层回测与单调性：因子有效性的直观检验",
+      "body": "把每个横截面日的股票按因子值排序分为 5 层（或 10 层），各层等权构建组合并逐期计算收益。判读方式：① 若因子有效，层收益应呈现单调递增或递减；② 多空组合（最高层减最低层）的收益差是最直接的因子强度度量；③ 若只有最高层或最低层有收益、中间层无序，说明有效性来自局部（可能是极小市值或不可交易样本），需剔除后重验；④ 按年切分观察单调性是否稳定，避免被单一年份主导。单调性强度可用层序与层收益的 Spearman 秩相关量化。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 6-7 章因子组合构建与分层分析；论文：Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56（分层组合法构造因子的经典做法）。",
+      "tags": ["分层回测", "单调性", "多空组合", "Spearman", "因子检验"],
+      "related": ["term-spearman", "term-ic", "method-cross-section"]
+    },
+    {
+      "id": "method-cross-section",
+      "title": "横截面研究的时间对齐：T-1 排名、T 开盘成交",
+      "body": "横截面因子研究的核心是时间对齐，错一步就产生前视偏差。本项目采用的标准流程：在 T-1 日收盘后用当日（及更早）数据计算因子值并排名，在 T 日开盘按排名构建/调整组合。这样做的理由：T-1 收盘数据在 T 日开盘前已确定可得，不存在信息泄露；若改为 T 日收盘排名、T 日收盘成交，则隐含了瞬间完成全市场交易的假设，不可实现。同时需处理的细节：停牌股（无 T 日开盘价）须剔除或顺延、涨跌停股（T 日无法成交）须按守卫规则处理、新股（数据不足）须排除。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 7 章；方法讨论：Fama & French (1993) 分层组合构建的时间对齐处理；工程实现：本项目 server/crosssect.cjs（T-1 收盘排名、T 开盘成交、整手与同费率口径）。",
+      "tags": ["横截面", "时间对齐", "T-1", "无前视", "因子排名"],
+      "related": ["method-lookahead", "term-momentum-factor"]
+    },
+    {
+      "id": "method-benchmark-choice",
+      "title": "基准选择的诚实原则",
+      "body": "选基准有三条原则：① 可比——基准的风险暴露应与策略相近（小盘策略对比沪深300 会掩盖选股能力）；② 可实现——基准本身应可交易（如指数基金），否则是纸面基准；③ 事前确定——基准必须在策略设计阶段定好，不能跑完再看哪个基准好看（事后选基准是另一种数据窥探）。本平台的做法：单标的给出同股买入持有与沪深300 双参照，因子评估用等权组合基准，并在文档中写明各基准回答什么问题，避免用最有利的那条去呈现业绩。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 2 章基准选择与主动管理；行业标准：CFA Institute《Global Investment Performance Standards (GIPS)》关于基准选取与披露的规定。",
+      "tags": ["基准", "可比性", "事后选择", "GIPS", "诚实呈现"],
+      "related": ["basis-benchmark", "term-equal-weight"]
+    },
+    {
+      "id": "method-sample-length",
+      "title": "样本长度与统计功效",
+      "body": "统计检验要有效，样本必须足够长。日频因子研究通常需要至少数十期观测才能让 t 检验有实际功效——样本太短时，即使因子真实有效也可能检验不显著（第二类错误），而样本过长又会跨越市场结构变化（注册制改革、涨跌幅调整、交易制度变化）导致口径不一致。实践折中：以近年数据为主（如 3~5 年），同时逐年检验稳定性；年化指标必须同时给出样本区间与期数，避免短样本年化数字误导。本平台的因子评估按年切分输出「正收益年数/总年数」即为此目的。",
+      "source": "统计依据：Wooldridge《Introductory Econometrics》第 4 章关于样本量与检验功效；金融实证讨论：Harvey, Liu & Zhu (2016) 对研究样本期的建议；教材：Ang, A.《Asset Management: A Systematic Approach to Factor Investing》(Oxford University Press, 2014) 关于因子研究样本的实务讨论。",
+      "tags": ["样本长度", "统计功效", "第二类错误", "年化", "稳定性"],
+      "related": ["term-annualized", "term-stats-significance"]
+    },
+    {
+      "id": "method-single-source",
+      "title": "单一实现原则：口径分裂是最大的隐患",
+      "body": "同一个指标若在多处各自实现，迟早会分叉——本项目曾同时存在 5 套 RSI 实现（其中一套藏在策略文件里且注释声称与回测一致），口径差异导致回测结论互相矛盾。防御原则：① 任何被复用的计算必须有唯一实现源；② 跨栈复用（前端 TS / 后端 CJS）通过共享模块实现（本项目的 shared/*.mjs 模式，前端 import、后端 require，类型声明用 .d.mts）；③ 验收包含「全仓扫描只剩一处实现」的机械检查——该检查曾揪出人眼与读码都漏掉的第二至第五套实现。人审会漏，扫描不会。",
+      "source": "工程实践来源：本项目 shared/rsi.mjs 的统一过程（2026-09-14 S6 阶段）与 test/rsi.test.cjs 的单一实现断言；方法论参考：Hunt, A. & Thomas, D.《The Pragmatic Programmer》(20th Anniversary ed., Addison-Wesley, 2019) 第 2 章 DRY 原则与重复知识的危害。",
+      "tags": ["单一实现", "口径分裂", "DRY", "共享模块", "回归测试"],
+      "related": ["basis-rsi-wilder", "basis-fee-cn"]
+    },
+    {
+      "id": "method-reproducibility",
+      "title": "可复现性：让结论能被别人重跑出来",
+      "body": "学术研究的底线是可复现。本平台的实现方式：① 每条实验结果绑定数据指纹（数据源、复权方式、截止日、行哈希）；② 数据归档采用不复权价 + 复权因子，任何复权口径可重建；③ 财务数据按披露日只增不改，历史可见性可回溯；④ 实验记录 append-only，不覆盖不删除；⑤ 明确承诺边界——只承诺接口参数范围内的复现（slippage/count 等），后端自动判定项（limitPct/market）不在承诺内并显式声明。诚实声明边界，比夸大承诺更可信。",
+      "source": "原则来源：《可复现研究》通行规范（如 ACM Artifact Review and Badging 对可复现性的分级定义）；金融领域讨论：López de Prado (2018) 第 1 章关于研究流程可复现性的主张。",
+      "tags": ["可复现", "指纹", "留痕", "承诺边界", "学术规范"],
+      "related": ["basis-fingerprint", "term-pit"]
+    },
+    {
+      "id": "method-circuitbreaker",
+      "title": "回撤熔断：把风险控制写成机器规则",
+      "body": "风控若只写在文档里，实盘时人会找理由不执行。本平台把回撤熔断实现为下单路径上的硬规则：L1——账户回撤达到阈值（默认 10%）时禁止开仓（仅允许减仓）；L2——回撤达到更高阈值（默认 15%）时锁定为只可卖出。解锁需人工显式操作（以当前净值为新基准），避免自动恢复掩盖问题。可通过环境变量停用（用于研究场景）。设计要点：熔断状态必须持久化、判断必须在下单原子区内完成（防止并发绕过）、阈值必须可配置且有测试覆盖。",
+      "source": "方法论参考：Nygard《Release It!》关于 circuit breaker 模式；行业规范：CFA Institute 关于投资组合风险控制与止损纪律的讨论；工程实现：本项目 server/paper/broker.cjs 与 test/paper-circuitbreaker.test.cjs。",
+      "tags": ["熔断", "风控", "回撤", "止损", "circuit breaker"],
+      "related": ["term-maxdrawdown", "method-silent-fallback"]
+    },
+    {
+      "id": "method-benchmark-overfit",
+      "title": "回测过拟合的六种征兆",
+      "body": "识别策略过拟合的六条经验：① 参数曲面上只有一个孤峰（邻域骤降）；② 样本外表现远差于样本内；③ 换手率极高且收益主要来自微小价差；④ 加入成本后收益归零；⑤ 收益集中在少数几笔交易或少数时间段；⑥ 逻辑上说不清为什么有效（无经济解释）。六条中命中两条以上，应视为不可信。真正的稳健策略通常表现为：参数平原、样本内外接近、逻辑清晰、对成本有一定容忍度、收益分散在多期。本平台的参数扫描与因子评估输出都围绕这些征兆设计判据。",
+      "source": "教材：Pardo《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008)；论文：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5)；Bailey & López de Prado (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5)。",
+      "tags": ["过拟合", "回测", "孤峰", "样本外", "经济解释"],
+      "related": ["method-parameter-robust", "method-multiple-testing"]
+    }
+  ]
+}

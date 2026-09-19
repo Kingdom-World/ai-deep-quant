@@ -14,7 +14,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 async function toolIndices() {
   const codes = ['sh000001', 'sz399001', 'sh000300'].join(',');
   const text = (
-    await axios.get(`http://qt.gtimg.cn/q=${codes}`, {
+    await axios.get(`https://qt.gtimg.cn/q=${codes}`, {
       headers: { 'User-Agent': UA },
       timeout: 6000,
     })

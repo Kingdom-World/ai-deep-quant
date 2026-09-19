@@ -21,9 +21,12 @@ const MAX_CACHE_ENTRIES = 500;
 export function getCached<T>(key: string, ttlMs: number): T | null {
   const entry = cache.get(key);
   if (entry && Date.now() - entry.timestamp < ttlMs) {
-    const age = Math.round((Date.now() - entry.timestamp) / 1000);
-    // eslint-disable-next-line no-console
-    console.log(`[Cache] 使用缓存数据: ${key}（${age}s 前写入，TTL ${Math.round(ttlMs / 1000)}s）`);
+    // 命中日志仅开发环境输出：生产环境每次缓存命中都打日志会污染控制台并拖慢渲染
+    if (import.meta.env.DEV) {
+      const age = Math.round((Date.now() - entry.timestamp) / 1000);
+      // eslint-disable-next-line no-console
+      console.log(`[Cache] 使用缓存数据: ${key}（${age}s 前写入，TTL ${Math.round(ttlMs / 1000)}s）`);
+    }
     return entry.data as T;
   }
   return null;

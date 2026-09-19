@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { askAssistant, aiApi, authApi } from '../api/dataService';
 import TopNav from '../components/TopNav';
+import { fmtDate } from '../lib/time';
 import { theme } from '../lib/theme';
 
 interface ChatMessage {
@@ -12,6 +13,8 @@ interface ChatMessage {
   type?: string;
   engine?: string;
   reasoning?: string | null;
+  /** 已配置云端却回退本地引擎时的原因（后端显式标注，避免静默降级） */
+  degraded?: string;
 }
 
 /** 轻量 markdown 渲染（标题/加粗/列表/行内代码，供气泡使用） */
@@ -49,7 +52,7 @@ function renderMdLite(text: string): React.ReactNode[] {
 }
 
 /** 问候语 */
-const GREETING_TEXT = '🤖 你好！我是 AI深度量化 的站内智能助手（离线规则引擎，无需联网 AI）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！';
+const GREETING_TEXT = '🤖 你好！我是 AI深度量化 的站内智能助手（本地规则引擎 + 云端大模型协同）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！';
 
 /** 加载态思考步骤（与思考链呈现形式一致） */
 const THINKING_STEPS = [
@@ -67,7 +70,7 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      text: '🤖 你好！我是 AI深度量化 的站内智能助手（离线规则引擎，无需联网 AI）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！',
+      text: '🤖 你好！我是 AI深度量化 的站内智能助手（本地规则引擎 + 云端大模型协同）。\n\n我可以帮你：\n· 「分析 AAPL」—— 个股五因子解读\n· 「今天观察什么」—— 股票池因子评分排名\n· 「平台怎么用」—— 使用指南\n· 「回测怎么用」—— 策略回测指引\n\n试试下方的快捷问题吧！',
     },
   ]);
   const [input, setInput] = useState('');
@@ -181,6 +184,7 @@ export default function AssistantPage() {
           type: res.type,
           engine: res.engine,
           reasoning: res.reasoning ?? null,
+          degraded: res.degraded,
         },
       ]);
     } catch (e: any) {
@@ -212,12 +216,11 @@ export default function AssistantPage() {
       {/* 顶部导航（全站统一） */}
       <TopNav />
 
-      {/* 聊天区 */}
+      {/* 聊天区（全站满宽统一；气泡自身有百分比宽度约束，不会被拉到不可读） */}
       <main
         style={{
           flex: 1,
           width: '100%',
-          maxWidth: '820px',
           margin: '0 auto',
           padding: '20px 20px 8px',
           display: 'flex',
@@ -271,6 +274,11 @@ export default function AssistantPage() {
                 >
                   {m.engine === 'cloud' && <span style={{ display: 'inline-block', fontSize: 10, color: '#93c5fd', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🛰️ 云端专家模型</span>}
                   {m.engine === 'knowledge' && <span style={{ display: 'inline-block', fontSize: 10, color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 999, padding: '0 8px', marginBottom: 6 }}>🧠 学习知识库</span>}
+                  {m.degraded && (
+                    <div style={{ fontSize: 11, color: '#fbbf24', backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '5px 9px', marginBottom: 8, lineHeight: 1.6 }}>
+                      ⚠️ 云端模型本次不可用，已回退本地引擎：{m.degraded}
+                    </div>
+                  )}
                   {m.reasoning && (
                     <details style={{ marginBottom: 8, backgroundColor: 'rgba(13,19,34,0.6)', border: '1px solid #1e293b', borderRadius: 8, padding: '6px 10px' }}>
                       <summary style={{ fontSize: 11, color: '#93c5fd', cursor: 'pointer' }}>🧠 查看模型思考链</summary>
@@ -377,7 +385,7 @@ export default function AssistantPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: '#475569' }}>
             🧠 已学习 {aiStats?.knowledge ?? 0} 条知识 · 自训练 {aiStats?.trainCount ?? 0} 轮
-            {aiStats?.lastNightly ? ` · 上次训练 ${String(aiStats.lastNightly.at).slice(0, 10)}` : ''}
+            {aiStats?.lastNightly ? ` · 上次训练 ${fmtDate(aiStats.lastNightly.at)}` : ''}
             {aiStats?.pendingQuestions ? ` · 待学习 ${aiStats.pendingQuestions} 问` : ''}
           </span>
           <button
@@ -482,7 +490,7 @@ export default function AssistantPage() {
       </main>
 
       <p style={{ textAlign: 'center', color: '#475569', fontSize: '12px', paddingBottom: '16px' }}>
-        AI 助手为站内离线规则引擎，解读基于真实行情量化指标，仅供参考，不构成投资建议
+        AI 助手由本地规则引擎与云端大模型（智谱 GLM 等）协同驱动，提问内容可能发送至第三方 AI 服务处理，请勿输入个人敏感信息；解读基于真实行情量化指标，仅供参考，不构成投资建议
       </p>
     </div>
   );

@@ -1,0 +1,127 @@
+{
+  "category": "term",
+  "categoryLabel": "术语",
+  "description": "量化研究与金融数据的基础概念。每条含可核查出处（教材/标准/公开规则），用于统一全站口径与 Agent 检索。",
+  "entries": [
+    {
+      "id": "term-pit",
+      "title": "PIT（Point-In-Time，时点数据）",
+      "body": "PIT 指「在历史每一时点，只使用当时真实可获得的信息」的数据组织方式。以财务数据为例：某公司 2023 年报披露日为 2024-04-25，则 2024-04-25 之前的任何回测决策都不得使用该年报数据。若用「按报告期归属」（如把 2023 年报数据标注为 2023-12-31 可用）就会产生前视偏差（look-ahead bias），使回测收益虚高。本项目自建 PIT：财务记录按 pubDate（披露日）只增不改，回测取数时按「决策日不早于 pubDate」过滤。",
+      "source": "教材：Marcos López de Prado《Advances in Financial Machine Learning》(Wiley, 2018) 第 7 章 Cross-Validation in Finance 关于 look-ahead bias 的论述；实践对照：Baostock 日线接口字段 pubDate（披露日）定义。",
+      "tags": ["PIT", "时点数据", "前视偏差", "look-ahead", "财务", "pubDate"],
+      "related": ["method-lookahead", "basis-financial-pubdate"]
+    },
+    {
+      "id": "term-qfq",
+      "title": "前复权与后复权（qfq / hfq）",
+      "body": "复权是消除除权除息造成的价格跳空，使收益率序列可比。前复权（qfq）以最新价为基准向前调整历史价格，当前价与真实市价一致，适合看图与短线；后复权（hfq）以上市首日为基准向后调整，历史价格不变，适合长周期收益统计。关键取舍：复权价格是人造的，不能用于计算真实持仓市值与成交金额；而做涨跌幅类断言时，直接用不复权 close 比值会在除权日误报，必须使用官方 pctChg 字段。本项目归档口径为不复权价 + 复权因子（可复现）。",
+      "source": "实践准则：上海证券交易所《交易规则》除权除息价格计算规定；数据接口文档：Baostock 日线接口 adjustflag 与 pctChg 字段定义（baostock.com 日线数据接口文档）。",
+      "tags": ["前复权", "后复权", "qfq", "hfq", "复权因子", "除权除息", "pctChg"],
+      "related": ["method-adjust-illusion", "basis-pctchg"]
+    },
+    {
+      "id": "term-ic",
+      "title": "IC（Information Coefficient，信息系数）",
+      "body": "IC 衡量因子值与下期收益之间的相关性，是因子预测能力的核心度量。常用两种：Pearson IC（线性相关，对极端值敏感）与 Rank IC / Spearman IC（秩相关，稳健，量化实践更常用）。逐期计算得到 IC 序列后，可导出 IC 均值（方向与强度）、IC 标准差（稳定性）与 IC 大于 0 占比（胜率）。判断经验：IC 均值绝对值在 0.03~0.05 量级已具备一定选股能力，0.1 以上较为优秀——但须结合 IR 与显著性检验共同判断，单看 IC 均值易被少数极端期误导。",
+      "source": "教材：丁鹏《量化投资：策略与技术》(电子工业出版社) 因子有效性检验章节；论文：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章 The Fundamental Law of Active Management 关于 IC 与信息比率的理论推导。",
+      "tags": ["IC", "信息系数", "Rank IC", "Spearman", "因子有效性"],
+      "related": ["term-ir", "method-multiple-testing"]
+    },
+    {
+      "id": "term-ir",
+      "title": "IR（Information Ratio，信息比率）",
+      "body": "在因子研究中，IR 通常指 IC 均值与 IC 标准差之比（ICIR）：IR = mean(IC) / std(IC)，刻画因子预测能力相对其波动的大小，等价于 IC 序列的 t 统计量按 √T 缩放。注意与绩效指标中的信息比率区分——后者是组合超额收益均值与跟踪误差之比（Grinold & Kahn 定义）。实践中 ICIR 大于 0.3 常被视为因子稳定的参考线，但阈值应结合样本期长度与显著性检验判定，不可教条套用。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章；Clarke, de Silva & Thorley《Minimum-Variance Portfolios in the U.S. Equity Market》(Journal of Portfolio Management, 2006) 对 IC 到 IR 转换的讨论。",
+      "tags": ["IR", "信息比率", "ICIR", "跟踪误差", "因子稳定"],
+      "related": ["term-ic", "term-stats-significance"]
+    },
+    {
+      "id": "term-newey-west",
+      "title": "Newey-West 调整（HAC 标准误）",
+      "body": "回归或均值检验中，若残差存在异方差与自相关（时序数据几乎必然），普通 OLS 标准误会低估真实标准误，导致 t 值虚高、把噪声当成显著。Newey-West（1987）提出异方差自相关一致（HAC）协方差矩阵估计，通过对不同滞后的自协方差加权（常用 Bartlett 核，权重随滞后线性衰减）来修正。关键参数是滞后阶数 L：取太小无法消除自相关，太大损失效率。常用经验法则 L = floor(4 × (T/100)^(2/9))。当 L = 0 时 Newey-West 退化为普通（异方差稳健）标准误。",
+      "source": "原始论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708。实现参考：statsmodels 库 statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式；教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 12 章 Serial Correlation and Heteroskedasticity in Time Series Regressions。",
+      "tags": ["Newey-West", "HAC", "标准误", "自相关", "异方差", "显著性"],
+      "related": ["term-stats-significance", "method-multiple-testing"]
+    },
+    {
+      "id": "term-stats-significance",
+      "title": "统计显著性与 t / p 值",
+      "body": "检验某因子的平均收益是否真的不为零时，构造 t = mean(r) / (s/√T)，其中 r 为逐期收益序列、s 为样本标准差、T 为期数。t 的绝对值越大越不可能是偶然。p 值为原假设为真时出现当前或更极端结果的概率，p 小于 0.05 常称显著（5% 水平）。三个常见陷阱：① 忽略自相关导致 t 虚高（须用 Newey-West 修正）；② 多重比较（同时检验大量因子，必然有若干显著是巧合）；③ 样本过短，t 分布的近似不成立。学术界常用 |t| 不小于 2（约 p<0.05）与 |t| 不小于 3（Harvey 等提出的更高门槛）作为参考线。",
+      "source": "教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 4 章假设检验；论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68（提出 |t|>3 的更高门槛以应对多重比较）。",
+      "tags": ["t检验", "p值", "显著性", "假设检验", "t统计量"],
+      "related": ["term-newey-west", "method-multiple-testing"]
+    },
+    {
+      "id": "term-sharpe",
+      "title": "夏普比率（Sharpe Ratio）",
+      "body": "夏普比率 = (组合收益率 − 无风险利率) / 收益率标准差，衡量每承担一单位总波动获得的超额回报。注意三点：① 分母是总风险（含非系统性风险），不是跟踪误差；② 对收益率序列的自相关与偏度敏感，高频/持有期短的策略会因序列相关而虚高，需做年化与自相关调整；③ 比较夏普必须在同一频率、同一区间、同一无风险利率口径下进行。年化常用 Sharpe_annual = Sharpe_period × √(每年期数)，但该公式假设收益独立同分布，日内或高频数据需谨慎。",
+      "source": "原始论文：Sharpe, W.F. (1966). Mutual Fund Performance. Journal of Business, 39(1), 119-138；教材：Bodie, Kane & Marcus《Investments》第 5 章风险与收益度量；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52（关于自相关调整）。",
+      "tags": ["夏普比率", "Sharpe", "风险调整收益", "年化"],
+      "related": ["term-maxdrawdown", "term-annualized"]
+    },
+    {
+      "id": "term-maxdrawdown",
+      "title": "最大回撤（Maximum Drawdown）",
+      "body": "最大回撤指净值曲线从某一历史高点到其后最低点的最大跌幅：MDD = max over t of ((峰值 − 当前值) / 峰值)。它刻画最坏情况下从顶到底亏多少，是风险承受力的直观指标，且与前视无关（只依赖历史路径）。与夏普的差异：夏普看波动，回撤看路径极值——两个策略夏普相同，回撤可能差异巨大。常见误用：用最大回撤与最大回撤持续期混为一谈；回撤持续期指从谷底恢复到前高所需时间，往往比跌幅本身更折磨人。",
+      "source": "教材：Bacon, C.R.《Practical Portfolio Performance Measurement and Attribution》(2nd ed., Wiley, 2008) 第 4 章回撤度量；Magdon-Ismail, M. & Atiya, A. (2004). Maximum Drawdown. Risk Magazine, 17(10), 99-102（回撤的解析性质）。",
+      "tags": ["最大回撤", "MDD", "回撤持续期", "风险"],
+      "related": ["term-sharpe", "method-circuitbreaker"]
+    },
+    {
+      "id": "term-annualized",
+      "title": "年化收益率（Annualized Return）",
+      "body": "把非一年期的收益率折算为年度口径，便于横向比较。单期复利年化：Annualized = (1 + R_total)^(365/days) − 1（日历日）或 (1 + R_total)^(252/tradingDays) − 1（交易日）。关键陷阱：用简单线性外推（R_total × 365/days）在短样本上会严重高估；样本越短，年化数字越不可信（一个月翻倍年化后是天文数字）。汇报时应同时给出样本区间与期数，避免年化幻觉。",
+      "source": "教材：Bodie, Kane & Marcus《Investments》第 5 章收益率计算；CFA Institute《Global Investment Performance Standards (GIPS)》关于年化收益率计算与披露要求。",
+      "tags": ["年化收益率", "annualized", "复利", "收益率"],
+      "related": ["term-sharpe", "method-sample-length"]
+    },
+    {
+      "id": "term-turnover",
+      "title": "换手率与交易成本",
+      "body": "组合换手率指一定期间内买卖金额占组合资产的比例，反映策略的交易频率。换手直接影响净收益：净值 = 毛收益 − 换手带来的成本（佣金 + 印花税 + 过户费 + 滑点 + 冲击成本）。高换手策略在毛收益上可能亮眼，但被成本吞噬后可能转负——这正是成本敏感度检验的意义。计算时须注意：单边换手与双边换手的口径差异、调仓日部分换手（因子排序变动小）的处理。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 9 章 Trading Costs, Turnover, and Taxes；Frazzini, A., Israel, R. & Moskowitz, T.J. (2018). Trading Costs. SSRN Working Paper（机构交易成本的实证估计）。",
+      "tags": ["换手率", "turnover", "交易成本", "滑点", "成本敏感度"],
+      "related": ["basis-fee-cn", "method-cost-sensitivity"]
+    },
+    {
+      "id": "term-spearman",
+      "title": "Spearman 秩相关（Rank Correlation）",
+      "body": "Spearman 秩相关系数是把两组数据各自转换为排名后计算 Pearson 相关，公式等价于对秩做线性相关。特点：只依赖顺序、对单调非线性关系稳健、对极端值不敏感——因此成为 Rank IC 与分层单调性检验的标准工具。取值范围 [−1, 1]。注意：秩相同（tie）时需用平均秩处理；样本量小时临界值表与正态近似有差异。分层回测中常用它衡量层序与层收益的单调强度。",
+      "source": "教材：Conover, W.J.《Practical Nonparametric Statistics》(3rd ed., Wiley, 1999) 第 5 章秩相关方法；Spearman, C. (1904). The Proof and Measurement of Association between Two Things. American Journal of Psychology, 15(1), 72-101。",
+      "tags": ["Spearman", "秩相关", "Rank IC", "单调性", "非参数"],
+      "related": ["term-ic", "method-layer-monotonic"]
+    },
+    {
+      "id": "term-volatility",
+      "title": "波动率（Volatility）",
+      "body": "波动率通常指收益率序列的标准差，是最基础的离散度度量。年化：σ_annual = σ_daily × √252。要点：① 波动率是对称的（上涨与下跌同样计入），故不区分方向；② 历史波动率与隐含波动率（期权市场反推）是两回事；③ 波动率具有聚集性（GARCH 效应），简单固定窗口估计会滞后于市场状态切换；④ 因子低波动异象即指低波动股票长期风险调整收益优于高波动股票（Baker, Bradley & Wurgler 2011）。",
+      "source": "教材：Hull, J.C.《Options, Futures, and Other Derivatives》第 15 章波动率估计；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly. Financial Analysts Journal, 67(1), 40-54。",
+      "tags": ["波动率", "volatility", "标准差", "低波动异象", "GARCH"],
+      "related": ["term-sharpe", "method-layer-monotonic"]
+    },
+    {
+      "id": "term-momentum-factor",
+      "title": "动量因子（Momentum）",
+      "body": "动量因子指过去一段时间收益率较高的股票在未来一段时间继续表现较好（或反之，视市场与周期而定），源于 Jegadeesh & Titman (1993) 的经典发现（美股 3~12 个月形成期、持有期策略显著）。常见构造：mom{n} = 过去 n 个交易日累计收益（或对数收益）。重要提示：动量在中国 A 股市场并不稳定，短期（数日至数周）常表现为反转（reverse）；本项目实测 mom 因子在所选样本上呈现高分组收益低于低分组，即动量失效/反转特征——这是数据结论，不是模型错误，须如实呈现。",
+      "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。",
+      "tags": ["动量", "momentum", "反转", "因子", "Jegadeesh"],
+      "related": ["method-cross-section", "method-layer-monotonic"]
+    },
+    {
+      "id": "term-limit-up-down",
+      "title": "涨跌停与涨停板规则",
+      "body": "A 股实行价格涨跌幅限制：主板 ±10%、创业板与科创板 ±20%、ST/*ST 主板 ±5%、北交所 ±30%；新股上市首日等特殊情形另有规定。判定基准是前一交易日收盘价（prevClose，经除权除息调整）。回测与模拟盘的取舍得注意：① 一字板意味着当日无法成交，若回测允许在涨停价买入会造成买得到的幻觉；② 触板当日挂单是否成交取决于排队撮合，简化模型通常保守处理（触发即拒单或挂起）；③ 涨跌停幅度由板块决定，跨市场（港股无涨跌幅限制、美股有熔断）不可套用。本项目在 matcher 层统一实现该守卫，依赖 quote.prevClose，缺失时 fail-open。",
+      "source": "官方规则：上海证券交易所《交易规则》第 3.4 节价格涨跌幅限制；深圳证券交易所《交易规则》相应条款；《北京证券交易所交易规则》涨跌幅规定。",
+      "tags": ["涨跌停", "涨停板", "限价", "prevClose", "主板", "创业板", "科创板"],
+      "related": ["basis-limit-guard", "method-silent-fallback"]
+    },
+    {
+      "id": "term-equal-weight",
+      "title": "等权基准（Equal Weight Benchmark）",
+      "body": "等权基准指每只成分股分配相同权重（1/N），定期再平衡。用途：作为没有选股能力的参照线——如果策略跑不赢等权组合，说明选股未创造价值。相比市值加权，等权基准：① 天然偏向小市值与波动（rebalancing 效应），长期收益常高于市值加权指数；② 更能反映广撒网的可实现收益。做因子评估时用等权更公平（避免市值因子混入）。注意：等权再平衡本身产生换手成本，基准也应计成本才可比。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》第 2 章基准选择；研究：DeMiguel, V., Garlappi, L. & Uppal, R. (2009). Optimal Versus Naive Diversification: How Inefficient is the 1/N Portfolio Strategy? Review of Financial Studies, 22(5), 1915-1953（1/N 基准的稳健性论证）。",
+      "tags": ["等权", "基准", "equal weight", "1/N", "再平衡"],
+      "related": ["method-benchmark-choice", "method-cross-section"]
+    }
+  ]
+}

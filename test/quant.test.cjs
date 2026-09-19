@@ -35,9 +35,26 @@ test('buyhold：单调上涨序列收益接近持有收益，期末强平标记 
   assert.ok(!r.error);
   assert.equal(r.tradeCount, 1);
   assert.equal(r.trades[0].forced, true);
-  // 买入价 open[1]=100.5，期末收盘 159 平仓（含双边 0.1% 手续费）
-  assert.ok(r.totalReturn > 57 && r.totalReturn < 59, `totalReturn=${r.totalReturn}`);
+  // 买入价 open[1]=100.5，A 股整手 → 900 股（10 万资金可买 9 手，费用分项计入）
+  // 期末强平 = 现金 9526.49 + 900×159 − 卖出费(佣金35.78+印花税71.55+过户费1.43) = 152517.73 → +52.52%
+  assert.ok(r.totalReturn > 51.5 && r.totalReturn < 53.5, `totalReturn=${r.totalReturn}`);
   assert.ok(r.benchmarkReturn > 58.9 && r.benchmarkReturn < 59.1);
+});
+
+test('A股整手约束：买入股数为一手的整数倍，碎股不再出现', () => {
+  // 股价 100.5、资金 100000：整手只能买 900 股（碎股口径会买到 ~994 股）；零滑点隔离验证整手本身
+  const closes = Array.from({ length: 60 }, (_, i) => 100 + i);
+  const r = runBacktest(makeKlines(closes), 'buyhold', 5, 20, 100000, 'CN', { slippage: 0 });
+  // 期末净值 = 剩余现金 9526.49 + 持仓市值，与整手买入 900 股的口径精确一致
+  const expected = 9526.49 + 900 * 159 - (900 * 159 * 0.00025 + 900 * 159 * 0.0005 + 900 * 159 * 0.00001);
+  assert.ok(Math.abs(r.finalValue - expected) < 0.05, `finalValue=${r.finalValue} expected≈${expected.toFixed(2)}`);
+});
+
+test('资金不足一手：不再静默空转，note 说明整手原因', () => {
+  const closes = Array.from({ length: 60 }, (_, i) => 2500 + i); // 一手 25 万 > 10 万资金
+  const r = runBacktest(makeKlines(closes), 'ma', 5, 20, 100000);
+  assert.equal(r.tradeCount, 0);
+  assert.ok(r.note && r.note.includes('不足以买入'), `note=${r.note}`);
 });
 
 test('ma 双均线：涨后跌序列至少完成一轮买卖', () => {
@@ -70,7 +87,7 @@ test('初始资金低于股价：不再静默空转，结果带 note', () => {
   const closes = Array.from({ length: 60 }, (_, i) => 1292 + i); // 茅台式高价
   const r = runBacktest(makeKlines(closes), 'ma', 5, 20, 1000);
   assert.equal(r.tradeCount, 0);
-  assert.ok(r.note && r.note.includes('低于股价'), `note=${r.note}`);
+  assert.ok(r.note && r.note.includes('不足以买入'), `note=${r.note}`);
 });
 
 test('资金足够但条件从未触发：note 说明无信号', () => {

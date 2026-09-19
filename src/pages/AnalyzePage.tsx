@@ -205,12 +205,12 @@ export default function AnalyzePage() {
         </button>
       </div>
 
-      <main style={{ maxWidth: '960px', margin: '0 auto', padding: '28px 24px 48px' }}>
+      <main style={{ padding: '28px 24px 48px' }}>
         <h1 style={{ fontSize: '26px', fontWeight: '700', margin: '0 0 8px', color: '#f8fafc' }}>
           🧮 五因子量化评分模型
         </h1>
         <p style={{ fontSize: '14px', color: '#94a3b8', margin: '0 0 24px', lineHeight: 1.7 }}>
-          输入任意股票代码（美股 / A股 / 港股），系统基于{' '}
+          输入股票代码（A股 / 港股 / 美股，以实际数据覆盖为准），系统基于{' '}
           <b style={{ color: '#e2e8f0' }}>趋势(30) · 动量(25) · 量能(15) · 波动(15) · 位置(15)</b>{' '}
           五因子模型进行量化打分，满分 100，并给出综合评级与因子拆解。
         </p>

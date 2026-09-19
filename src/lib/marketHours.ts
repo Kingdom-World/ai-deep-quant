@@ -2,10 +2,25 @@
 // 交易时段判断（前端展示用）：按北京时间计算
 //   · 让"数据没变"在休市日有明确解释，而不是看起来像故障
 //   · 与后端 server/paper/strategies.cjs 的 isMarketOpen 口径一致（近似值）
+//   · CN 法定节假日与后端共用同一份数据（shared/cn-holidays.json）
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
+import cnHolidays from '../../shared/cn-holidays.json';
 
 export type MarketCode = 'CN' | 'HK' | 'US';
+
+/** 北京日期字符串（YYYY-MM-DD）：beijingNow 已把时间戳平移为北京时间，直接取本地字段即可 */
+function beijingDateString(bj: Date): string {
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${bj.getFullYear()}-${pad(bj.getMonth() + 1)}-${pad(bj.getDate())}`;
+}
+
+/** CN 是否为法定节假日（数据与后端 server/calendar.cjs 同源） */
+function isCnHoliday(bj: Date): boolean {
+  const s = beijingDateString(bj);
+  const list = (cnHolidays.years as Record<string, string[]>)[s.slice(0, 4)];
+  return Array.isArray(list) && list.includes(s.slice(5));
+}
 
 export interface MarketStatus {
   /** 当前是否处于可交易时段 */
@@ -44,6 +59,14 @@ export function getMarketStatus(market: MarketCode, now: Date = new Date()): Mar
       open: false,
       label: '周末休市',
       detail: '今天是周末，市场休市，行情数据停留在最近一个交易日的收盘状态（属正常现象，周一开盘自动恢复）',
+    };
+  }
+
+  if (market === 'CN' && isCnHoliday(bj)) {
+    return {
+      open: false,
+      label: '节假日休市',
+      detail: '今天是法定节假日，A股休市，行情数据停留在最近一个交易日的收盘状态',
     };
   }
 

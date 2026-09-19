@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 // Agent 团队分析面板（主理人调度制 · 五阶段流水线可视化）
 //   · 供首页 / 量化因子分析页复用
-//   · 鲜明脱敏声明：所有内容为程序化规则生成的学术研究演示，非投资建议
+//   · 13 角色由免费云端大模型分饰（记忆隔离，信息经主理人中转），异步任务轮询进度
+//   · 合规声明：LLM + 规则引擎协作的学术研究演示，非投资建议
 // ─────────────────────────────────────────────────────────────
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { agentsApi, type AgentTrace } from '../api/dataService';
 
@@ -88,13 +89,29 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
   const [agent, setAgent] = useState('tech');
   const [entryPrice, setEntryPrice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<{ step: number; total: number; stage: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<AgentTrace | null>(null);
+  const pollTimer = useRef<number | undefined>(undefined);
+  const mountedRef = useRef(true);
+
+  // 卸载时停掉轮询链并清掉在途定时器。
+  // 原实现只在 promise 的 finally 里 clearTimeout，且轮询链自身会继续 setTimeout，
+  // 组件卸载后仍会持续请求接口并对已卸载组件 setState（请求浪费 + React 告警）。
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      window.clearTimeout(pollTimer.current);
+    };
+  }, []);
 
   const run = async () => {
     if (loading) return;
     setLoading(true);
     setError(null);
+    setTrace(null);
+    setProgress({ step: 0, total: 15, stage: '任务已受理，正在准备数据' });
     try {
       const r = await agentsApi.analyze({
         symbol: symbol.trim(),
@@ -103,18 +120,68 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
         ...(mode === 'risk' && entryPrice ? { entryPrice: Number(entryPrice) } : {}),
       });
       if (!r.ok) throw new Error(r.error || '分析失败');
-      setTrace(r);
+      // 同步返回（云端模型未配置时的规则引擎路径）
+      if ((r as any).stages) {
+        setTrace(r);
+        setProgress(null);
+        setLoading(false);
+        return;
+      }
+      // 异步任务：轮询进度（13 角色 LLM 流水线约 2-4 分钟）
+      const jobId = (r as any).jobId as string;
+      await new Promise<void>((resolve, reject) => {
+        const poll = async () => {
+          if (!mountedRef.current) {
+            resolve(); // 组件已卸载：终止轮询
+            return;
+          }
+          try {
+            const j = await agentsApi.job(jobId);
+            if (!mountedRef.current) {
+              resolve();
+              return;
+            }
+            if (!j.ok) throw new Error('任务查询失败');
+            if (j.status === 'running') {
+              setProgress({ step: j.step ?? 0, total: j.total ?? 15, stage: j.stage ?? '' });
+              pollTimer.current = window.setTimeout(poll, 2500);
+              return;
+            }
+            if (j.status === 'error') throw new Error(j.error || '分析失败');
+            if (j.trace) {
+              setTrace(j.trace);
+              resolve();
+              return;
+            }
+            throw new Error('任务完成但缺少报告');
+          } catch (e) {
+            reject(e);
+          }
+        };
+        pollTimer.current = window.setTimeout(poll, 1500);
+      });
+      if (mountedRef.current) setProgress(null);
     } catch (e) {
-      setError((e as Error).message);
-      setTrace(null);
+      if (mountedRef.current) {
+        setError((e as Error).message);
+        setTrace(null);
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setProgress(null);
+      }
+      window.clearTimeout(pollTimer.current);
     }
   };
 
   const stages = (trace?.stages ?? {}) as any;
   const final = trace?.final as any;
   const vColor = final ? (VERDICT_COLOR[final.decision] ?? '#94a3b8') : '#94a3b8';
+  // 降级可观测：后端已把「哪些角色由规则引擎兜底」汇总进 trace.degraded
+  const degraded = (trace?.degraded ?? (stages?.orchestration as any)?.degraded) as
+    | { degraded?: boolean; llm?: number; rule?: number; total?: number; seats?: string[]; reason?: string }
+    | undefined;
 
   return (
     <div>
@@ -132,8 +199,8 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
           fontWeight: 600,
         }}
       >
-        ⚠️ 合规声明（请务必阅读）：本功能由**本地程序化规则引擎**模拟 Agent 团队协作，所有报告 / 辩论 / 结论均为算法自动生成的**学术研究演示**，
-        **不构成任何投资建议**，不代表任何真实机构观点；未接入财报、新闻与资金流数据，相关分析师使用价格行为代理指标并已标注局限。请勿据此进行任何真实交易。
+        ⚠️ 合规声明（请务必阅读）：本功能由 <b>AI 多角色协作</b>自动生成，所有报告 / 辩论 / 结论均为算法生成的<b>学术研究演示</b>，
+        <b>不构成任何投资建议</b>，不代表任何真实机构观点；数据缺失的情形会使用代理指标并已在报告中标注局限。请勿据此进行任何真实交易。
       </div>
 
       {/* ── 控制台 ── */}
@@ -192,8 +259,22 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
 
       {loading && (
         <div style={{ ...CARD, textAlign: 'center', color: '#93c5fd', padding: '28px' }}>
-          <div style={{ fontSize: 20, marginBottom: 8 }}>🤖 Agent 团队协作中…</div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>主理人调度中 → 数据收集 → 多空辩论 → 交易决策 → 风险评估 → 最终报告</div>
+          <div style={{ fontSize: 20, marginBottom: 8 }}>🤖 AI 分析团队协作中…</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+            {progress?.stage || '正在调度'}（{progress ? `${progress.step}/${progress.total}` : '…'}）
+          </div>
+          <div style={{ height: 6, backgroundColor: 'rgba(96,165,250,0.12)', borderRadius: 999, overflow: 'hidden', maxWidth: 420, margin: '0 auto' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${progress ? Math.round((progress.step / Math.max(progress.total, 1)) * 100) : 4}%`,
+                background: 'linear-gradient(90deg,#1d4ed8,#60a5fa)',
+                borderRadius: 999,
+                transition: 'width 0.6s ease',
+              }}
+            />
+          </div>
+          <div style={{ fontSize: 11, color: '#475569', marginTop: 10 }}>完整分析约 2-4 分钟，请勿关闭页面</div>
         </div>
       )}
 
@@ -224,6 +305,28 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
               </div>
             )}
           </div>
+
+          {/* ── 降级提示（关键可观测性）：不能让规则引擎产出被误读为大模型分析 ── */}
+          {degraded?.degraded && (
+            <div
+              style={{
+                ...CARD,
+                marginBottom: 14,
+                border: '1px solid rgba(245,158,11,0.45)',
+                backgroundColor: 'rgba(245,158,11,0.08)',
+                color: '#fbbf24',
+                fontSize: 12,
+                lineHeight: 1.7,
+              }}
+            >
+              ⚠️ <b>本次分析存在降级</b>：
+              {degraded.total ? ` ${degraded.rule ?? 0}/${degraded.total} 个角色` : ' 部分角色'}由本地规则引擎产出（未走云端大模型）。
+              {degraded.seats?.length ? ` 降级角色：${degraded.seats.join('、')}。` : ''}
+              {degraded.reason ? ` ${degraded.reason}。` : ''}
+              降级多因免费模型额度限流触发，结论请谨慎参考。
+            </div>
+          )}
+
           {trace.reportId && (
             <button
               onClick={() => navigate(`/agents/report/${trace.reportId}`)}

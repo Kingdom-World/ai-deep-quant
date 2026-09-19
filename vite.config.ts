@@ -29,6 +29,13 @@ const devAuthHeaders = sitePass
 
 // https://vite.dev/config/
 export default defineConfig({
+  // 构建版本戳：注入构建时刻，显示在声明条右侧——用于肉眼确认浏览器加载的是哪次构建
+  // （背景：多次出现「改了 src 但用户看到旧页面」，有了它一眼分辨新旧，不再靠猜）
+  define: {
+    __BUILD_TIME__: JSON.stringify(
+      new Date().toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }),
+    ),
+  },
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),

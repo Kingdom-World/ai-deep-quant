@@ -1,0 +1,33 @@
+# CI 质量门禁（评审 P0-T8）
+# 背景：仓库有 30+ 单测但无强制执行点，回归靠手跑。PR/push 时自动运行
+# 单测 + TypeScript 检查，红灯即阻断合并。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (node --test)
+        run: npm test
+
+      - name: TypeScript check
+        run: npx tsc -p tsconfig.app.json --noEmit
+
+      - name: Build (vite)
+        run: npx vite build

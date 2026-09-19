@@ -48,8 +48,10 @@ export async function apiGet<T>(path: string): Promise<T> {
       const body = await res.json().catch(() => null);
       throw new Error(body?.error || `后端接口 HTTP ${res.status}`);
     }
+    markSourceOk();
     return (await res.json()) as T;
   } catch (e: any) {
+    markSourceFail();
     if (e?.name === 'AbortError') {
       throw new Error('请求超时（请确认已启动数据服务）');
     }
@@ -81,6 +83,17 @@ async function apiGetCached<T>(key: string, path: string, ttlMs: number): Promis
   } finally {
     inFlight.delete(key);
   }
+}
+
+// ============ 数据源健康（真实记录，替代此前"永远健康"的假状态） ============
+const sourceHealth = { lastSuccessAt: 0, lastFailureAt: 0, failCount: 0 };
+function markSourceOk() {
+  sourceHealth.lastSuccessAt = Date.now();
+  sourceHealth.failCount = 0;
+}
+function markSourceFail() {
+  sourceHealth.lastFailureAt = Date.now();
+  sourceHealth.failCount += 1;
 }
 
 // ============ 统一数据结构 ============
@@ -136,6 +149,8 @@ interface BackendQuote {
 interface BackendHistory {
   symbol: string;
   frequency: string;
+  /** 实际复权口径：主源失败回退新浪（不复权）时后端标注 'none(备用源)'，前端必须透传展示 */
+  adjust?: string;
   klines: { date: string; open: number | null; close: number | null; high: number | null; low: number | null; volume: number | null }[];
 }
 
@@ -227,13 +242,21 @@ export const getQuotesBatch = async (
 const HISTORY_API = (import.meta.env.VITE_HISTORY_API as string) || '';
 
 /** 3. 获取历史 K 线（优先 Baostock 后端；未配置或失败时回退轻量后端，缓存 5 分钟） */
-export const getHistory = async (
+export interface HistoryResult {
+  klines: UnifiedKline[];
+  /** 实际返回数据的复权口径：可能与请求不一致——主源失败回退新浪时为不复权（后端标注 'none(备用源)'）。
+   *  除权除息日的假跳空会被当成真实价格，展示与计算前必须核对。 */
+  adjust: string;
+}
+
+export const getHistoryWithMeta = async (
   symbol: string,
   market: Market = 'CN',
   period: string = 'day',
   count: number = 500,
   forceRefresh = false,
-): Promise<UnifiedKline[]> => {
+  adjust: 'qfq' | 'hfq' | 'none' = 'qfq',
+): Promise<HistoryResult> => {
   // 周期映射：day/3day/quarter/year → 1d（本地聚合）；week → 1w；month → 1M
   const freqMap: Record<string, string> = {
     day: '1d',
@@ -244,9 +267,9 @@ export const getHistory = async (
     year: '1d',
   };
   const frequency = freqMap[period] || '1d';
-  const cacheKey = getCacheKey('history', { symbol, market, period, count });
+  const cacheKey = getCacheKey('history', { symbol, market, period, count, adjust });
   if (!forceRefresh) {
-    const cached = getCached<UnifiedKline[]>(cacheKey, CACHE_TTL_HISTORY);
+    const cached = getCached<HistoryResult>(cacheKey, CACHE_TTL_HISTORY);
     if (cached !== null) return cached;
   }
 
@@ -270,8 +293,8 @@ export const getHistory = async (
             volume: Number(k.volume),
             _source: 'backend' as const,
           }));
-          setCached(cacheKey, klines);
-          return klines;
+          setCached(cacheKey, { klines, adjust: 'qfq' }); // Baostock 后端仅提供前复权口径
+          return { klines, adjust: 'qfq' };
         }
       }
     } catch (e) {
@@ -281,9 +304,12 @@ export const getHistory = async (
 
   const raw = await apiGetCached<BackendHistory>(
     forceRefresh ? `${cacheKey}:fresh` : cacheKey,
-    `/history/${encodeURIComponent(symbol)}?frequency=${frequency}&count=${count}`,
+    `/history/${encodeURIComponent(symbol)}?frequency=${frequency}&count=${count}&adjust=${adjust}`,
     CACHE_TTL_HISTORY,
   );
+  // 透传后端标注的实际口径：主源失败回退新浪（不复权）时会带 'none(备用源)'，
+  // 此前该字段被丢弃、图表仍按"前复权"展示——除权日假跳空被当成真实价格（评审致命缺陷 #3）
+  const adjustActual = String(raw.adjust || adjust);
   const klines = (raw.klines || []).map((k) => ({
     time: new Date(`${String(k.date).slice(0, 10)}T00:00:00`).getTime(),
     date: String(k.date).slice(0, 10),
@@ -294,9 +320,19 @@ export const getHistory = async (
     volume: k.volume ?? 0,
     _source: 'backend' as const,
   }));
-  setCached(cacheKey, klines);
-  return klines;
+  setCached(cacheKey, { klines, adjust: adjustActual });
+  return { klines, adjust: adjustActual };
 };
+
+/** 兼容封装：多数调用方只关心 K 线本体；需要核对复权口径时用 getHistoryWithMeta */
+export const getHistory = async (
+  symbol: string,
+  market: Market = 'CN',
+  period: string = 'day',
+  count: number = 500,
+  forceRefresh = false,
+  adjust: 'qfq' | 'hfq' | 'none' = 'qfq',
+): Promise<UnifiedKline[]> => (await getHistoryWithMeta(symbol, market, period, count, forceRefresh, adjust)).klines;
 
 /** 周期可用性策略（后端按历史覆盖动态生成，新上市股票自动适配） */
 export interface PeriodPolicy {
@@ -546,6 +582,9 @@ export interface BacktestResult {
   avgWinPct: number;
   avgLossPct: number;
   benchmarkReturn: number;
+  /** 沪深300 指数基准（仅 A 股标的返回） */
+  benchmark300?: { date: string; value: number }[];
+  benchmark300Return?: number;
   trades: BacktestTrade[];
   equity: { date: string; value: number }[];
   benchmark: { date: string; value: number }[];
@@ -560,6 +599,7 @@ export const runBacktest = async (params: {
   slow?: number;
   capital?: number;
   count?: number;
+  slippage?: number;
 }): Promise<BacktestResult> => {
   const qs = new URLSearchParams();
   qs.set('symbol', params.symbol);
@@ -568,6 +608,7 @@ export const runBacktest = async (params: {
   if (params.slow) qs.set('slow', String(params.slow));
   if (params.capital) qs.set('capital', String(params.capital));
   if (params.count) qs.set('count', String(params.count));
+  if (typeof params.slippage === 'number') qs.set('slippage', String(params.slippage));
   return apiGet<BacktestResult>(`/backtest?${qs.toString()}`);
 };
 
@@ -575,7 +616,7 @@ export const runBacktest = async (params: {
 export const askAssistant = async (
   question: string,
   externalSignal?: AbortSignal,
-): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string; reasoning?: string | null }> => {
+): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string; reasoning?: string | null; degraded?: string }> => {
   const qs = new URLSearchParams();
   qs.set('q', question);
   const controller = new AbortController();
@@ -590,7 +631,14 @@ export const askAssistant = async (
       const err = await res.json().catch(() => null);
       throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
     }
-    return (await res.json()) as { question: string; type: string; answer: string; engine?: string; reasoning?: string | null };
+    return (await res.json()) as {
+      question: string;
+      type: string;
+      answer: string;
+      engine?: string;
+      reasoning?: string | null;
+      degraded?: string;
+    };
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') throw new Error('云端模型响应超时，请稍后重试');
     throw e;
@@ -598,6 +646,27 @@ export const askAssistant = async (
     clearTimeout(timer);
   }
 };
+
+/** DELETE 请求（告警删除等资源移除） */
+async function apiDelete<T>(path: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
+  try {
+    const res = await fetch(`${CONFIG.basePath}${path}`, { method: 'DELETE', signal: controller.signal });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') {
+      throw new Error('请求超时（请确认已启动数据服务）');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ───────────── 模拟交易（paper trading） ─────────────
 
@@ -637,6 +706,10 @@ export interface PaperPosition {
   marketValue: number;
   unrealizedPnl: number;
   unrealizedPct: number;
+  /** A股 T+1：当前可卖出数量（= qty - 当日买入锁定数） */
+  sellableQty?: number;
+  /** A股 T+1：今日买入、当日不可卖的数量 */
+  t1Locked?: number;
 }
 
 export interface PaperOrder {
@@ -657,12 +730,20 @@ export interface PaperOrder {
 export interface PaperAccount {
   uid: string;
   cash: number;
+  /** 可用现金 = 现金 − 挂单冻结（评审 P1-4） */
+  availableCash?: number;
+  reservedCash?: number;
   initialCapital: number;
   marketValue: number;
   totalAssets: number;
   totalPnl: number;
   totalPnlPct: number;
   todayPnl: number;
+  /** 回撤熔断状态（评审 P2-2） */
+  peakAssets?: number;
+  drawdownPct?: number;
+  riskLocked?: boolean;
+  ddLevel?: number;
   positions: PaperPosition[];
   orders: PaperOrder[];
   equity: { t: string; total: number; cash: number; marketValue: number }[];
@@ -684,6 +765,28 @@ export interface PaperStrategy {
 export interface PaperLogEntry {
   t: string;
   msg: string;
+}
+
+export interface PaperAlert {
+  id: string;
+  symbol: string;
+  name: string;
+  condition: 'above' | 'below';
+  price: number;
+  createdAt: string;
+  triggeredAt?: string;
+  triggeredPrice?: number;
+}
+
+export interface PaperTriggeredAlert {
+  id: string;
+  alertId: string;
+  symbol: string;
+  name: string;
+  condition: 'above' | 'below';
+  price: number;
+  triggeredPrice: number;
+  at: string;
 }
 
 /** 10. 模拟交易 API（后端 server/paper/*） */
@@ -710,17 +813,120 @@ export const paperApi = {
   stopStrategy: (id: string) =>
     apiPost<{ ok: boolean; error?: string }>(`/paper/strategies/${encodeURIComponent(id)}/stop`, {}),
   getLogs: () => apiGet<PaperLogEntry[]>('/paper/logs'),
+  listAlerts: () =>
+    apiGet<{ ok: boolean; alerts: PaperAlert[]; triggered: PaperTriggeredAlert[] }>('/paper/alerts'),
+  addAlert: (body: { symbol: string; name?: string; condition: 'above' | 'below'; price: number }) =>
+    apiPost<{ ok: boolean; alert?: PaperAlert; error?: string }>('/paper/alerts', body),
+  removeAlert: (id: string) =>
+    apiDelete<{ ok: boolean; error?: string }>(`/paper/alerts/${encodeURIComponent(id)}`),
+  clearTriggeredAlerts: () => apiPost<{ ok: boolean }>('/paper/alerts/clear-triggered', {}),
+};
+
+// ───────────── 选股器 + 市场温度计 + 自选池（融合 TSP） ─────────────
+
+export interface ScreenerRow {
+  code: string;
+  name: string;
+  price: number;
+  pct: number;
+  volume: number;
+  amount: number;
+  turnover: number;
+  volRatio: number;
+  high: number;
+  low: number;
+  open: number;
+  mktCap: number;
+  industry: string;
+}
+
+export interface ScreenerResult {
+  ok: boolean;
+  ts: number;
+  stale: boolean;
+  strategy: string;
+  strategyName: string;
+  desc: string;
+  scanned: number;
+  matched: number;
+  rows: ScreenerRow[];
+  error?: string;
+}
+
+export interface ScreenerStrategy {
+  key: string;
+  name: string;
+  desc: string;
+}
+
+export interface MarketMood {
+  ok: boolean;
+  ts: number;
+  stale: boolean;
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  limitUp: number;
+  limitDown: number;
+  totalAmount: number;
+  score: number;
+  industries: { name: string; avgPct: number; upRatio: number; count: number }[];
+  coldest: { name: string; avgPct: number; upRatio: number; count: number }[];
+  error?: string;
+}
+
+export interface WatchItem {
+  symbol: string;
+  name: string;
+  note: string;
+  addedAt: string;
+}
+
+/** 11. 选股器 / 市场温度计 / 自选池 */
+export const screenerApi = {
+  strategies: () => apiGet<{ ok: boolean; strategies: ScreenerStrategy[] }>('/screener/strategies'),
+  run: (strategy: string, sort = 'pct', limit = 50) =>
+    apiGet<ScreenerResult>(`/screener?strategy=${encodeURIComponent(strategy)}&sort=${sort}&limit=${limit}`),
+};
+
+export const moodApi = {
+  get: () => apiGet<MarketMood>('/mood'),
+};
+
+export interface TickData {
+  time: string;
+  price: number;
+  chg: number;
+  vol: number;
+  type: 'B' | 'S' | 'M';
+}
+
+/** 12. 分笔成交（东财逐笔，仅 A 股） */
+export const getTicks = (symbol: string) =>
+  apiGet<{ ok: boolean; code: string; ticks: TickData[]; ts: number; error?: string }>(
+    `/ticks/${encodeURIComponent(symbol)}`,
+  );
+
+export const watchlistApi = {
+  list: () => apiGet<{ ok: boolean; items: WatchItem[] }>('/watchlist'),
+  add: (body: { symbol: string; name?: string; note?: string }) =>
+    apiPost<{ ok: boolean; existed?: boolean; error?: string }>('/watchlist', body),
+  remove: (symbol: string) =>
+    apiDelete<{ ok: boolean; error?: string }>(`/watchlist/${encodeURIComponent(symbol)}`),
 };
 
 /** 6. 数据源状态 */
 export const getDataSourceStatus = () => ({
   primary: 'AI深度量化数据服务',
-  primaryHealthy: true,
+  /** 60 秒内没有新失败即视为健康（真实探测，非硬编码） */
+  primaryHealthy: Date.now() - sourceHealth.lastFailureAt > 60_000 || sourceHealth.failCount === 0,
   primaryConfigured: true,
-  fallback: 'none',
+  fallback: '本地 Baostock 归档（上游失败时自动兜底）',
   current: 'backend',
   cacheSize: getCacheSize(),
-  lastFailureAt: 0,
+  lastFailureAt: sourceHealth.lastFailureAt,
+  failCount: sourceHealth.failCount,
 });
 
 /** 7. 强制切换（占位） */
@@ -750,8 +956,10 @@ export const authApi = {
   me: () => apiGet<{ ok: boolean; username: string | null; isAdmin?: boolean }>('/auth/me'),
   login: (username: string, password: string) =>
     apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/login', { username, password }),
-  register: (username: string, password: string) =>
-    apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/register', { username, password }),
+  register: (username: string, password: string, invite?: string) =>
+    apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/register', { username, password, invite }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/change-password', { oldPassword, newPassword }),
   logout: () => apiPost<{ ok: boolean }>('/auth/logout', {}),
 };
 
@@ -767,6 +975,28 @@ export interface AgentReport {
   limitations?: string[];
 }
 
+export interface AgentRosterEntry {
+  seat: string;
+  /** 实际产出该角色内容的模型 */
+  model: string;
+  /** llm = 真调用了云端大模型；rule = 降级到本地规则引擎 */
+  engine: 'llm' | 'rule';
+  ms: number | null;
+}
+
+/** 降级汇总：哪些角色由本地规则引擎兜底（后端 trace.degraded） */
+export interface AgentDegraded {
+  degraded: boolean;
+  /** 真正由大模型产出的角色数 */
+  llm: number;
+  /** 降级到规则引擎的角色数 */
+  rule: number;
+  total: number;
+  /** 降级角色名 */
+  seats: string[];
+  reason?: string;
+}
+
 export interface AgentTrace {
   ok: boolean;
   symbol: string;
@@ -779,26 +1009,98 @@ export interface AgentTrace {
   disclaimer: string;
   reportId?: string;
   error?: string;
+  /** 每个角色的实际执行引擎与模型（用于判断 AI 是否真的参与了分析） */
+  llmRoster?: AgentRosterEntry[];
+  llmEnabled?: boolean;
+  /** 本次运行的降级情况（显式可观测，避免把规则产出误读为大模型分析） */
+  degraded?: AgentDegraded;
 }
 
 /** 12. Agent 团队分析（主理人调度制五阶段流水线，程序化规则引擎） */
 export const agentsApi = {
   analyze: (body: { symbol: string; mode?: string; agent?: string; entryPrice?: number }) =>
-    apiPost<AgentTrace>('/agents/analyze', body),
+    apiPost<AgentTrace & { jobId?: string }>('/agents/analyze', body),
+  job: (id: string) =>
+    apiGet<{ ok: boolean; status: 'running' | 'done' | 'error'; stage: string; step: number; total: number; reportId?: string; error?: string; trace?: AgentTrace }>(
+      `/agents/job/${encodeURIComponent(id)}`,
+    ),
   report: (id: string) =>
     apiGet<{ ok: boolean; report: AgentTrace }>(`/agents/report/${encodeURIComponent(id)}`),
   list: (symbol?: string) =>
     apiGet<{ ok: boolean; list: { id: string; symbol: string; name?: string; mode: string; decision: string; ranAt: string }[] }>(
       `/agents/reports${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`,
     ),
+  remove: (id: string) =>
+    apiDelete<{ ok: boolean; error?: string }>(`/agents/reports/${encodeURIComponent(id)}`),
 };
 
-/** 13. 看板数据面板（资金流 / 财务 / 估值 / 公告，东方财富公开接口，缺失自动为 null） */
+export interface NewsItem {
+  id: string;
+  title: string;
+  snippet?: string;
+  media: string;
+  url: string;
+  date: string;
+  publishedAt: string;
+  fetchedAt: string;
+  category: 'market' | 'stock' | 'official';
+  sourceType: 'official' | 'public-media';
+  symbol?: string;
+  symbols?: string[];
+  source?: string;
+  /** 个股相关度置信度 0~1，仅个股资讯返回 */
+  matchScore?: number;
+  /** 命中原因，例如「个股官方资讯 · 标题点名」 */
+  matchReason?: string;
+  matchLevel?: 'high' | 'medium' | 'low';
+}
+
+export interface NewsResponse {
+  ok: boolean;
+  type: 'market' | 'stock' | 'official';
+  symbol: string | null;
+  /** 个股资讯返回的证券简称 */
+  stockName?: string | null;
+  items: NewsItem[];
+  fetchedAt: string;
+  stale?: boolean;
+  retentionHours: 72;
+  sourceNote?: string;
+  error?: string;
+}
+
+export const newsApi = {
+  get: (type: NewsResponse['type'] = 'market', symbol?: string, limit = 60) => {
+    const qs = new URLSearchParams({ type, limit: String(limit) });
+    if (symbol) qs.set('symbol', symbol);
+    return apiGet<NewsResponse>(`/news?${qs.toString()}`);
+  },
+};
+
+export interface NewsHealth {
+  ok: boolean;
+  sources: Record<string, { ok: number; fails: number; lastOk: number | null; lastErr: string | null; degraded: boolean }>;
+  tdxChannel?: { reachable: number; total: number; available: boolean; checkedAt: string | null };
+  snapshot?: { updatedAt: string | null; count: number; byCategory: Record<string, number> };
+}
+
+export const newsHealthApi = {
+  get: () => apiGet<NewsHealth>('/news/health'),
+};
+
+/** 13. 看板数据面板（资金流 / 财务 / 估值 / 新闻，东方财富公开接口，缺失自动为 null） */
 export const feedApi = {
   get: (symbol: string) =>
-    apiGet<{ ok: boolean; moneyFlow: any; fundamentals: any; valuation: any; announcements: any[] | null; error?: string }>(
-      `/feed/${encodeURIComponent(symbol)}`,
-    ),
+    apiGet<{
+      ok: boolean;
+      moneyFlow: any;
+      fundamentals: any;
+      valuation: any;
+      announcements: NewsItem[] | null;
+      stockNews: NewsItem[] | null;
+      marketNews: NewsItem[] | null;
+      error?: string;
+    }>(`/feed/${encodeURIComponent(symbol)}`),
 };
 
 /** 14. AI 助手学习系统（知识库 / 反馈 / 教学 / 自训练状态） */
@@ -808,6 +1110,261 @@ export const aiApi = {
     apiPost<{ ok: boolean }>('/ai/feedback', body),
   teach: (body: { q: string; a: string }) => apiPost<{ ok: boolean; updated?: boolean; error?: string }>('/ai/teach', body),
 };
+
+/** 15. 研究工作台（横截面回测 / 实验历史 / 一致性报告 / 对账 / 熔断解锁） */
+export interface CrossBacktestResult {
+  engine: string;
+  factor: string;
+  factorWindow: number;
+  topN: number;
+  rebalanceEvery: number;
+  universeSize: number;
+  capital: number;
+  slippage: number;
+  range: { start: string; end: string; bars: number };
+  rebalances: number;
+  fills: number;
+  totalFees: number;
+  turnover: number;
+  feeRatePct: number;
+  finalValue: number;
+  totalReturn: number;
+  annualized: number;
+  maxDrawdownPct: number;
+  sharpe: number | null;
+  equity: { date: string; value: number }[];
+  error?: string;
+}
+
+export interface ExperimentRecord {
+  ts: string;
+  symbol: string;
+  strategy: string;
+  params: Record<string, number | string | null>;
+  range: { start: string; end: string; bars: number } | null;
+  metrics: {
+    sortino?: number | null;
+    calmar?: number | null;
+    benchmarkReturn?: number | null;
+    blockedLimitUp?: number | null;
+    blockedLimitDown?: number | null;
+    [k: string]: number | null | undefined;
+  };
+  note: string;
+  rawSymbol?: string;
+  equityThumb?: { d: string; v: number }[];
+}
+
+export interface ConsistencyEntry {
+  strategyId: string;
+  uid: string;
+  type: string;
+  symbol: string;
+  status: string;
+  paper: { closedTrades: number; openBuys: number; realized: number; pricePnl: number; costs: number; feeSum: number; turnover: number; feeRatePct: number; winRate: number | null };
+  paperReturnPct: number | null;
+  backtest: { strategy?: string; totalReturn?: number; tradeCount?: number; feeRatePct?: number; totalFees?: number; skipped?: string; error?: string };
+  deltas: { returnDiffPct: number; tradeCountDiff: number; feeRateDiffPct: number } | null;
+  decay: string | null;
+  costAttribution: { grossPricePnl: number; costs: number; netRealized: number; note: string };
+  prior90: { closedTrades: number; realized: number; winRate: number | null };
+}
+
+// ── 因子稳健性评估（S3）──
+//   用途：判定因子是否稳健。单看全区间收益会被**路径依赖**放大
+//   （实测 rev60 全区间超额 +253pp，逐年 6 正 5 负、平均仅 -0.82pp）。
+export type FactorVerdict = '稳健' | '边缘' | '不稳定';
+
+export interface FactorEvalYearRow {
+  year: number;
+  strategy?: number;
+  benchmark?: number;
+  excess?: number;
+  rebalances?: number;
+  error?: string;
+}
+
+export interface FactorEvalStability {
+  posYears: number;
+  totalYears: number;
+  posRatio: number;
+  avgExcess: number;
+  stdExcess: number;
+  verdict: FactorVerdict;
+}
+
+export interface FactorEvalItem {
+  factor: string;
+  full:
+    | { error: string }
+    | {
+        range: { start: string; end: string; bars: number };
+        totalReturn: number;
+        benchmarkReturn: number;
+        excess: number;
+        maxDrawdownPct: number;
+        sharpe: number | null;
+        rebalances: number;
+      };
+  byYear: FactorEvalYearRow[];
+  stability: FactorEvalStability;
+}
+
+export interface FactorEvalResult {
+  ok: boolean;
+  params: { topN: number; rebalanceEvery: number; capital: number; yearFrom: number; yearTo: number };
+  years: number[];
+  availableFactors: string[];
+  invalidFactors: string[];
+  factors: FactorEvalItem[];
+  disclaimer: string;
+}
+
+export const researchApi = {
+  crossBacktest: (p: {
+    factor: string;
+    topN: number;
+    rebalanceEvery: number;
+    capital: number;
+    slippage?: number;
+    /** 区间裁剪（样本外验证用；仅截断交易日轴，因子窗口仍读前置历史） */
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const q = new URLSearchParams({
+      factor: p.factor,
+      topN: String(p.topN),
+      rebalanceEvery: String(p.rebalanceEvery),
+      capital: String(p.capital),
+      slippage: String(p.slippage ?? 0.001),
+    });
+    if (p.startDate) q.set('startDate', p.startDate);
+    if (p.endDate) q.set('endDate', p.endDate);
+    return apiGet<CrossBacktestResult>(`/crossbacktest?${q.toString()}`);
+  },
+  /** 因子稳健性评估（全区间 + 逐年）。⚠️ 服务端计算约 8s，调用方必须有 loading 态 */
+  factorEval: (
+    p: { factors?: string[]; topN?: number; rebalanceEvery?: number; capital?: number; yearFrom?: number } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (p.factors?.length) q.set('factors', p.factors.join(','));
+    if (p.topN) q.set('topN', String(p.topN));
+    if (p.rebalanceEvery) q.set('rebalanceEvery', String(p.rebalanceEvery));
+    if (p.capital) q.set('capital', String(p.capital));
+    if (p.yearFrom) q.set('yearFrom', String(p.yearFrom));
+    const qs = q.toString();
+    return apiGet<FactorEvalResult>(`/factor-eval${qs ? `?${qs}` : ''}`);
+  },
+  experiments: (limit = 50, symbol?: string, strategy?: string) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (symbol) q.set('symbol', symbol);
+    if (strategy) q.set('strategy', strategy);
+    return apiGet<{ ok: boolean; experiments: ExperimentRecord[] }>(`/experiments?${q.toString()}`);
+  },
+  consistency: (windowDays = 30) =>
+    apiGet<{ generatedAt: string; windowDays: number; strategyCount: number; decayCount: number; strategies: ConsistencyEntry[] }>(
+      `/paper/consistency?windowDays=${windowDays}`,
+    ),
+  reconcile: () => apiGet<{ ok: boolean; checkedAt: string; uid: string; issues: string[] }>('/paper/reconcile'),
+  unlock: () => apiPost<{ ok: boolean; message?: string; peakAssets?: number; error?: string }>('/paper/unlock', {}),
+  /** 熔断状态复用账户快照 */
+  paperAccount: () => apiGet<PaperAccount>('/paper/account'),
+};
+
+// ── Agent 研究（P3-P4：Alpha 角色 + 工具循环）──
+export interface AgentTraceEntry {
+  ts?: string;
+  step?: number;
+  tool?: string;
+  args?: Record<string, unknown>;
+  /** 工具原始数据（数值保真通道：与模型结论并列核对） */
+  data?: unknown;
+  fingerprint?: { rowsHash?: string } | null;
+  ok?: boolean;
+  summary?: string;
+  elapsedMs?: number;
+  model?: string | null;
+  event?: string;
+  preview?: string;
+  errors?: string[];
+}
+
+export interface AgentToolData {
+  tool: string;
+  args: Record<string, unknown>;
+  data: Record<string, unknown> | null;
+  fingerprint: { rowsHash?: string } | null;
+  /** 该 (工具,参数) 被调用的次数（同参重复已合并展示，>1 时 UI 应标注） */
+  calls?: number;
+}
+
+export interface AgentResearchResult {
+  ok: boolean;
+  /** 模型最终结论（解读）。⚠️ 数字请以 toolData 为准——模型复述数值不可靠（P3 实测） */
+  answer: string | null;
+  draft: string | null;
+  reason: string;
+  rounds: number;
+  /** true = 发生模型回退或研究不充分，结论可靠性下降 */
+  degraded: boolean;
+  actualModel: string | null;
+  toolData: AgentToolData[];
+  trace: AgentTraceEntry[];
+  error?: string;
+}
+
+export const agentApi = {
+  /** 真调云端模型（Alpha + 工具循环），实测约 5-10s，调用方必须有 loading 态 */
+  research: (question: string) => apiPost<AgentResearchResult>('/agent/research', { question }),
+};
+
+// ── 知识库（M1）：结构化条目 + 可核查出处 ──
+export interface KnowledgeEntry {
+  id: string;
+  category: 'term' | 'basis' | 'method' | 'paper';
+  categoryLabel: string;
+  title: string;
+  body: string;
+  /** 可核查出处（教材章节 / 交易所规则 / 论文题目与链接）——非空是内容硬约束 */
+  source: string;
+  tags: string[];
+  /** 关联条目 id，用于口径互跳 */
+  related: string[];
+  /** 检索得分（浏览模式为 0） */
+  score: number;
+  /** 命中的查询词项，供 UI 说明"为何命中" */
+  matched: string[];
+}
+
+export interface KnowledgeSearchResult {
+  ok: boolean;
+  query: string;
+  category: string | null;
+  /** 命中总数（不受 limit 影响） */
+  total: number;
+  items: KnowledgeEntry[];
+  /** 检索路径：browse=浏览 / and=严格多词 / keyword=整句提问已自动放宽为关键词 */
+  mode: KnowledgeSearchMode;
+  stats: { total: number; byCategory: Record<string, number>; withSource: number };
+  categories: { key: string; label: string; count: number }[];
+}
+
+export type KnowledgeSearchMode = 'browse' | 'and' | 'keyword';
+
+export const knowledgeApi = {
+  /** 检索知识条目；q 为空 = 浏览模式（返回该分类全部） */
+  search: (q: string, category?: string, limit?: number) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (category) p.set('category', category);
+    if (limit) p.set('limit', String(limit));
+    const qs = p.toString();
+    return apiGet<KnowledgeSearchResult>(`/knowledge/search${qs ? `?${qs}` : ''}`);
+  },
+  /** 按 id 批量取条目（关联口径跳转） */
+  entries: (ids: string[]) => apiGet<{ ok: boolean; items: KnowledgeEntry[] }>(`/knowledge/entries?ids=${encodeURIComponent(ids.join(','))}`),
+};
+
 
 export default {
   getQuote,

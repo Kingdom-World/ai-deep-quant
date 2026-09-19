@@ -13,18 +13,27 @@ const { fillMarketOrder, tryFillLimitOrder } = require('../server/paper/matcher.
 const { preTradeCheck } = require('../server/paper/risk.cjs');
 
 // ── 手续费 ──
-test('A股佣金：万2.5、最低5元；印花税仅卖出收取', () => {
+// 口径：佣金万2.5（最低5元）+ 卖出印花税万5（2023-08-28 起减半后现行税率）+ 过户费0.001%（买卖双向）
+test('A股佣金：万2.5、最低5元；印花税仅卖出收取；过户费双边万0.1', () => {
   const buy = calcFees('CN', 'buy', 100000);
   assert.equal(buy.commission, 25);
   assert.equal(buy.stampTax, 0);
-  assert.equal(buy.total, 25);
+  assert.equal(buy.transferFee, 1); // 100000 × 0.00001
+  assert.equal(buy.total, 26);
 
   const sell = calcFees('CN', 'sell', 100000);
-  assert.equal(sell.stampTax, 100);
-  assert.equal(sell.total, 125);
+  assert.equal(sell.stampTax, 50);
+  assert.equal(sell.transferFee, 1);
+  assert.equal(sell.total, 76);
 
   const tiny = calcFees('CN', 'buy', 1000); // 1000×0.00025=0.25 → 保底 5
   assert.equal(tiny.commission, 5);
+});
+
+test('港美股：不收过户费与印花税（简化口径）', () => {
+  assert.equal(calcFees('US', 'sell', 100000).transferFee, 0);
+  assert.equal(calcFees('US', 'sell', 100000).stampTax, 0);
+  assert.equal(calcFees('HK', 'buy', 100000).transferFee, 0);
 });
 
 test('marketOf 市场识别', () => {
@@ -62,7 +71,10 @@ test('市价单：按最新价成交并计费（小额触发 5 元佣金保底�
   fillMarketOrder(o, { price: 100 });
   assert.equal(o.status, 'filled');
   assert.equal(o.avgFillPrice, 100);
-  assert.equal(o.fees.total, 5); // 100×100=10000×0.00025=2.5 → 保底 5 元
+  // 100×100=10000 → 佣金 2.5 触发保底 5 元；过户费 10000×0.00001=0.1
+  assert.equal(o.fees.commission, 5);
+  assert.equal(o.fees.transferFee, 0.1);
+  assert.equal(o.fees.total, 5.1);
 });
 
 test('限价单：买入 ≤ 限价成交、高于限价继续挂起', () => {

@@ -45,3 +45,14 @@ python_backend/data/
 # 运行时数据（账本/会话密钥/用户表）不入库
 data/
 server.log
+
+# 临时工作区（含登录 cookie、测试凭据、诊断脚本、协商中间稿）不入库
+.tmpdir/
+
+# 项目记忆与智能体配置不入库
+.workbuddy/
+.zcode/
+AGENT-MEMORY.md
+
+# 本地归档备份
+backups/

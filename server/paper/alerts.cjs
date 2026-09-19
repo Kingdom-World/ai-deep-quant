@@ -2,12 +2,60 @@
 // 价格监控告警系统（参考 tickflow-stock-panel 监控模块架构）
 //   · 用户设置价格阈值（高于/低于），撮合循环每 5 秒检查
 //   · 触发后写入 triggered 队列，前端轮询消费并弹 toast
+//   · 外发 webhook（评审 P1-6）：.env 配置 ALERT_WEBHOOK 后同步推送外部渠道——
+//     此前通知只有 console + 前端 toast，无人值守场景等于没有告警。
+//     支持：企业微信机器人（qyapi.weixin.qq.com）/ 钉钉（oapi.dingtalk.com）/
+//     Server酱（sctapi.ftqq.com）/ 通用 {text}；5s 超时，失败仅记日志不影响本地队列
 //   · 持久化 data/paper/alerts.json（原子写入，重启不丢）
 // ─────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('../atomic-write.cjs');
 
 const ALERTS_FILE = path.join(__dirname, '..', '..', 'data', 'paper', 'alerts.json');
+
+/** 触发事件列表 → 通知文案 */
+function buildAlertText(firedList) {
+  return firedList
+    .map((e) => `${e.name}(${e.symbol}) 现价 ${e.triggeredPrice} ${e.condition === 'above' ? '≥' : '≤'} 阈值 ${e.price}`)
+    .join('\n');
+}
+
+/** 按 webhook 地址适配报文格式 */
+function buildWebhookPayload(url, text) {
+  const u = String(url || '');
+  if (u.includes('qyapi.weixin.qq.com') || u.includes('oapi.dingtalk.com')) {
+    return { msgtype: 'text', text: { content: `[AI量化平台] 告警触发\n${text}` } };
+  }
+  if (u.includes('sctapi.ftqq.com')) {
+    return { title: 'AI量化平台 · 告警触发', desp: text };
+  }
+  return { text: `[AI量化平台] 告警触发 ${text}` };
+}
+
+/** 通用外发（熔断/对账/衰减等系统级通知复用同一通道） */
+async function sendExternalMessage(text) {
+  const url = String(process.env.ALERT_WEBHOOK || '').trim();
+  if (!url) return;
+  try {
+    const axios = require('axios');
+    await axios.post(url, buildWebhookPayload(url, text), {
+      timeout: 5000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    console.log('🔔 [通知] 已推送外部渠道');
+  } catch (e) {
+    console.error('[Alerts] webhook 推送失败（不影响本地状态）:', e.message?.slice(0, 80));
+  }
+}
+
+/** 外发通知（fire-and-forget：失败只记日志，不影响本地触发队列） */
+async function notifyExternal(firedList) {
+  const url = String(process.env.ALERT_WEBHOOK || '').trim();
+  if (!url || !firedList?.length) return;
+  await sendExternalMessage(`告警触发\n${buildAlertText(firedList)}`);
+  console.log(`🔔 [告警] 已推送外部渠道 ${firedList.length} 条`);
+}
 
 let alerts = []; // {id, uid, symbol, name, condition: 'above'|'below', price, createdAt, triggeredAt?, triggeredPrice?}
 let triggered = []; // {id, alertId, uid, symbol, name, condition, price, triggeredPrice, at}
@@ -27,9 +75,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(path.dirname(ALERTS_FILE), { recursive: true });
-    const tmp = `${ALERTS_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ alerts, triggered }, null, 2), 'utf8');
-    fs.renameSync(tmp, ALERTS_FILE);
+    writeJsonAtomic(ALERTS_FILE, { alerts, triggered }, true);
   } catch (e) {
     console.error('[Alerts] 持久化失败:', e.message);
   }
@@ -65,6 +111,11 @@ function remove(uid, id) {
 
 function list(uid) {
   return alerts.filter((a) => a.uid === uid);
+}
+
+/** 全部告警（后台撮合循环收集标的用，不按 uid 过滤——告警按用户名分账，漏掉任一用户其告警将永不触发） */
+function listAll() {
+  return alerts;
 }
 
 function listTriggered(uid) {
@@ -108,4 +159,4 @@ function clearTriggered(uid) {
   save();
 }
 
-module.exports = { load, save, add, remove, list, listTriggered, checkAlerts, clearTriggered };
+module.exports = { load, save, add, remove, list, listAll, listTriggered, checkAlerts, clearTriggered, notifyExternal, sendExternalMessage, buildAlertText, buildWebhookPayload };

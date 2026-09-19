@@ -3,15 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
+import { setVisibilityInterval } from '../lib/polling';
+import { wilderRsiSeries } from '../../shared/rsi.mjs';
 import {
   clearCache,
-  getHistory,
+  getHistoryWithMeta,
   getMinuteKline,
   getMinuteSeries,
   getPeriodPolicy,
   getQuote,
+  getTicks,
   feedApi,
+  newsApi,
+  type NewsItem,
   type PeriodPolicy,
+  type TickData,
 } from '../api/dataService';
 import {
   aggregateData,
@@ -43,6 +49,7 @@ import {
   type Period,
 } from '../lib/stock';
 import { isFavorite, toggleFavorite } from '../lib/favorites';
+import { getMarketStatus } from '../lib/marketHours';
 import { useQuantStore } from '../store/quantStore';
 import {
   formatPercent,
@@ -53,25 +60,12 @@ import {
 /** MA 均线配置（主图叠加） */
 const MA_PERIODS = [5, 10, 20, 60, 120, 250];
 
-/** RSI 序列（副图指标切换用） */
-function rsiSeriesCalc(closes: number[], n = 14): (number | null)[] {
-  const out: (number | null)[] = [];
-  for (let i = 0; i < closes.length; i++) {
-    if (i < n) {
-      out.push(null);
-      continue;
-    }
-    let g = 0;
-    let l = 0;
-    for (let j = i - n + 1; j <= i; j++) {
-      const d = closes[j] - closes[j - 1];
-      if (d >= 0) g += d;
-      else l -= d;
-    }
-    out.push(l === 0 ? 100 : 100 - 100 / (1 + g / n / (l / n)));
-  }
-  return out;
-}
+/**
+ * RSI 序列（副图指标切换用）
+ *   口径：**Wilder 标准**——直接引用唯一实现源 shared/rsi.mjs（前端不再自带一份）
+ *   历史：此处原为自实现的「窗口简单均值」，与另外三处各写各的；S6 起全部收敛。
+ */
+const rsiSeriesCalc = wilderRsiSeries;
 
 /** KDJ 序列（9,3,3） */
 function kdjSeriesCalc(klines: { high: number; low: number; close: number }[], n = 9) {
@@ -132,6 +126,9 @@ export default function StockDetailPage() {
   // 分钟副图 ref —— 独立 ECharts 实例
   const minuteChartRef = useRef<HTMLDivElement>(null);
   const minuteChartInstance = useRef<echarts.ECharts | null>(null);
+
+  // 整合后的图表外层容器：主K + 短期K 同一卡片内上下排布，共享缩放与十字光标
+  const chartGroupRef = useRef<HTMLDivElement>(null);
 
   // ── 搜索状态：输入框 / 搜索中 ──
   const [inputValue, setInputValue] = useState<string>('');
@@ -244,6 +241,51 @@ export default function StockDetailPage() {
 
   // ── 分钟副图（1/5/15/30 分钟 K 线） ──
   const [minutePeriod, setMinutePeriod] = useState<MinutePeriod>('5');
+  // 分笔成交（东财逐笔，仅 A 股；交易时段 10s 自动刷新）
+  const isCNStock = detectMarket(symbol) === 'CN';
+  const session = getMarketStatus(detectMarket(symbol));
+  // 复权模式（仅 A 股可切换；默认前复权）
+  const [adjustMode, setAdjustMode] = useState<'qfq' | 'hfq' | 'none'>('qfq');
+  const ADJUST_LABEL: Record<string, string> = { qfq: '前复权', hfq: '后复权', none: '不复权' };
+  // 后端返回的实际复权口径（主源失败回退新浪不复权时与所选不一致，必须显式提示，禁止静默降级）
+  const [actualAdjust, setActualAdjust] = useState<string | null>(null);
+  const formatAdjust = (s: string) => {
+    const base = s.startsWith('qfq') ? '前复权' : s.startsWith('hfq') ? '后复权' : s.startsWith('none') ? '不复权' : s;
+    return s.includes('备用') ? `${base}（备用源）` : base;
+  };
+  const [ticks, setTicks] = useState<TickData[] | null>(null);
+  const [ticksErr, setTicksErr] = useState<string | null>(null);
+  const [showAllTicks, setShowAllTicks] = useState(false);
+
+  useEffect(() => {
+    if (!isCNStock) {
+      setTicks(null);
+      setTicksErr(null);
+      return;
+    }
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await getTicks(symbol);
+        if (!alive) return;
+        if (r.ok) {
+          setTicks(r.ticks);
+          setTicksErr(null);
+        } else {
+          setTicksErr(r.error || '获取失败');
+        }
+      } catch (e) {
+        if (alive) setTicksErr((e as Error).message);
+      }
+    };
+    load();
+    const stopPolling = setVisibilityInterval(load, 15000);
+    return () => {
+      alive = false;
+      stopPolling();
+    };
+  }, [symbol, isCNStock]);
+
   const [minutePoints, setMinutePoints] = useState<KlinePoint[]>([]);
 
   /** 清空全部展示数据（切换股票时调用，避免新旧数据混合） */
@@ -283,7 +325,8 @@ export default function StockDetailPage() {
   const fetchHistoricalData = async (sym: string, m: Market) => {
     try {
       // 走统一数据服务（独立后端，带缓存）；请求 2400 根支撑 MA250/季线(30根)/年线(10根)（约 9 年）
-      const rows = await getHistory(sym, m, 'day', 2400);
+      const { klines: rows, adjust: adjustActual } = await getHistoryWithMeta(sym, m, 'day', 2400, false, adjustMode);
+      if (currentSymbolRef.current === sym) setActualAdjust(adjustActual);
       const points: KlinePoint[] = rows.map((r) => ({
         date: r.date,
         open: r.open,
@@ -490,6 +533,23 @@ export default function StockDetailPage() {
     };
   }, [loading]);
 
+  // 7. 主图与短期副图刻意保持「完全独立」：
+  //    两图时间域粒度不同（日线 vs 分钟线），若做联动同步，十字光标每移动一次
+  //    都要跨实例 dispatch dataZoom 重算，会造成明显卡顿。
+  //    因此各自独立缩放 / 独立十字光标，互不影响。
+
+  // 8. 整合容器尺寸响应：监听外层容器变化驱动两张图各自 resize（仅尺寸，不联动数据）
+  useEffect(() => {
+    const el = chartGroupRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      chartInstance.current?.resize();
+      minuteChartInstance.current?.resize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading]);
+
   // 7. 聚合数据缓存（useMemo：数据/周期不变时不重复计算）
   const chartData = useMemo(() => {
     if (allPoints.length === 0) return null;
@@ -549,7 +609,7 @@ export default function StockDetailPage() {
 
     chart.setOption({
       title: {
-        text: `📈 ${displaySymbol} ${periodInfo?.title ?? '日线'} K线`,
+        text: `📈 ${displaySymbol} ${periodInfo?.title ?? '日线'} K线 · ${ADJUST_LABEL[adjustMode] ?? '前复权'}`,
         left: 'center',
         top: 0,
         textStyle: { fontSize: 14, fontWeight: 600, color: '#e2e8f0' },
@@ -557,6 +617,15 @@ export default function StockDetailPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'cross' },
+        // 约束浮层在图表容器内，避免光标靠近边缘时浮层被推出页面而被裁剪
+        confine: true,
+        // 限制宽度让超长的均线/指标行自动折行，浮层更紧凑、更好摆放
+        extraCssText: 'max-width: min(360px, 90vw); white-space: normal;',
+        backgroundColor: 'rgba(10, 15, 26, 0.94)',
+        borderColor: 'rgba(96,165,250,0.35)',
+        borderWidth: 1,
+        padding: [8, 12],
+        textStyle: { color: '#e2e8f0', fontSize: 12 },
         formatter: (params: any) => {
           const list = Array.isArray(params) ? params : [params];
           const candle = list.find((p: any) => p.seriesType === 'candlestick');
@@ -564,22 +633,45 @@ export default function StockDetailPage() {
           const idx = candle?.dataIndex ?? bar?.dataIndex ?? 0;
           const p = agg[idx];
           if (!p) return '';
-          let html = `${displaySymbol}<br/>日期: ${p.date}`;
-          html += `<br/>开: ${CURRENCY}${p.open.toFixed(2)} | 高: ${CURRENCY}${p.high.toFixed(2)}`;
-          html += `<br/>低: ${CURRENCY}${p.low.toFixed(2)} | 收: ${CURRENCY}${p.close.toFixed(2)}`;
-          if (bar) html += `<br/>成交量: ${formatVolume(Number(bar.value))}`;
+          const prev = idx > 0 ? agg[idx - 1].close : p.open;
+          const chgAmt = p.close - prev;
+          const chgPct = prev > 0 ? (chgAmt / prev) * 100 : 0;
+          const chgColor = chgAmt >= 0 ? UP_COLOR : DOWN_COLOR;
+          const dim = (k: string) => `<span style="color:#7c8aa0">${k}</span>`;
+          let html = `<div style="min-width:172px">`;
+          html += `<div style="font-weight:700;margin-bottom:5px">${displaySymbol} <span style="color:#7c8aa0;font-weight:400">${p.date}</span></div>`;
+          html += `<div>${dim('开')} ${CURRENCY}${p.open.toFixed(2)}　${dim('高')} <span style="color:${UP_COLOR}">${CURRENCY}${p.high.toFixed(2)}</span></div>`;
+          html += `<div>${dim('低')} <span style="color:${DOWN_COLOR}">${CURRENCY}${p.low.toFixed(2)}</span>　${dim('收')} <b style="color:${chgColor}">${CURRENCY}${p.close.toFixed(2)}</b></div>`;
+          html += `<div>${dim('涨跌')} <b style="color:${chgColor}">${chgAmt >= 0 ? '+' : ''}${chgAmt.toFixed(2)}（${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%）</b></div>`;
+          if (bar) html += `<div>${dim('成交量')} ${formatVolume(Number(bar.value))}</div>`;
+          const maVals = MA_PERIODS.map((period, i) => {
+            const v = (chartData.maSeries[i]?.data ?? [])[idx];
+            return Number.isFinite(Number(v)) ? `<span style="color:${MA_COLORS[i]}">MA${period} ${Number(v).toFixed(2)}</span>` : '';
+          }).filter(Boolean).join('　');
+          if (maVals) html += `<div style="margin-top:4px">${maVals}</div>`;
+          const subParts: string[] = [];
+          const difP = list.find((s: any) => s.seriesName === 'DIF');
+          const deaP = list.find((s: any) => s.seriesName === 'DEA');
           const macdP = list.find((s: any) => s.seriesName === 'MACD柱');
-          if (macdP && Number.isFinite(Number(macdP.value))) {
-            html += `<br/>MACD柱: ${Number(macdP.value).toFixed(3)}`;
+          if (difP && Number.isFinite(Number(difP.value))) {
+            subParts.push(`<span style="color:#f59e0b">DIF ${Number(difP.value).toFixed(3)}</span>`, `<span style="color:#3b82f6">DEA ${Number(deaP?.value ?? 0).toFixed(3)}</span>`, `<span style="color:${Number(macdP?.value ?? 0) >= 0 ? UP_COLOR : DOWN_COLOR}">MACD ${Number(macdP?.value ?? 0).toFixed(3)}</span>`);
           }
-          // 形态提示
+          const rsiP = list.find((s: any) => s.seriesName === 'RSI14');
+          if (rsiP && Number.isFinite(Number(rsiP.value))) subParts.push(`<span style="color:#a78bfa">RSI14 ${Number(rsiP.value).toFixed(1)}</span>`);
+          const kP = list.find((s: any) => s.seriesName === 'K');
+          if (kP && Number.isFinite(Number(kP.value))) {
+            subParts.push(`<span style="color:#f59e0b">K ${Number(kP.value).toFixed(1)}</span>`, `<span style="color:#3b82f6">D ${Number(list.find((s: any) => s.seriesName === 'D')?.value ?? 0).toFixed(1)}</span>`, `<span style="color:#22c55e">J ${Number(list.find((s: any) => s.seriesName === 'J')?.value ?? 0).toFixed(1)}</span>`);
+          }
+          if (subParts.length) html += `<div style="margin-top:4px">${subParts.join('　')}</div>`;
           const mark = patterns.find((pt) => pt.index === idx);
-          if (mark) html += `<br/>🔔 ${mark.name}: ${mark.note}`;
+          if (mark) html += `<div style="margin-top:4px">🔔 ${mark.name}: ${mark.note}</div>`;
+          html += `</div>`;
           return html;
         },
       },
       axisPointer: {
         link: [{ xAxisIndex: 'all' }],
+        label: { backgroundColor: '#1e293b', color: '#e2e8f0', fontSize: 10 },
       },
       legend: {
         data: [
@@ -594,9 +686,9 @@ export default function StockDetailPage() {
         itemHeight: 8,
       },
       grid: [
-        { left: '3%', right: '4%', top: '11%', height: '44%', containLabel: true },
-        { left: '3%', right: '4%', top: '60%', height: '11%', containLabel: true },
-        { left: '3%', right: '4%', top: '75%', height: '12%', containLabel: true },
+        { left: '3%', right: '4%', top: '10%', height: '51%', containLabel: true },
+        { left: '3%', right: '4%', top: '63%', height: '13%', containLabel: true },
+        { left: '3%', right: '4%', top: '78%', height: '15%', containLabel: true },
       ],
       xAxis: [
         {
@@ -631,6 +723,8 @@ export default function StockDetailPage() {
           axisLine: { show: false },
           axisLabel: { formatter: `${CURRENCY}{value}`, fontSize: 10, color: '#64748b' },
           splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' as const } },
+          // 十字光标价格读数（TradingView 式轴标签）
+          axisPointer: { label: { show: true, backgroundColor: '#1e293b', color: '#e2e8f0', fontSize: 10, formatter: (p: any) => `${CURRENCY}${Number(p.value).toFixed(2)}` } },
         },
         {
           type: 'value',
@@ -648,12 +742,14 @@ export default function StockDetailPage() {
         },
       ],
       dataZoom: [
-        { type: 'inside', xAxisIndex: [0, 1, 2], start: 0, end: 100 },
+        { type: 'inside', xAxisIndex: [0, 1, 2], start: agg.length > 120 ? Math.max(0, 100 - (120 / agg.length) * 100) : 0, end: 100 },
         {
           type: 'slider',
           xAxisIndex: [0, 1, 2],
-          top: '95%',
-          height: 16,
+          start: agg.length > 120 ? Math.max(0, 100 - (120 / agg.length) * 100) : 0,
+          end: 100,
+          top: '95.5%',
+          height: 14,
           backgroundColor: '#0d1322',
           borderColor: '#1e293b',
           fillerColor: 'rgba(59, 130, 246, 0.2)',
@@ -674,6 +770,25 @@ export default function StockDetailPage() {
             borderColor: UP_COLOR,
             borderColor0: DOWN_COLOR,
           },
+          // 最新价虚线标线（右侧价签，随数据刷新）
+          markLine: (() => {
+            const lastClose = agg[agg.length - 1]?.close;
+            if (!Number.isFinite(lastClose as number)) return { data: [] };
+            return {
+              silent: true,
+              symbol: 'none',
+              lineStyle: { color: '#38bdf8', type: 'dashed' as const, width: 1, opacity: 0.75 },
+              label: {
+                show: true,
+                position: 'insideEndTop' as const,
+                formatter: `${CURRENCY}${Number(lastClose).toFixed(2)}`,
+                color: '#7dd3fc',
+                fontSize: 10,
+                fontWeight: 700 as const,
+              },
+              data: [{ yAxis: lastClose }],
+            };
+          })(),
           markPoint: {
             data: patternMarks,
             symbol: 'pin',
@@ -809,6 +924,9 @@ export default function StockDetailPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'cross' },
+        // 同主图：限制在容器内并按宽度折行，保证浮层完整可见
+        confine: true,
+        extraCssText: 'max-width: min(320px, 90vw); white-space: normal;',
         backgroundColor: 'rgba(13, 19, 34, 0.92)',
         borderColor: '#334155',
         textStyle: { color: '#e2e8f0', fontSize: 12 },
@@ -981,10 +1099,10 @@ export default function StockDetailPage() {
     //               （数据时间已统一为北京时间；盘中窗口内为实时交易数据，
     //                 非交易时段窗口内无数据时兜底展示最近交易数据并提示）
     //   · live   —— 10 秒高频实时点（滚动窗口）
-    let data: number[] = [];
+    let data: number[];
     let labels: string[] = [];
-    let windowStart = '';
-    let windowEnd = '';
+    let windowStart: string;
+    let windowEnd: string;
     let fallback = false;
     if (traceMode === 'live') {
       data = liveTrace;
@@ -1038,6 +1156,9 @@ export default function StockDetailPage() {
       grid: { left: 8, right: 8, top: 12, bottom: showTimeAxis ? 18 : 6 },
       tooltip: {
         trigger: 'axis',
+        // 分时图浮层同样限制在容器内，避免溢出页面
+        confine: true,
+        extraCssText: 'max-width: min(280px, 90vw); white-space: normal;',
         formatter: (params: any) => {
           const p = Array.isArray(params) ? params[0] : params;
           if (!p) return '';
@@ -1082,13 +1203,14 @@ export default function StockDetailPage() {
     setFav(isFavorite(symbol)); // 同步当前股票的收藏状态
 
     fetchHistoricalData(symbol, market);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
 
-    const intervalId = setInterval(() => {
+    const stopPolling = setVisibilityInterval(() => {
       fetchRealtimeQuote(symbol, market);
     }, POLL_INTERVAL);
 
-    return () => clearInterval(intervalId);
-  }, [symbol, market]);
+    return () => stopPolling();
+  }, [symbol, market, adjustMode]);
 
   // 13. 辅助函数
   const formatCurrency = (value: number | null) => {
@@ -1103,6 +1225,25 @@ export default function StockDetailPage() {
     if (value < 30) return DOWN_COLOR;
     return '#94a3b8';
   };
+
+  // 个股资讯：经服务端匹配引擎打分后按相关度返回，只展示高置信部分
+  const [stockNews, setStockNews] = useState<NewsItem[]>([]);
+  const [stockNewsName, setStockNewsName] = useState<string>('');
+  useEffect(() => {
+    let alive = true;
+    setStockNews([]);
+    newsApi
+      .get('stock', displaySymbol, 20)
+      .then((r) => {
+        if (!alive) return;
+        setStockNewsName(r.stockName || '');
+        setStockNews((r.items || []).filter((x) => (x.matchScore ?? 0) >= 0.7).slice(0, 6));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [displaySymbol]);
 
   // 东方财富数据面板（资金流/财务/估值），服务端带缓存
   const [feed, setFeed] = useState<any>(null);
@@ -1145,6 +1286,14 @@ export default function StockDetailPage() {
     borderRadius: '12px',
     border: '1px solid rgba(96,165,250,0.16)',
     boxShadow: '0 10px 36px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)',
+  };
+
+  // 信息面板卡片：在 CSS 多列容器中禁止跨列拆分，并统一底部间距
+  const panelCardStyle: React.CSSProperties = {
+    ...cardStyle,
+    breakInside: 'avoid',
+    marginBottom: '16px',
+    width: '100%',
   };
 
   // 14. 渲染
@@ -1235,19 +1384,7 @@ export default function StockDetailPage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* ── 顶部提示条（学术研究定位） ── */}
-      <div
-        style={{
-          textAlign: 'center',
-          padding: '8px 16px',
-          fontSize: '12px',
-          color: '#f59e0b',
-          backgroundColor: 'rgba(245, 158, 11, 0.08)',
-          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
-        }}
-      >
-        📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
-      </div>
+      {/* ── 顶部导航（全站统一；顶部声明条由 TopNav 内置） ── */}
 
       {/* ── 顶部：导航栏 + 搜索框 ── */}
       {/* 顶部导航（全站统一） */}
@@ -1351,7 +1488,7 @@ export default function StockDetailPage() {
         </button>
       </div>
 
-      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '24px 20px 32px' }}>
+      <main style={{ padding: '24px 20px 32px' }}>
         {/* ── 价格横幅（同花顺式）：现价大字 + 关键指标横排 ── */}
         <div
           style={{
@@ -1429,19 +1566,28 @@ export default function StockDetailPage() {
           })}
         </div>
 
-        {/* ── 同花顺式两栏：左图表 / 右信息面板 ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
+        {/* ── 两栏信息面板：CSS 多列按内容高度自动均衡，
+             避免某一栏明显偏短导致页面下方出现大块空白 ── */}
         <div
           style={{
-            position: 'relative',
+            columnCount: 2,
+            columnWidth: '340px',
+            columnGap: '16px',
             marginBottom: '16px',
-            borderRadius: '12px',
-            border: '1px solid #1e293b',
-            backgroundColor: '#111827',
-            overflow: 'hidden',
           }}
         >
+          <div
+            style={{
+              position: 'relative',
+              marginBottom: '16px',
+              borderRadius: '12px',
+              border: '1px solid #1e293b',
+              backgroundColor: '#111827',
+              overflow: 'hidden',
+              breakInside: 'avoid',
+              width: '100%',
+            }}
+          >
           <div
             style={{
               display: 'flex',
@@ -1562,7 +1708,7 @@ export default function StockDetailPage() {
           ))}
         </div>
 
-        {/* ── 周期切换按钮 + 主图（K线） ── */}
+        {/* ── 复权切换（仅 A 股） + 周期切换按钮 + 主图（K线） ── */}
         <div
           style={{
             display: 'flex',
@@ -1573,6 +1719,40 @@ export default function StockDetailPage() {
             alignItems: 'center',
           }}
         >
+          {isCNStock && (
+            <>
+              <span style={{ fontSize: '12px', color: '#64748b', marginRight: 4 }}>复权</span>
+              {(['qfq', 'hfq', 'none'] as const).map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setAdjustMode(a)}
+                  title={a === 'qfq' ? '以前最新价为基准向后调整历史价格（主流看盘口径）' : a === 'hfq' ? '以历史真实价格为基准向前调整（适合量化回测保持连续性）' : '交易所原始价格（分红除权日有跳空）'}
+                  style={{
+                    padding: '5px 13px',
+                    fontSize: '12px',
+                    fontWeight: adjustMode === a ? '700' : '500',
+                    color: adjustMode === a ? '#ffffff' : '#94a3b8',
+                    backgroundColor: adjustMode === a ? '#7c3aed' : '#1e293b',
+                    border: adjustMode === a ? '1px solid #7c3aed' : '1px solid #334155',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all .15s',
+                  }}
+                >
+                  {ADJUST_LABEL[a]}
+                </button>
+              ))}
+              <span style={{ width: 1, height: 18, backgroundColor: '#334155', margin: '0 6px' }} />
+              {actualAdjust && !actualAdjust.startsWith(adjustMode) && (
+                <span
+                  style={{ fontSize: '12px', color: '#f59e0b', marginRight: 6 }}
+                  title="主行情源暂不可用，已回退备用数据源；除权除息日会出现假跳空，指标与涨跌幅可能与所选口径不一致"
+                >
+                  ⚠ 实际口径：{formatAdjust(actualAdjust)}
+                </span>
+              )}
+            </>
+          )}
           {PERIODS.map((p) => {
             const active = selectedPeriod === p.key;
             // 季线/年线：后端周期策略判定数据不足时按钮置灰（点击仍提示原因）
@@ -1635,93 +1815,77 @@ export default function StockDetailPage() {
           {PERIODS.find((p) => p.key === selectedPeriod)?.tick ?? '1个交易日'}
         </p>
 
-        {/* 主图容器（K线 + 成交量 + MACD，三 grid） */}
+        {/* 整合后的图表区：主K线 + 短期K线 同一卡片内上下排布
+            · 主图占 ~62%，短期副图占剩余空间，中间以切换条分隔
+            · 共享缩放比例与十字光标联动（见 useEffect 7） */}
         <div
-          ref={chartRef}
+          ref={chartGroupRef}
           style={{
             width: '100%',
-            height: '560px',
+            height: 'clamp(640px, 72vh, 920px)',
             borderRadius: '12px',
             border: '1px solid #1e293b',
             backgroundColor: '#111827',
-            padding: '4px',
+            padding: '6px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
           }}
-        />
-
+        >
+          {/* 主图（K线 + 成交量 + MACD/RSI/KDJ） */}
+          <div
+            ref={chartRef}
+            style={{ width: '100%', flex: '0 0 62%', minHeight: 0 }}
+          />
+          {/* 短期副图切换条：周期 + 根数 */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 6px',
+              borderTop: '1px dashed #1e293b',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>短期副图</span>
+            {MINUTE_PERIODS.map((p) => {
+              const active = minutePeriod === p.key;
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => setMinutePeriod(p.key)}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: '12px',
+                    fontWeight: active ? '700' : '500',
+                    color: active ? '#ffffff' : '#94a3b8',
+                    backgroundColor: active ? '#0ea5e9' : '#1e293b',
+                    border: active ? '1px solid #0ea5e9' : '1px solid #334155',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+            <span style={{ fontSize: 11, color: '#475569' }}>
+              {minutePoints.length > 0 ? `共 ${minutePoints.length} 根` : ''}
+            </span>
           </div>
+          {/* 短期K线（1/5/15/30/60/120 分钟） */}
+          <div
+            ref={minuteChartRef}
+            style={{ width: '100%', flex: '1 1 auto', minHeight: 0 }}
+          />
+        </div>
 
-          {/* 右侧信息面板 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* 五档盘口 */}
-            <div style={{ ...cardStyle, padding: '14px 16px' }}>
-              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>
-                📊 五档盘口{book?.quoteTime ? <span style={{ fontSize: 11, color: '#64748b' }}> · {book.quoteTime}</span> : null}
-              </div>
-              {book && book.bids.length > 0 && book.asks.length > 0 ? (
-                (() => {
-                  const maxQ = Math.max(...book.bids.map((b) => b.qty), ...book.asks.map((a) => a.qty), 1);
-                  const Row = ({ label, lvl, color }: { label: string; lvl: { price: number; qty: number }; color: string }) => (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '2px 0' }}>
-                      <span style={{ width: 28, color: '#64748b' }}>{label}</span>
-                      <span style={{ width: 70, textAlign: 'right', color, fontFamily: 'Consolas, monospace', fontWeight: 600 }}>{lvl.price.toFixed(2)}</span>
-                      <div style={{ flex: 1, height: 9, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ width: `${(lvl.qty / maxQ) * 100}%`, height: '100%', backgroundColor: color, opacity: 0.35 }} />
-                      </div>
-                      <span style={{ width: 60, textAlign: 'right', color: '#94a3b8' }}>{lvl.qty.toLocaleString()}</span>
-                    </div>
-                  );
-                  return (
-                    <>
-                      {[...book.asks].slice(0, 5).reverse().map((a, i) => (
-                        <Row key={`a${i}`} label={`卖${5 - i}`} lvl={a} color="#22c55e" />
-                      ))}
-                      <div
-                        style={{
-                          display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: '#64748b',
-                          padding: '4px 0', borderTop: '1px dashed #1e293b', borderBottom: '1px dashed #1e293b', margin: '4px 0',
-                        }}
-                      >
-                        <span>最新</span>
-                        <span style={{ color: '#f1f5f9', fontFamily: 'Consolas, monospace', fontWeight: 700 }}>{formatCurrency(latestPrice)}</span>
-                        <span>{formatPercent(changePercent)}</span>
-                      </div>
-                      {book.bids.slice(0, 5).map((b, i) => (
-                        <Row key={`b${i}`} label={`买${i + 1}`} lvl={b} color="#ef4444" />
-                      ))}
-                    </>
-                  );
-                })()
-              ) : (
-                <div style={{ fontSize: '12px', color: '#475569' }}>该市场暂无五档盘口数据</div>
-              )}
-            </div>
-
-            {/* 关键均线 */}
-            <div style={{ ...cardStyle, padding: '14px 16px' }}>
-              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>📐 关键均线（日）</div>
-              {[5, 10, 20, 60].map((n) => {
-                const v = calcMA(dailyCloses, n);
-                return (
-                  <div
-                    key={n}
-                    style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1e293b', fontSize: '13px' }}
-                  >
-                    <span style={{ color: '#94a3b8' }}>MA{n}</span>
-                    <span
-                      style={{
-                        color: v != null && latestPrice != null ? (latestPrice >= v ? '#ef4444' : '#22c55e') : '#e2e8f0',
-                        fontFamily: 'Consolas, monospace',
-                      }}
-                    >
-                      {v != null ? v.toFixed(2) : '--'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
+          {/* 五因子评分（移入左栏，平衡双栏高度） */}
             {/* 五因子评分 */}
-            <div style={{ ...cardStyle, padding: '14px 16px' }}>
+            <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
               <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '10px' }}>🧮 五因子评分</div>
               {factorScore ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1764,9 +1928,10 @@ export default function StockDetailPage() {
               )}
             </div>
 
+
             {/* 资金与基本面（东方财富公开数据） */}
             {feed && (feed.moneyFlow || feed.fundamentals || feed.valuation) && (
-              <div style={{ ...cardStyle, padding: '14px 16px' }}>
+              <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
                 <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>💰 资金与基本面</div>
                 {feed.moneyFlow && (
                   <div style={{ fontSize: '12.5px', marginBottom: 10, lineHeight: 1.8 }}>
@@ -1817,8 +1982,178 @@ export default function StockDetailPage() {
               </div>
             )}
 
+            {(stockNews.length > 0 || feed?.announcements?.length) ? (
+              <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: '14px' }}>📰 近三天相关资讯</div>
+                  <a href={`/news?type=stock&symbol=${encodeURIComponent(displaySymbol)}`} style={{ color: '#60a5fa', fontSize: 12, textDecoration: 'none' }}>
+                    查看全部 →
+                  </a>
+                </div>
+                {stockNews.length > 0 ? (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    {stockNews.map((n) => (
+                      <div key={n.id} style={{ paddingBottom: 8, borderBottom: '1px solid #1e293b' }}>
+                        <a href={n.url} target="_blank" rel="noreferrer" style={{ color: '#e2e8f0', fontSize: 12.5, lineHeight: 1.6, textDecoration: 'none' }}>
+                          {n.title}
+                        </a>
+                        <div style={{ marginTop: 4, color: '#64748b', fontSize: 11, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ color: '#6ee7b7' }}>置信 {((n.matchScore ?? 0) * 100).toFixed(0)}</span>
+                          {n.matchReason ? <span>{n.matchReason}</span> : null}
+                          <span>{n.media}</span>
+                          <span>{String(n.publishedAt || '').slice(5, 16).replace('T', ' ')}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 8, color: '#64748b', fontSize: 11.5, lineHeight: 1.7 }}>
+                  公告 {feed?.announcements?.length ?? 0} 条 · 高置信资讯 {stockNews.length} 条{stockNewsName ? `（${stockNewsName}）` : ''}；以原文为准
+                </div>
+              </div>
+            ) : null}
+
+
+          {/* 五档盘口 */}
+            <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>
+                📊 五档盘口{book?.quoteTime ? <span style={{ fontSize: 11, color: '#64748b' }}> · {book.quoteTime}</span> : null}
+              </div>
+              {book && book.bids.length > 0 && book.asks.length > 0 ? (
+                (() => {
+                  const maxQ = Math.max(...book.bids.map((b) => b.qty), ...book.asks.map((a) => a.qty), 1);
+                  const Row = ({ label, lvl, color }: { label: string; lvl: { price: number; qty: number }; color: string }) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '2px 0' }}>
+                      <span style={{ width: 28, color: '#64748b' }}>{label}</span>
+                      <span style={{ width: 70, textAlign: 'right', color, fontFamily: 'Consolas, monospace', fontWeight: 600 }}>{lvl.price.toFixed(2)}</span>
+                      <div style={{ flex: 1, height: 9, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ width: `${(lvl.qty / maxQ) * 100}%`, height: '100%', backgroundColor: color, opacity: 0.35 }} />
+                      </div>
+                      <span style={{ width: 60, textAlign: 'right', color: '#94a3b8' }}>{lvl.qty.toLocaleString()}</span>
+                    </div>
+                  );
+                  return (
+                    <>
+                      {[...book.asks].slice(0, 5).reverse().map((a, i) => (
+                        <Row key={`a${i}`} label={`卖${5 - i}`} lvl={a} color="#22c55e" />
+                      ))}
+                      <div
+                        style={{
+                          display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: '#64748b',
+                          padding: '4px 0', borderTop: '1px dashed #1e293b', borderBottom: '1px dashed #1e293b', margin: '4px 0',
+                        }}
+                      >
+                        <span>最新</span>
+                        <span style={{ color: '#f1f5f9', fontFamily: 'Consolas, monospace', fontWeight: 700 }}>{formatCurrency(latestPrice)}</span>
+                        <span>{formatPercent(changePercent)}</span>
+                      </div>
+                      {book.bids.slice(0, 5).map((b, i) => (
+                        <Row key={`b${i}`} label={`买${i + 1}`} lvl={b} color="#ef4444" />
+                      ))}
+                    </>
+                  );
+                })()
+              ) : (
+                <div style={{ fontSize: '12px', color: '#475569' }}>该市场暂无五档盘口数据</div>
+              )}
+            </div>
+
+            {/* 分笔成交（逐笔，仅 A 股） */}
+            <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ fontWeight: 700, fontSize: '14px' }}>📄 分笔成交</div>
+                {ticks && ticks.length > 0 && (
+                  <span style={{ fontSize: 10.5, color: '#475569' }}>东财逐笔 · {ticks.length} 笔{session.open ? ' · 15s 自动刷新' : ' · 休市中，数据为最近交易日'}</span>
+                )}
+              </div>
+              {!isCNStock ? (
+                <div style={{ fontSize: '12px', color: '#475569' }}>分笔成交仅支持 A 股（当前为{marketLabel(market)}市场）</div>
+              ) : ticksErr ? (
+                <div style={{ fontSize: '12px', color: '#f87171' }}>⚠️ {ticksErr}</div>
+              ) : !ticks ? (
+                <div style={{ fontSize: '12px', color: '#475569' }}>加载逐笔数据中…</div>
+              ) : ticks.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#475569' }}>暂无逐笔数据（非交易日或停牌）</div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 8, fontSize: 10.5, color: '#475569', padding: '2px 4px 6px', borderBottom: '1px solid #1e293b' }}>
+                    <span style={{ width: 58 }}>时间</span>
+                    <span style={{ width: 64, textAlign: 'right' }}>成交价</span>
+                    <span style={{ width: 44, textAlign: 'right' }}>变动</span>
+                    <span style={{ width: 52, textAlign: 'right' }}>手数</span>
+                    <span style={{ width: 26, textAlign: 'center' }}>性质</span>
+                  </div>
+                  <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                    {(showAllTicks ? ticks : ticks.slice(0, 80)).map((t, i) => {
+                      const big = t.vol >= 300;
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            display: 'flex', gap: 8, fontSize: 11.5, padding: '2.5px 4px', borderRadius: 4,
+                            fontFamily: 'Consolas, monospace',
+                            backgroundColor: big ? 'rgba(245,158,11,0.07)' : i % 2 ? 'rgba(148,163,184,0.03)' : 'transparent',
+                          }}
+                          title={big ? `大单 ${t.vol} 手` : undefined}
+                        >
+                          <span style={{ width: 58, color: '#64748b' }}>{t.time}</span>
+                          <span style={{ width: 64, textAlign: 'right', color: t.chg >= 0 ? '#ef4444' : '#22c55e' }}>{t.price.toFixed(2)}</span>
+                          <span style={{ width: 44, textAlign: 'right', color: '#64748b' }}>{t.chg > 0 ? '+' : ''}{t.chg}</span>
+                          <span style={{ width: 52, textAlign: 'right', color: big ? '#f59e0b' : '#cbd5e1', fontWeight: big ? 700 : 400 }}>{t.vol}</span>
+                          <span
+                            style={{
+                              width: 26, textAlign: 'center', fontWeight: 700, borderRadius: 4, fontSize: 10.5,
+                              color: t.type === 'B' ? '#ef4444' : t.type === 'S' ? '#22c55e' : '#94a3b8',
+                              backgroundColor: t.type === 'B' ? 'rgba(239,68,68,0.1)' : t.type === 'S' ? 'rgba(34,197,94,0.1)' : 'transparent',
+                            }}
+                          >
+                            {t.type === 'B' ? 'B' : t.type === 'S' ? 'S' : '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {ticks.length > 80 && (
+                    <button
+                      onClick={() => setShowAllTicks((v) => !v)}
+                      style={{ marginTop: 8, width: '100%', padding: '6px 0', fontSize: 11.5, color: '#93c5fd', backgroundColor: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 8, cursor: 'pointer' }}
+                    >
+                      {showAllTicks ? '收起，仅显示最近 80 笔' : `展开全部 ${ticks.length} 笔`}
+                    </button>
+                  )}
+                  <div style={{ marginTop: 8, fontSize: 10, color: '#475569', lineHeight: 1.6 }}>
+                    <span style={{ color: '#ef4444' }}>B</span> 买盘主动成交 · <span style={{ color: '#22c55e' }}>S</span> 卖盘主动成交 · 黄底 = 单笔 ≥ 300 手大单
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 关键均线 */}
+            <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>📐 关键均线（日）</div>
+              {[5, 10, 20, 60].map((n) => {
+                const v = calcMA(dailyCloses, n);
+                return (
+                  <div
+                    key={n}
+                    style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1e293b', fontSize: '13px' }}
+                  >
+                    <span style={{ color: '#94a3b8' }}>MA{n}</span>
+                    <span
+                      style={{
+                        color: v != null && latestPrice != null ? (latestPrice >= v ? '#ef4444' : '#22c55e') : '#e2e8f0',
+                        fontFamily: 'Consolas, monospace',
+                      }}
+                    >
+                      {v != null ? v.toFixed(2) : '--'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
             {/* 模拟交易直达 */}
-            <div style={{ ...cardStyle, padding: '14px 16px' }}>
+            <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
               <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '10px' }}>💰 模拟交易直达</div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
@@ -1844,68 +2179,6 @@ export default function StockDetailPage() {
                 跳转模拟盘并自动填入 {displaySymbol}
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* ── 分钟短期副图（1/5/15/30/60/120 分钟 K 线，多日真实数据） ── */}
-        <div
-          style={{
-            marginTop: '28px',
-            paddingTop: '20px',
-            borderTop: '1px solid #1e293b',
-            backgroundColor: 'rgba(17, 24, 39, 0.4)',
-            borderRadius: '12px',
-            padding: '16px 12px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '8px',
-              marginBottom: '8px',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-            }}
-          >
-            <span style={{ fontSize: '12px', color: '#64748b' }}>短期副图：</span>
-            {MINUTE_PERIODS.map((p) => {
-              const active = minutePeriod === p.key;
-              return (
-                <button
-                  key={p.key}
-                  onClick={() => setMinutePeriod(p.key)}
-                  style={{
-                    padding: '4px 12px',
-                    fontSize: '12px',
-                    fontWeight: active ? '700' : '500',
-                    color: active ? '#ffffff' : '#94a3b8',
-                    backgroundColor: active ? '#0ea5e9' : '#1e293b',
-                    border: active ? '1px solid #0ea5e9' : '1px solid #334155',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-            <span style={{ fontSize: '11px', color: '#475569' }}>
-              {minutePoints.length > 0 ? `共 ${minutePoints.length} 根` : ''}
-            </span>
-          </div>
-          <div
-            ref={minuteChartRef}
-            style={{
-              width: '100%',
-              height: '320px',
-              borderRadius: '12px',
-              border: '1px solid #1e293b',
-              backgroundColor: '#111827',
-              padding: '4px',
-            }}
-          />
         </div>
 
         {/* ── 技术指标面板 ── */}

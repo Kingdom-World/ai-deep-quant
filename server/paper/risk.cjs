@@ -5,7 +5,7 @@
 //   3. 当日该标的买入笔数 ≤ 3（防高频误操作；PAPER_MAX_DAILY_BUYS 可调）
 // ─────────────────────────────────────────────────────────────
 function getTodayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
 }
 
 /**

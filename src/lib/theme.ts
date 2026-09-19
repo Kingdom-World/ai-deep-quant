@@ -49,16 +49,19 @@ export const theme = {
     borderRadius: '8px',
     outline: 'none',
   },
-  /** 深空渐变页面底（全站统一） */
+  /** 页面容器（视觉底由全局 <Backdrop /> 深空极光层提供，此处保持透明让光斑透出） */
   page: {
     minHeight: '100vh',
     color: '#e2e8f0',
-    background: [
-      'radial-gradient(1000px 500px at 10% -5%, rgba(37,99,235,0.14), transparent 60%)',
-      'radial-gradient(800px 400px at 105% 15%, rgba(14,165,233,0.10), transparent 55%)',
-      'radial-gradient(600px 400px at 50% 110%, rgba(59,130,246,0.08), transparent 50%)',
-      'linear-gradient(165deg, #060a12 0%, #0a0f1a 40%, #0c1220 70%, #0a0e17 100%)',
-    ].join(','),
+    background: 'transparent',
+  },
+  /** 页面主容器统一规范——**全站满宽**：数据页与内容页宽度一致，切换不再跳变；
+   *  长文可读性由各页/各卡内部自行约束 */
+  pageWrap: {
+    padding: '20px 16px 60px',
+  },
+  pageWrapNarrow: {
+    padding: '16px 12px 48px',
   },
   /** 网格纹理叠层（放进页面容器内，absolute 定位） */
   gridOverlay: {

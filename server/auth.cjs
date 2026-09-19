@@ -4,26 +4,33 @@
 //   · 会话：HMAC-SHA256 签名令牌，HttpOnly Cookie（7 天），兼容 Bearer / Basic
 //   · 持久化：data/auth/users.json 原子写入；签名密钥 data/auth/secret.key
 //   · 首次启动引导：若用户表为空，用 .env 的 SITE_USERNAME/SITE_PASSWORD 创建管理员
+//   · 注册门禁：.env 配置 INVITE_CODE 后注册需填邀请码（未配置=开放注册，本地自用时免填）
+//   · 登录限速：每 IP 每分钟 8 次失败即锁 10 分钟（防暴力破解，与全局限流独立）
 // ─────────────────────────────────────────────────────────────
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('./atomic-write.cjs');
 
 const DATA_DIR = path.join(__dirname, '..', 'data', 'auth');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
 const COOKIE_NAME = 'pq_session';
+const SECURE_COOKIE = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+const COOKIE_SECURITY = SECURE_COOKIE ? '; Secure' : '';
 
 let users = { users: [] }; // [{username, uid, salt, hash, createdAt}]
 let sessionSecret = '';
 
 function init() {
   try {
+    const configuredSecret = String(process.env.SESSION_SECRET || '').trim();
+    if (configuredSecret) sessionSecret = configuredSecret;
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (fs.existsSync(SECRET_FILE)) {
+    if (!sessionSecret && fs.existsSync(SECRET_FILE)) {
       sessionSecret = fs.readFileSync(SECRET_FILE, 'utf8').trim();
-    } else {
+    } else if (!sessionSecret) {
       sessionSecret = crypto.randomBytes(32).toString('hex');
       fs.writeFileSync(SECRET_FILE, sessionSecret, { mode: 0o600 });
     }
@@ -42,11 +49,9 @@ function init() {
   }
 }
 
-/** 原子写入（临时文件 + rename），防止写入中途崩溃损坏用户表 */
+/** 原子写入（临时文件 + rename，含 Windows EPERM 重试），防止写入中途崩溃损坏用户表 */
 function persist() {
-  const tmp = `${USERS_FILE}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(users, null, 2), 'utf8');
-  fs.renameSync(tmp, USERS_FILE);
+  writeJsonAtomic(USERS_FILE, users, true);
 }
 
 function hashPassword(password, salt) {
@@ -95,6 +100,20 @@ function verifyUser(username, password) {
   return ok ? { username: u.username, uid: u.uid } : null;
 }
 
+/** 修改密码：验证旧密码 → 生成新盐和哈希 → 更新内存与用户表（uid 不变，模拟盘等数据全保留） */
+function changePassword(username, oldPassword, newPassword) {
+  const u = users.users.find((x) => x.username === String(username || '').trim());
+  if (!u) throw new Error('用户不存在');
+  if (!safeEqual(hashPassword(oldPassword, u.salt), u.hash)) throw new Error('旧密码不正确');
+  if (!validatePassword(newPassword)) throw new Error('新密码长度需为 6-64 位');
+  if (safeEqual(hashPassword(newPassword, u.salt), u.hash)) throw new Error('新密码不能与旧密码相同');
+  u.salt = crypto.randomBytes(16).toString('hex');
+  u.hash = hashPassword(newPassword, u.salt);
+  u.passwordChangedAt = new Date().toISOString();
+  persist();
+  return { username: u.username, uid: u.uid };
+}
+
 // ───────────── 会话令牌：base64url(payload).hmac ─────────────
 function b64url(buf) {
   return Buffer.from(buf).toString('base64url');
@@ -124,9 +143,9 @@ function issueSession(user) {
 }
 
 function sessionCookie(token) {
-  return `${COOKIE_NAME}=${token}; HttpOnly; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; SameSite=Lax`;
+  return `${COOKIE_NAME}=${token}; HttpOnly; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; SameSite=Lax${COOKIE_SECURITY}`;
 }
-const CLEAR_COOKIE = `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`;
+const CLEAR_COOKIE = `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${COOKIE_SECURITY}`;
 
 function parseCookies(req) {
   const out = {};
@@ -199,10 +218,43 @@ function router(opts = {}) {
   const express = require('express');
   const r = express.Router();
   const adminName = opts.adminUsername || '';
+  // 邀请码每次请求实时读取：改 .env 免重启即生效
+  const inviteCode = () => (process.env.INVITE_CODE || '').trim();
+
+  // 登录失败限速：每 IP 每分钟最多 8 次失败，超限锁 10 分钟
+  const loginFails = new Map(); // ip -> { count, windowStart, lockedUntil }
+  const loginGate = (req, res, next) => {
+    const ip = req.ip || 'unknown';
+    const rec = loginFails.get(ip);
+    if (rec?.lockedUntil && Date.now() < rec.lockedUntil) {
+      const mins = Math.ceil((rec.lockedUntil - Date.now()) / 60000);
+      return res.status(429).json({ ok: false, error: `登录失败次数过多，已临时锁定，请 ${mins} 分钟后再试` });
+    }
+    next();
+  };
+  const recordLoginFail = (req) => {
+    const ip = req.ip || 'unknown';
+    const now = Date.now();
+    // 容量保护：失败表按 IP 累积且从不清理，公网被扫描时会长期驻留内存
+    if (loginFails.size > 1000) {
+      for (const [k, v] of loginFails) {
+        if ((!v.lockedUntil || v.lockedUntil < now) && now - (v.windowStart || 0) > 10 * 60_000) loginFails.delete(k);
+      }
+    }
+    const rec = loginFails.get(ip);
+    if (!rec || now - rec.windowStart > 60_000) loginFails.set(ip, { count: 1, windowStart: now, lockedUntil: 0 });
+    else {
+      rec.count += 1;
+      if (rec.count >= 8) rec.lockedUntil = now + 10 * 60_000;
+    }
+  };
 
   r.post('/register', (req, res) => {
     try {
-      const { username, password } = req.body || {};
+      const { username, password, invite } = req.body || {};
+      if (inviteCode() && String(invite || '').trim() !== inviteCode()) {
+        return res.status(403).json({ ok: false, error: '邀请码不正确，请向站点管理员索取' });
+      }
       const user = createUser(username, password);
       const token = issueSession(user);
       res.setHeader('Set-Cookie', sessionCookie(token));
@@ -212,10 +264,14 @@ function router(opts = {}) {
     }
   });
 
-  r.post('/login', (req, res) => {
+  r.post('/login', loginGate, (req, res) => {
     const { username, password } = req.body || {};
     const user = verifyUser(username, password);
-    if (!user) return res.status(200).json({ ok: false, error: '用户名或密码错误' });
+    if (!user) {
+      recordLoginFail(req);
+      return res.status(200).json({ ok: false, error: '用户名或密码错误' });
+    }
+    loginFails.delete(req.ip || 'unknown'); // 登录成功清零失败计数
     const token = issueSession(user);
     res.setHeader('Set-Cookie', sessionCookie(token));
     res.json({ ok: true, username: user.username, token });
@@ -232,7 +288,20 @@ function router(opts = {}) {
     res.json({ ok: true, username: user.username, uid: user.uid, isAdmin: !!adminName && user.username === adminName });
   });
 
+  // 改密接口：/api/auth/* 不走鉴权中间件，这里自行校验登录态
+  r.post('/change-password', (req, res) => {
+    const user = getUserFromRequest(req);
+    if (!user) return res.status(401).json({ ok: false, error: '未登录或会话已过期，请重新登录' });
+    const { oldPassword, newPassword } = req.body || {};
+    try {
+      const updated = changePassword(user.username, oldPassword, newPassword);
+      res.json({ ok: true, username: updated.username });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e.message });
+    }
+  });
+
   return r;
 }
 
-module.exports = { init, createUser, verifyUser, ensureBootstrapAdmin, middleware, router, getUserFromRequest };
+module.exports = { init, createUser, verifyUser, changePassword, ensureBootstrapAdmin, middleware, router, getUserFromRequest };

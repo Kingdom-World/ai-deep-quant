@@ -5,6 +5,36 @@ import { detectMarket, marketLabel, pctColor } from '../lib/stock';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 
+/** 实验对比页「带参数去回测」带入的预填参数（仅读取，不自动运行——非破坏性） */
+function readPrefill() {
+  const sp = new URLSearchParams(window.location.search);
+  const symbol = (sp.get('symbol') || '').trim().toUpperCase() || 'AAPL';
+  const rawStrategy = sp.get('strategy') || 'ma';
+  const strategy: StrategyKey = STRATEGIES.some((s) => s.key === rawStrategy)
+    ? (rawStrategy as StrategyKey)
+    : 'ma';
+  let params: Record<string, number> = {};
+  try {
+    const p = sp.get('params');
+    if (p) params = JSON.parse(p) as Record<string, number>;
+  } catch {
+    params = {};
+  }
+  const fast = typeof params.fast === 'number' ? params.fast : 5;
+  const slow = typeof params.slow === 'number' ? params.slow : 20;
+  const capital = typeof params.capital === 'number' ? params.capital : 100000;
+  // count：默认 500，clamp 到 250–2000（与后端 /api/backtest 上限一致）
+  const rawCount = Number(sp.get('count'));
+  const count =
+    Number.isFinite(rawCount) && rawCount > 0
+      ? Math.min(Math.max(Math.round(rawCount), 250), 2000)
+      : 500;
+  // slippage：默认 0.001（0.1%），clamp 到 0–0.05（0–5%）
+  const rawSlip = Number(sp.get('slippage'));
+  const slippage = Number.isFinite(rawSlip) ? Math.min(Math.max(rawSlip, 0), 0.05) : 0.001;
+  return { symbol, strategy, fast, slow, capital, count, slippage };
+}
+
 /** 策略配置 */
 const STRATEGIES = [
   { key: 'ma', name: 'MA 双均线', desc: '快线上穿慢线买入，下穿卖出（默认 5/20）' },
@@ -15,12 +45,15 @@ const STRATEGIES = [
 type StrategyKey = (typeof STRATEGIES)[number]['key'];
 
 export default function BacktestPage() {
-  const [symbol, setSymbol] = useState('AAPL');
-  const [strategy, setStrategy] = useState<StrategyKey>('ma');
-  const [fast, setFast] = useState(5);
-  const [slow, setSlow] = useState(20);
-  const [capital, setCapital] = useState(100000);
-  const [count, setCount] = useState(500);
+  // 非破坏性预填：仅读取 URL 参数作为表单初值，不自动触发回测
+  const [prefill] = useState(readPrefill);
+  const [symbol, setSymbol] = useState(prefill.symbol);
+  const [strategy, setStrategy] = useState<StrategyKey>(prefill.strategy);
+  const [fast, setFast] = useState(prefill.fast);
+  const [slow, setSlow] = useState(prefill.slow);
+  const [capital, setCapital] = useState(prefill.capital);
+  const [count, setCount] = useState(prefill.count);
+  const [slippage, setSlippage] = useState(prefill.slippage);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -119,6 +152,16 @@ export default function BacktestPage() {
           smooth: true,
           lineStyle: { width: 1.1, color: '#64748b', type: 'dashed' },
         },
+        ...(result.benchmark300 && result.benchmark300.length > 5
+          ? [{
+              name: '沪深300',
+              type: 'line' as const,
+              data: result.benchmark300.map((e) => e.value),
+              showSymbol: false,
+              smooth: true,
+              lineStyle: { width: 1.1, color: '#f59e0b', type: 'dashed' as const },
+            }]
+          : []),
         {
           name: '交易点',
           type: 'scatter',
@@ -149,7 +192,7 @@ export default function BacktestPage() {
     setError(null);
     setResult(null);
     try {
-      const r = await runBacktest({ symbol: sym, strategy, fast, slow, capital, count });
+      const r = await runBacktest({ symbol: sym, strategy, fast, slow, capital, count, slippage });
       if (r.error) throw new Error(r.error);
       setResult(r);
     } catch (e: any) {
@@ -189,7 +232,7 @@ export default function BacktestPage() {
       {/* 顶部导航（全站统一） */}
       <TopNav />
 
-      <main style={{ maxWidth: '980px', margin: '0 auto', padding: '28px 20px 48px' }}>
+      <main style={{ padding: '28px 20px 48px' }}>
         {/* 参数面板 */}
         <section
           style={{
@@ -280,6 +323,18 @@ export default function BacktestPage() {
                 <option value={2000}>2000</option>
               </select>
             </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: '#94a3b8' }}>
+              滑点 (slippage，小数口径 0–0.05 = 0–5%)
+              <input
+                type="number"
+                min={0}
+                max={0.05}
+                step={0.001}
+                value={slippage}
+                onChange={(e) => setSlippage(Number(e.target.value))}
+                style={{ ...inputStyle, width: '120px' }}
+              />
+            </label>
             <button
               onClick={handleRun}
               disabled={loading}
@@ -340,6 +395,8 @@ export default function BacktestPage() {
               {statCard('卡玛比率', result.calmar != null ? String(result.calmar) : '--', (result.calmar ?? 0) >= 1 ? '#4ade80' : '#e2e8f0')}
               {statCard('交易次数', `${result.tradeCount} 次`)}
               {statCard('基准(买入持有)', `${result.benchmarkReturn >= 0 ? '+' : ''}${result.benchmarkReturn}%`, '#94a3b8')}
+              {result.benchmark300Return != null &&
+                statCard('沪深300基准', `${result.benchmark300Return >= 0 ? '+' : ''}${result.benchmark300Return}%`, '#f59e0b')}
               {statCard('期末资金', `$${result.finalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)}
             </section>
 

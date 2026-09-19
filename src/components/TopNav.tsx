@@ -1,21 +1,27 @@
 // ─────────────────────────────────────────────────────────────
-// 全站统一顶部导航（六个页面共用）
-//   · 品牌 + 五个页签（当前页高亮）+ 全局股票搜索（联想）+ 用户菜单
-//   · 替换原先六份手写头部，保证全站导航一致
+// 全站统一顶部导航
+//   · 品牌 + 功能页签（当前页高亮）+ 全局股票搜索（联想）+ 用户菜单
+//   · 统一所有页面的导航与搜索入口，保证全站导航一致
 // ─────────────────────────────────────────────────────────────
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { searchSymbol } from '../api/dataService';
 import { theme } from '../lib/theme';
+import BrandMark from './BrandMark';
 import UserMenu from './UserMenu';
 
 const NAV_ITEMS = [
   { path: '/', label: '首页' },
+  { path: '/screener', label: '选股' },
   { path: '/analyze', label: '因子分析' },
   { path: '/backtest', label: '策略回测' },
+  { path: '/research', label: '研究中心' },
+  { path: '/stock/sh600519', label: '量化看板', match: '/stock' },
   { path: '/paper', label: '模拟交易' },
   { path: '/agents', label: 'Agent 团队' },
   { path: '/assistant', label: 'AI 助手' },
+  { path: '/news', label: '资讯' },
+  { path: '/features', label: '功能介绍' },
 ];
 
 export default function TopNav() {
@@ -26,6 +32,88 @@ export default function TopNav() {
   const [sugOpen, setSugOpen] = useState(false);
   const suggestTimer = useRef<number | undefined>(undefined);
   const boxRef = useRef<HTMLDivElement>(null);
+
+  // ── 滑动指示器（性能约定）──
+  //   动画只动 transform/width（transform 走合成层，不触发 layout/paint）；
+  //   测量为事件驱动（激活变化 / resize(passive) / 字体就绪），无 requestAnimationFrame 常驻循环——
+  //   即使页签数量继续增加，静止时也是零开销。
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef(new Map<string, HTMLSpanElement>());
+  const [ind, setInd] = useState<{ x: number; w: number; on: boolean }>({ x: 0, w: 0, on: false });
+
+  const activeKey =
+    NAV_ITEMS.find((it) =>
+      it.match ? location.pathname.startsWith(it.match) : location.pathname === it.path,
+    )?.path ?? '/';
+
+  const measure = useCallback(() => {
+    const el = tabRefs.current.get(activeKey);
+    if (el) setInd({ x: el.offsetLeft, w: el.offsetWidth, on: true });
+    else setInd((s) => ({ ...s, on: false })); // 激活项被收进「更多」→ 指示器隐藏
+  }, [activeKey]);
+
+  useEffect(() => {
+    measure();
+    // 字体加载完成会改变文本宽度，就绪后重测一次
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(measure).catch(() => {});
+    }
+  }, [measure]);
+
+  useEffect(() => {
+    window.addEventListener('resize', measure, { passive: true });
+    return () => window.removeEventListener('resize', measure);
+  }, [measure]);
+
+  // 移动端：激活页签横向滚入可视区中央（桌面容器无滚动时等效于无操作）
+  useEffect(() => {
+    const box = scrollRef.current;
+    const el = tabRefs.current.get(activeKey);
+    if (box && el) {
+      box.scrollTo({
+        left: el.offsetLeft - box.clientWidth / 2 + el.offsetWidth / 2,
+        behavior: 'smooth',
+      });
+    }
+  }, [activeKey]);
+
+  // ── 自适应溢出收纳（用户截图反馈：11 项时「功能介绍」被截断）──
+  //   每次渲染后检查页签区是否溢出：溢出则把末尾项收进「更多 ▾」下拉，逐格收敛；
+  //   放回需留 >0.6 项宽余量（按平均项宽估算），防止"放回→溢出→收回"震荡。
+  //   由此 NAV_ITEMS 随便加项，布局永不再截断。
+  const [visibleCount, setVisibleCount] = useState(NAV_ITEMS.length);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [morePos, setMorePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const visibleItems = NAV_ITEMS.slice(0, visibleCount);
+    const overflow = box.scrollWidth > box.clientWidth + 1;
+    if (overflow && visibleCount > 1) {
+      setVisibleCount(visibleCount - 1);
+      return;
+    }
+    if (!overflow && visibleCount < NAV_ITEMS.length) {
+      const avg = visibleItems.length ? box.scrollWidth / visibleItems.length : 100;
+      if (box.clientWidth - box.scrollWidth > avg * 0.6) setVisibleCount(visibleCount + 1);
+    }
+  });
+
+  // 点击外部关闭「更多」下拉
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const hiddenItems = NAV_ITEMS.slice(visibleCount);
+  const activeHidden = hiddenItems.some((it) =>
+    it.match ? location.pathname.startsWith(it.match) : location.pathname === it.path,
+  );
 
   // 全局搜索联想（300ms 防抖）
   useEffect(() => {
@@ -61,13 +149,35 @@ export default function TopNav() {
     navigate(`/stock/${code}`);
   };
 
+  // 回车：有联想结果优先取第一条（自然语言关键词也能直达个股）；无结果再按原文跳转
+  const goBest = () => {
+    const k = kw.trim();
+    if (!k) return;
+    go(sug.length > 0 ? sug[0].code : k);
+  };
+
   return (
-    <nav
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        display: 'flex',
+    <>
+      {/* 顶部区域 fixed 置顶（声明条+导航滚动时固定）：
+          fixed 不受祖先 overflow/sticky 陷阱影响，比 sticky 更可靠；
+          下方 spacer 占位等高，使各页内容自然从导航下沿开始（全站自动，无需逐页补偿） */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100 }}>
+      {/* 全站统一声明条（样式 = 原首页声明条，用户确认） */}
+      <div
+        style={{
+          textAlign: 'center',
+          padding: '8px 16px',
+          fontSize: '12px',
+          color: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
+        }}
+      >
+        📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
+      </div>
+      <nav
+        style={{
+          display: 'flex',
         alignItems: 'center',
         gap: '20px',
         padding: '0 28px',
@@ -78,65 +188,138 @@ export default function TopNav() {
         borderBottom: '1px solid rgba(96,165,250,0.14)',
         boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
       }}
+      className="pq-topnav"
     >
+      <style>{`
+        .pq-topnav-scroll { overflow-x: auto; scrollbar-width: none; }
+        .pq-topnav-scroll::-webkit-scrollbar { display: none; }
+        .pq-tab {
+          padding: 7px 13px; font-size: 13px; border-radius: 8px; cursor: pointer;
+          white-space: nowrap; flex-shrink: 0;
+          color: #94a3b8; border: 1px solid transparent;
+          transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+        }
+        .pq-tab:hover { color: #e2e8f0; background-color: rgba(96,165,250,0.08); }
+        .pq-tab-active { color: #60a5fa; font-weight: 700; background-color: rgba(96,165,250,0.1); border-color: rgba(96,165,250,0.3); }
+      `}</style>
+
       {/* 品牌 */}
       <div
         style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flexShrink: 0 }}
         onClick={() => navigate('/')}
       >
-        <span
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 9,
-            background: 'linear-gradient(135deg, #1d4ed8, #60a5fa)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 16,
-            boxShadow: '0 4px 14px rgba(37,99,235,0.45)',
-          }}
-        >
-          📊
-        </span>
-        <span style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', letterSpacing: 1 }}>
+        <BrandMark size={32} radius={9} shadow="0 4px 14px rgba(37,99,235,0.45)" />
+        <span style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', letterSpacing: 1, whiteSpace: 'nowrap' }}>
           AI深度量化
         </span>
       </div>
 
-      {/* 页签 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-        {NAV_ITEMS.map((item) => {
-          const active = location.pathname === item.path;
+      {/* 页签（窄屏横向滚动，永不换行；底部滑动指示器跟随激活项） */}
+      <div
+        ref={scrollRef}
+        className="pq-topnav-scroll"
+        style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}
+      >
+        <span
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: 0,
+            bottom: 0,
+            height: 2,
+            width: ind.w,
+            transform: `translateX(${ind.x}px)`,
+            backgroundColor: '#60a5fa',
+            borderRadius: 2,
+            opacity: ind.on ? 1 : 0,
+            pointerEvents: 'none',
+            willChange: 'transform',
+            transition:
+              'transform .3s cubic-bezier(.22,.61,.36,1), width .3s cubic-bezier(.22,.61,.36,1), opacity .2s ease',
+          }}
+        />
+        {NAV_ITEMS.slice(0, visibleCount).map((item) => {
+          const active = item.match ? location.pathname.startsWith(item.match) : location.pathname === item.path;
           return (
             <span
               key={item.path}
-              onClick={() => navigate(item.path)}
-              style={{
-                padding: '7px 14px',
-                fontSize: 13,
-                borderRadius: 8,
-                cursor: 'pointer',
-                color: active ? '#60a5fa' : theme.color.textMuted,
-                fontWeight: active ? 700 : 400,
-                backgroundColor: active ? 'rgba(96,165,250,0.1)' : 'transparent',
-                border: active ? '1px solid rgba(96,165,250,0.3)' : '1px solid transparent',
-                transition: 'all .15s',
+              ref={(el) => {
+                if (el) tabRefs.current.set(item.path, el);
+                else tabRefs.current.delete(item.path);
               }}
+              onClick={() => navigate(item.path)}
+              className={`pq-tab${active ? ' pq-tab-active' : ''}`}
             >
               {item.label}
             </span>
           );
         })}
+        {hiddenItems.length > 0 && (
+          <div ref={moreRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <span
+              onClick={(e) => {
+                // 面板用 fixed 坐标定位：脱离页签滚动容器的 overflow 裁剪，保证「更多」在任何位置都能完整展开
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setMorePos({ top: rect.bottom + 10, right: window.innerWidth - rect.right });
+                setMoreOpen((o) => !o);
+              }}
+              className={`pq-tab${activeHidden ? ' pq-tab-active' : ''}`}
+            >
+              更多 ▾
+            </span>
+            {moreOpen && (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: morePos.top,
+                  right: morePos.right,
+                  backgroundColor: '#111827',
+                  border: '1px solid #334155',
+                  borderRadius: 10,
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
+                  zIndex: 200,
+                  minWidth: 160,
+                  overflow: 'hidden',
+                  padding: '4px 0',
+                }}
+              >
+                {hiddenItems.map((item) => {
+                  const active = item.match
+                    ? location.pathname.startsWith(item.match)
+                    : location.pathname === item.path;
+                  return (
+                    <div
+                      key={item.path}
+                      onClick={() => {
+                        navigate(item.path);
+                        setMoreOpen(false);
+                      }}
+                      style={{
+                        padding: '9px 14px',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        color: active ? '#60a5fa' : theme.color.textMuted,
+                        fontWeight: active ? 700 : 400,
+                        backgroundColor: active ? 'rgba(96,165,250,0.1)' : 'transparent',
+                      }}
+                    >
+                      {item.label}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* 全局搜索 */}
-      <div ref={boxRef} style={{ position: 'relative', width: 230 }}>
+      {/* 全局搜索（窄屏收窄但不换行） */}
+      <div ref={boxRef} style={{ position: 'relative', width: 'clamp(150px, 16vw, 230px)', flexShrink: 0 }}>
         <input
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && kw.trim()) go(kw.trim());
+            if (e.key === 'Enter') goBest();
           }}
           placeholder="搜索股票（AAPL / 600519 / 茅台）"
           style={{
@@ -163,6 +346,7 @@ export default function TopNav() {
               borderRadius: 10,
               overflow: 'hidden',
               boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
+              zIndex: 20,
             }}
           >
             {sug.map((s) => (
@@ -193,6 +377,10 @@ export default function TopNav() {
 
       {/* 用户菜单 */}
       <UserMenu />
-    </nav>
+      </nav>
+      </div>
+      {/* 占位：顶部区域为 fixed，撑出等高空间使各页内容从导航下沿开始 */}
+      <div style={{ height: 92 }} aria-hidden />
+    </>
   );
 }

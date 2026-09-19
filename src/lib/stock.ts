@@ -3,6 +3,7 @@
 // 市场识别 / 周期定义 / 量化计算（纯函数，无网络与 SDK 依赖，
 // 所有行情数据均来自独立后端 server/index.cjs）
 // ─────────────────────────────────────────────────────────────
+import { wilderRsiLast } from '../../shared/rsi.mjs';
 
 export type Market = 'US' | 'CN' | 'HK';
 
@@ -74,11 +75,11 @@ export type Period = 'day' | '3day' | 'week' | 'month' | 'quarter' | 'year';
 /** 主图周期配置：按钮文案 / 图表标题 / 聚合点数上限 / 横轴刻度格式 */
 export const PERIODS: { key: Period; label: string; title: string; limit: number; tick: string }[] =
   [
-    { key: 'day', label: '日', title: '日线', limit: 250, tick: 'MM-DD' },
-    { key: '3day', label: '3日', title: '3日线', limit: 160, tick: 'MM-DD' },
-    { key: 'week', label: '周', title: '周线', limit: 120, tick: 'MM-DD(周)' },
-    { key: 'month', label: '月', title: '月线', limit: 60, tick: 'YYYY-MM' },
-    { key: 'quarter', label: '季', title: '季线', limit: 30, tick: 'YYYY-Qn' },
+    { key: 'day', label: '日', title: '日线', limit: 500, tick: 'MM-DD' },
+    { key: '3day', label: '3日', title: '3日线', limit: 200, tick: 'MM-DD' },
+    { key: 'week', label: '周', title: '周线', limit: 260, tick: 'MM-DD(周)' },
+    { key: 'month', label: '月', title: '月线', limit: 96, tick: 'YYYY-MM' },
+    { key: 'quarter', label: '季', title: '季线', limit: 32, tick: 'YYYY-Qn' },
     { key: 'year', label: '年', title: '年线', limit: 10, tick: 'YYYY' },
   ];
 
@@ -317,25 +318,15 @@ export function calcMA(prices: number[], period: number): number | null {
 }
 
 /**
- * 计算 RSI（相对强弱指数，Wilder 简化平均法）
- * RSI = 100 - 100 / (1 + RS)，RS = 平均上涨幅度 / 平均下跌幅度
- * 数据不足 period+1 个收盘价时返回 null
+ * 计算 RSI（相对强弱指数）
+ *   口径：**Wilder 标准**（实现见 shared/rsi.mjs —— 前后端共用的唯一实现源）
+ *   历史：此处原为「只取末尾 period+1 个价格的简单平均」；项目曾同时存在 4 套均非行业标准的实现，
+ *   S6 起收敛为单一实现并统一到 Wilder。⚠️ 口径切换会改变读数（实测两口径相对差可达 13%）。
+ * @returns 保留 1 位小数；数据不足 period+1 个收盘价时返回 null
  */
 export function calcRSI(prices: number[], period = 14): number | null {
-  if (prices.length < period + 1) return null;
-  const closes = prices.slice(-(period + 1));
-  let gains = 0;
-  let losses = 0;
-  for (let i = 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
-  }
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return parseFloat((100 - 100 / (1 + rs)).toFixed(1));
+  const v = wilderRsiLast(prices, period);
+  return v === null ? null : parseFloat(v.toFixed(1));
 }
 
 /** 成交量人性化格式：亿 / 万 */

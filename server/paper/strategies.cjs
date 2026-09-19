@@ -43,26 +43,24 @@ function init({ getQuote, fetchDailyRows }) {
   load();
 }
 
-// ── 指标（本地简化实现，与回测口径一致） ──
+// ── 指标 ──
+const { wilderRsiLast } = require('../../shared/rsi.mjs');
+
 function smaLast(closes, n) {
   if (closes.length < n) return null;
   const s = closes.slice(-n).reduce((a, b) => a + b, 0);
   return s / n;
 }
-function rsi(closes, n = 14) {
-  if (closes.length < n + 1) return null;
-  let gains = 0;
-  let losses = 0;
-  for (let i = closes.length - n; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) gains += d;
-    else losses -= d;
-  }
-  if (losses === 0) return 100;
-  return 100 - 100 / (1 + gains / n / (losses / n));
-}
+/**
+ * RSI —— 口径统一为 **Wilder 标准**（唯一实现见 shared/rsi.mjs）
+ *   历史：此处原为本地「简单均值」实现，注释还写着"与回测口径一致"——
+ *   但回测已是 Wilder（S6 起），该注释当时已成假话。现改为直接引用唯一实现源，
+ *   使「模拟盘策略」与「回测」真正同口径。
+ */
+const rsi = wilderRsiLast;
 
-// ── 交易时段（北京时间近似；PAPER_TRADE_247=1 跳过） ──
+// ── 交易时段（北京时间近似；PAPER_TRADE_247=1 跳过；CN 含法定节假日判断） ──
+const { isCnHoliday } = require('../calendar.cjs');
 function isMarketOpen(symbol) {
   if (process.env.PAPER_TRADE_247 === '1') return true;
   const bj = new Date(Date.now() + (8 * 60 + new Date().getTimezoneOffset()) * 60_000);
@@ -70,9 +68,44 @@ function isMarketOpen(symbol) {
   const mins = bj.getHours() * 60 + bj.getMinutes();
   const m = marketOf(symbol);
   if (day === 0 || day === 6) return false;
-  if (m === 'CN') return mins >= 555 && mins <= 905; // 09:15–15:05
+  if (m === 'CN') return !isCnHoliday() && mins >= 555 && mins <= 905; // 09:15–15:05，法定节假日休市
   if (m === 'HK') return mins >= 555 && mins <= 970; // 09:15–16:10
   return (mins >= 1285 && mins <= 1440) || mins <= 245; // 美股约 21:25–04:05 北京时间
+}
+
+// ── combo：用户自定义条件组合（MA 状态 × RSI 温度）——评审 R2 ──
+//   买入：MA 多头（maFast > maSlow）且 RSI 未过热（rsi < rsiSellAbove）；
+//         requireBoth=1 时额外要求 RSI < rsiBuyBelow（回调低吸模式）。
+//   卖出：MA 破位（maFast < maSlow）或 RSI 过热（rsi > rsiSellAbove）。
+//   语义刻意保持"一句话可解释"——学习者的第一个自定义策略应能讲清楚每个条件。
+async function evalCombo(st, price, klines) {
+  const maFast = Math.max(Number(st.params.maFast) || 5, 2);
+  const maSlow = Math.max(Number(st.params.maSlow) || 20, maFast + 1);
+  const rsiPeriod = Math.max(Number(st.params.rsiPeriod) || 14, 2);
+  const rsiSellAbove = Number(st.params.rsiSellAbove) || 70;
+  const rsiBuyBelow = Number(st.params.rsiBuyBelow) || 45;
+  const requireBoth = Number(st.params.requireBoth) === 1;
+  const closes = klines.map((k) => k.close);
+  const f = smaLast(closes, maFast);
+  const s = smaLast(closes, maSlow);
+  const r = rsi(closes, rsiPeriod);
+  if (!f || !s || r === null) {
+    st.lastSignal = '指标数据不足，跳过';
+    return;
+  }
+  const bull = f > s;
+  const overheat = r > rsiSellAbove;
+  const pos = broker.store.state.positions[st.uid]?.find((p) => p.symbol === st.symbol);
+  const canBuy = bull && (requireBoth ? r < rsiBuyBelow : !overheat);
+  if (canBuy && !pos) {
+    const qty = calcBuyQty(st.symbol, price, broker.store.ensureAccount(st.uid).cash, st.params);
+    if (qty > 0) await doBuy(st, price, qty);
+    else st.lastSignal = '资金不足以买入最小单位，跳过';
+  } else if ((bull === false || overheat) && pos) {
+    await doSell(st, price, pos.qty);
+  } else {
+    st.lastSignal = `MA${maFast}/${maSlow} ${bull ? '多头' : '空头'} · RSI${rsiPeriod}=${r.toFixed(1)}${overheat ? '（过热）' : ''} · ${pos ? '持有' : '空仓'}`;
+  }
 }
 
 // ── 下单辅助 ──
@@ -88,6 +121,7 @@ async function doBuy(st, price, qty) {
   const acc = broker.store.ensureAccount(st.uid);
   const r = await broker.placeOrder(st.uid, {
     symbol: st.symbol, name: st.name, side: 'buy', type: 'market', qty,
+    src: st.id, // 策略归因标记：订单按来源策略统计（一致性报告/衰减监控依赖此字段）
   });
   st.lastSignal = `买入 ${qty} 股 @≈${price?.toFixed?.(2) || price} → ${r.ok ? '已受理' : r.error}`;
   return r;
@@ -95,6 +129,7 @@ async function doBuy(st, price, qty) {
 async function doSell(st, price, qty) {
   const r = await broker.placeOrder(st.uid, {
     symbol: st.symbol, name: st.name, side: 'sell', type: 'market', qty,
+    src: st.id,
   });
   st.lastSignal = `卖出 ${qty} 股 @≈${price?.toFixed?.(2) || price} → ${r.ok ? '已受理' : r.error}`;
   return r;
@@ -198,7 +233,11 @@ async function runStrategies() {
       if (st.type === 'gridTrading') {
         await evalGrid(st, price);
       } else {
-        const count = st.type === 'maCross' ? Math.max(Number(st.params.slow) || 20, 60) : 120;
+        const count = st.type === 'maCross'
+          ? Math.max(Number(st.params.slow) || 20, 60)
+          : st.type === 'combo'
+            ? Math.max(Number(st.params.maSlow) || 20, Number(st.params.rsiPeriod) || 14, 60)
+            : 120;
         const klines = await deps.fetchDailyRows(st.symbol, count);
         if (!klines.length) {
           st.lastSignal = '历史数据为空，跳过';
@@ -206,6 +245,8 @@ async function runStrategies() {
           await evalMaCross(st, price, klines);
         } else if (st.type === 'rsiReversal') {
           await evalRsi(st, price, klines);
+        } else if (st.type === 'combo') {
+          await evalCombo(st, price, klines);
         }
       }
       st.lastRunAt = nowISO();
@@ -224,7 +265,7 @@ function nowISO() {
 }
 
 function start(uid, { type, symbol, name, params }) {
-  const valid = ['maCross', 'rsiReversal', 'gridTrading'];
+  const valid = ['maCross', 'rsiReversal', 'gridTrading', 'combo'];
   if (!valid.includes(type)) return { ok: false, error: `未知策略类型 ${type}` };
   symbol = String(symbol || '').trim();
   if (!symbol) return { ok: false, error: '缺少股票代码' };
@@ -268,9 +309,13 @@ function list(uid) {
   return strategies.filter((s) => s.uid === uid);
 }
 
+function all() {
+  return strategies; // 全部策略（跨 uid）——一致性报告/衰减监控按 src 归因统计用
+}
+
 function startLoop() {
   setInterval(() => runStrategies().catch((e) => console.error('[Strategies] 循环异常:', e.message)), EVAL_INTERVAL_MS);
   console.log(`🤖 模拟盘策略引擎已启动（评估间隔 ${Math.round(EVAL_INTERVAL_MS / 60_000)} 分钟）`);
 }
 
-module.exports = { init, start, stop, list, startLoop, runStrategies };
+module.exports = { init, start, stop, list, all, startLoop, runStrategies };

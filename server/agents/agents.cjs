@@ -4,32 +4,24 @@
 //   分析师全文报告 → 结构化多轮辩论 → 交易员场景推演 → 风险辩论与终审 → 报告落盘可分享
 //   ── 铁律（内部执行，前端不展示）：成员间严禁直连，所有信息经主理人中转 ──
 //
-//   合规（脱敏）：全部输出为本地程序化规则引擎生成的学术研究演示，不构成投资建议；
-//   数据来自公开行情与东方财富公开接口（财务/公告/资金流/融资融券/新闻），未覆盖项明确标注降级。
+//   合规（脱敏）：报告由免费云端大模型分饰 13 角色协作生成（各角色记忆隔离，信息仅经主理人中转），
+//   为学术研究演示，不构成投资建议；数据来自公开行情与东方财富公开接口（财务/公告/资金流/融资融券/新闻）
+//   及新浪滚动要闻，未覆盖项明确标注降级；模型不可用的角色自动由本地规则引擎兜底并标注。
 // ─────────────────────────────────────────────────────────────
 const reportstore = require('./reportstore.cjs');
+const { wilderRsiLast } = require('../../shared/rsi.mjs');
 
 const DISCLAIMER =
-  '本报告及全部 Agent 内容由本地程序化规则引擎自动生成的学术研究演示，不构成任何投资建议，不代表任何真实机构或分析师观点。' +
-  '数据来自公开行情接口与东方财富公开数据（财务/公告/资金流/融资融券/新闻），未覆盖项已在文中明确标注降级。';
+  '本报告由 AI 多角色协作系统自动生成，属学术研究演示，不构成任何投资建议，不代表任何真实机构或分析师观点。' +
+  '数据来自公开行情接口、东方财富公开数据（财务/公告/资金流/融资融券/新闻）与新浪滚动要闻，未覆盖项已在文中明确标注降级。';
 
 const sma = (arr, n) => {
   if (arr.length < n) return null;
   return arr.slice(-n).reduce((a, b) => a + b, 0) / n;
 };
 
-function rsiLast(closes, n = 14) {
-  if (closes.length < n + 1) return null;
-  let gains = 0;
-  let losses = 0;
-  for (let i = closes.length - n; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) gains += d;
-    else losses -= d;
-  }
-  if (losses === 0) return 100;
-  return 100 - 100 / (1 + gains / n / (losses / n));
-}
+/** RSI 最新值 —— 口径统一为 **Wilder 标准**（实现见 shared/rsi.mjs；S6 收敛为单一实现） */
+const rsiLast = wilderRsiLast;
 
 function emaSeries(values, period) {
   const k = 2 / (period + 1);
@@ -445,71 +437,207 @@ function buildDigest(reports, quote, klines) {
     keyPoints,
     price: quote?.price ?? closes[closes.length - 1],
     limitations: [...new Set(reports.flatMap((r) => r.limitations))],
+    evidence: buildEvidenceGraph(reports),
   };
 }
 
-// ═══════════ 第二阶段 · 两轮多空辩论 ═══════════
+// ═══════════ 论据图（A4）：「指标 → 取值 → 方向 → 权重」结构化 ═══════════
+//   设计要点：论据的 value 直接取自各分析师返回的 metrics（系统计算值），
+//   与注入给模型的指标快照同源，因此 M1（数值一致性）天然成立；
+//   规则路径的辩论由此从「正则捞词 + 固定话术」升级为「多因子加权论证」。
+
+const numOf = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** 由四分析师的 metrics 构建论据图（中性论据不进入多空证据和） */
+function buildEvidenceGraph(reports) {
+  const items = [];
+  const add = (seat, conf, metric, value, direction, importance, note) => {
+    const v = numOf(value);
+    if (v == null || direction === 'neutral') return;
+    const c = Math.max(10, Math.min(90, Number(conf) || 50));
+    items.push({
+      seat,
+      metric,
+      value: +v.toFixed(4),
+      direction, // bull | bear
+      importance,
+      // 权重 = 指标重要度 × 分析师置信度系数（0.6 ~ 1.0）
+      weight: +(importance * (0.6 + 0.4 * (c / 100))).toFixed(4),
+      note,
+    });
+  };
+  for (const r of reports ?? []) {
+    const m = r?.metrics ?? {};
+    const c = r?.confidence ?? 50;
+    if (/技术分析师/.test(r.name)) {
+      const ma5 = numOf(m.ma5);
+      const ma20 = numOf(m.ma20);
+      const ma60 = numOf(m.ma60);
+      if (ma5 != null && ma20 != null && ma60 != null) {
+        const dir = ma5 > ma20 && ma20 > ma60 ? 'bull' : ma5 < ma20 && ma20 < ma60 ? 'bear' : 'neutral';
+        add(r.name, c, 'MA5', ma5, dir, 0.5, `MA5 ${ma5.toFixed(2)}`);
+        add(r.name, c, 'MA20', ma20, dir, 0.62, `MA20 ${ma20.toFixed(2)}`);
+        add(r.name, c, 'MA60', ma60, dir, 0.56, `MA60 ${ma60.toFixed(2)}`);
+      }
+      const macd = numOf(m.macdHist);
+      if (macd != null) add(r.name, c, 'MACD柱', macd, macd > 0 ? 'bull' : macd < 0 ? 'bear' : 'neutral', 0.6, `MACD 柱 ${macd.toFixed(3)}`);
+      const rsi = numOf(m.rsi);
+      if (rsi != null) add(r.name, c, 'RSI(14)', rsi, rsi >= 70 ? 'bear' : rsi <= 30 ? 'bull' : 'neutral', 0.55, `RSI ${rsi.toFixed(1)}`);
+      const health = numOf(m.health);
+      if (health != null) add(r.name, c, '趋势健康值', health, health >= 60 ? 'bull' : health <= 40 ? 'bear' : 'neutral', 0.62, `趋势健康值 ${health}/100`);
+    }
+    if (/基本面分析师/.test(r.name)) {
+      const roe = numOf(m.roe);
+      if (roe != null) add(r.name, c, 'ROE', roe, roe >= 12 ? 'bull' : roe < 8 ? 'bear' : 'neutral', 0.78, `ROE ${roe.toFixed(1)}%`);
+      const yoy = numOf(m.profitYoY);
+      if (yoy != null) add(r.name, c, '净利润同比', yoy, yoy >= 10 ? 'bull' : yoy <= -10 ? 'bear' : 'neutral', 0.72, `归母净利同比 ${yoy.toFixed(1)}%`);
+      const pe = numOf(m.pe);
+      if (pe != null && pe > 0) add(r.name, c, 'PE(动)', pe, pe < 20 ? 'bull' : pe > 60 ? 'bear' : 'neutral', 0.68, `PE(动) ${pe.toFixed(1)}`);
+      const slope = numOf(m.slope);
+      if (slope != null) add(r.name, c, '趋势斜率', slope, slope > 0.08 ? 'bull' : slope < -0.08 ? 'bear' : 'neutral', 0.55, `120 日斜率 ${slope.toFixed(3)}%/根`);
+      const mdd = numOf(m.maxDrawdown);
+      if (mdd != null) add(r.name, c, '最大回撤', mdd, mdd > 45 ? 'bear' : mdd < 20 ? 'bull' : 'neutral', 0.5, `250 日最大回撤 ${mdd.toFixed(1)}%`);
+    }
+    if (/新闻分析师/.test(r.name)) {
+      const good = numOf(m.good);
+      const bad = numOf(m.bad);
+      const ev = numOf(m.events);
+      if (good != null && bad != null && good + bad > 0) {
+        add(r.name, c, '公告情绪净额', good - bad, good > bad ? 'bull' : bad > good ? 'bear' : 'neutral', 0.62, `利好 ${good} 条 / 利空 ${bad} 条`);
+      }
+      if (ev != null && ev > 0) add(r.name, c, '量价异动事件数', ev, 'bull', 0.45, `放量异动 ${ev} 起`);
+    }
+    if (/情绪分析师/.test(r.name)) {
+      const sum5 = numOf(m.sum5);
+      if (sum5 != null) add(r.name, c, '主力资金净额(5日)', sum5, sum5 > 0 ? 'bull' : sum5 < 0 ? 'bear' : 'neutral', 0.74, `主力 5 日 ${(sum5 / 1e8).toFixed(2)} 亿`);
+      const pv = numOf(m.pvRatio);
+      if (pv != null) add(r.name, c, '量价配合度', pv, pv > 1.25 ? 'bull' : pv < 0.8 ? 'bear' : 'neutral', 0.58, `量价配合度 ${pv.toFixed(2)}`);
+      const pos = numOf(m.posInRange);
+      if (pos != null && pos > 90) add(r.name, c, '52周分位', pos, 'bear', 0.46, `52 周分位 ${pos.toFixed(0)}%（年内高位）`);
+      const rzye = numOf(m.rzye);
+      if (rzye != null && rzye > 0) add(r.name, c, '融资余额', rzye, 'bull', 0.3, `融资余额 ${(rzye / 1e8).toFixed(1)} 亿`);
+    }
+  }
+  return items;
+}
+
+/** 论据 → 可核验论点文本（指标 / 取值 / 方向 / 权重 四要素齐备） */
+const fmtEvidence = (e) => `【${e.metric}】取值 ${e.value}｜方向 ${e.direction === 'bull' ? '多' : '空'}｜权重 ${e.weight}`;
+const sumWeight = (list) => +list.reduce((a, e) => a + e.weight, 0).toFixed(3);
+
+// ═══════════ 第二阶段 · 两轮多空辩论（论据图驱动） ═══════════
 
 function bullResearcher(digest) {
-  const args = [];
-  if (digest.votes.bullish > 0) args.push(`${digest.votes.bullish} 份收集报告倾向多方，加权偏多度 ${digest.weightedBias}，趋势与资金结构存在共振基础`);
-  digest.keyPoints.forEach((kp) => {
-    const p = kp.points.find((x) => /多头|向上|增强|偏多|反弹|放大|上移|温和|关注度高|优秀|低估值|高增长|净流入/.test(x));
-    if (p) args.push(p);
-  });
-  args.push('量价结构若延续，动量策略存在顺周期空间；回撤可控时风险收益占优');
-  return { name: 'Bull-1 · 多头研究员', arguments: args.slice(0, 4), stance: '买入逻辑：趋势 × 动能 × 参与度三要素' };
+  const ev = digest.evidence ?? [];
+  const bull = ev.filter((e) => e.direction === 'bull').sort((a, b) => b.weight - a.weight);
+  const bear = ev.filter((e) => e.direction === 'bear').sort((a, b) => b.weight - a.weight);
+  const picked = bull.slice(0, 4);
+  // 多头证据不足时，以「空方论据权重偏低」作为可核验的反向支撑（仍绑定具体数值，不做无据话术）
+  for (const b of bear) {
+    if (picked.length >= 4) break;
+    picked.push({ ...b, counter: true });
+  }
+  const args = picked.map((e) =>
+    e.counter
+      ? `【反证·${e.metric}】取值 ${e.value}｜空头权重仅 ${e.weight}，为证据图中权重最低的空方论据，不足以支撑做空`
+      : `${fmtEvidence(e)}｜${e.note}，构成本方做多证据链的一环`,
+  );
+  return {
+    name: 'Bull-1 · 多头研究员',
+    arguments: args.slice(0, 4),
+    stance: `买入逻辑：多头证据 ${bull.length} 条、权重和 ${sumWeight(bull)}（加权偏多度 ${digest.weightedBias}）`,
+    evidence: picked.slice(0, 4).map(({ seat, metric, value, direction, weight }) => ({ seat, metric, value, direction, weight })),
+  };
 }
 
 function bearResearcher(digest, bull) {
-  const args = [];
-  if (digest.votes.bearish > 0) args.push(`${digest.votes.bearish} 份收集报告倾向空方，反向信号不可忽视`);
-  digest.keyPoints.forEach((kp) => {
-    const p = kp.points.find((x) => /超买|超卖|回撤|走弱|下移|退潮|抛压|不确定性|杠杆偏高|估值偏高/.test(x));
-    if (p) args.push(p);
-  });
-  if (bull?.arguments?.length) args.push(`对多头第一条论点的反驳："${bull.arguments[0].slice(0, 40)}…"——顺周期外推在量价背离时会迅速失效`);
-  args.push(`四份报告中置信度受数据局限压低的越多，多头证据链越不牢固`);
-  return { name: 'Bear-1 · 空头研究员', arguments: args.slice(0, 4), stance: '卖出/防守逻辑：证伪多头证据链的薄弱环节' };
+  const ev = digest.evidence ?? [];
+  const bear = ev.filter((e) => e.direction === 'bear').sort((a, b) => b.weight - a.weight);
+  const bullEv = ev.filter((e) => e.direction === 'bull').sort((a, b) => b.weight - a.weight);
+  const args = bear.slice(0, 3).map((e) => `${fmtEvidence(e)}｜${e.note}，指向下行风险`);
+  const opp = (bull?.evidence ?? [])[0] ?? null;
+  if (opp) {
+    args.push(`对多头首要论据的反驳：${fmtEvidence(opp)}｜该论据权重低于本方最强证据，静态指标外推在量价背离时失效`);
+  } else if (bull?.arguments?.length) {
+    args.push(`对多头首要论点的反驳："${String(bull.arguments[0]).slice(0, 40)}…"——顺周期外推在量价背离时会失效`);
+  }
+  for (const b of bullEv) {
+    if (args.length >= 4) break;
+    args.push(`【风险敞口·${b.metric}】取值 ${b.value}｜多头权重 ${b.weight} 已被计入价格，若该指标回落将直接证伪多头核心假设`);
+  }
+  return {
+    name: 'Bear-1 · 空头研究员',
+    arguments: args.slice(0, 4),
+    stance: `卖出/防守逻辑：空头证据 ${bear.length} 条、权重和 ${sumWeight(bear)}`,
+    evidence: bear.slice(0, 3).map(({ seat, metric, value, direction, weight }) => ({ seat, metric, value, direction, weight })),
+  };
 }
 
 function bullRebut(digest, bear) {
+  const ev = digest.evidence ?? [];
+  const bull = ev.filter((e) => e.direction === 'bull').sort((a, b) => b.weight - a.weight);
   const args = [];
-  const keep = digest.keyPoints
-    .flatMap((kp) => kp.points)
-    .find((x) => /健康值|净流入|ROE|毛利率|低估值|高增长|多头排列/.test(x));
-  if (keep) args.push(`结构性证据未被空头推翻：${keep}`);
-  if (bear?.arguments?.length) args.push(`空头引用的"${bear.arguments[0].slice(0, 30)}…"属于静态风险描述，并不构成方向性证据`);
-  args.push('多头立场维持：只要趋势健康值不跌破中位，回调即是吸纳窗口');
-  return { name: 'Bull-1 · 第二轮陈述', arguments: args.slice(0, 3) };
+  if (bull[0]) args.push(`结构性证据未被空头推翻：${fmtEvidence(bull[0])}｜${bull[0].note}，为空方未触及的最强多方论据`);
+  const opp = (bear?.evidence ?? [])[0] ?? null;
+  if (opp) args.push(`空头论据 ${fmtEvidence(opp)} 属静态风险描述，权重低于本方证据链，不构成方向性证据`);
+  else if (bear?.arguments?.length) args.push(`空头引用"${String(bear.arguments[0]).slice(0, 30)}…"未给出可核验数值，论证强度弱于本方`);
+  if (bull[1]) args.push(`多头立场维持：${fmtEvidence(bull[1])}｜${bull[1].note}，回调即是吸纳窗口`);
+  return {
+    name: 'Bull-1 · 第二轮陈述',
+    arguments: args.slice(0, 3),
+    evidence: [...bull.slice(0, 2), ...(opp ? [opp] : [])].map(({ seat, metric, value, direction, weight }) => ({ seat, metric, value, direction, weight })),
+  };
 }
 
 function bearFinal(digest, bullRebuttal) {
+  const ev = digest.evidence ?? [];
+  const bear = ev.filter((e) => e.direction === 'bear').sort((a, b) => b.weight - a.weight);
   const args = [];
-  args.push('最终陈述：静态证据（均线/量价）外推的胜率依赖市场环境维持，而环境中最大的不可控变量是消息面与资金面突变');
-  args.push('维持防守立场：在研究与教学语境下，HOLD/观望比追价更具长期期望值');
-  return { name: 'Bear-1 · 最终陈述', arguments: args.slice(0, 2) };
+  if (bear[0]) args.push(`最终陈述：${fmtEvidence(bear[0])} 为本方最强证据，空方证据权重和 ${sumWeight(bear)}，下行风险未被多头证伪`);
+  const opp = (bullRebuttal?.evidence ?? [])[0];
+  if (opp) args.push(`多头反驳中 ${fmtEvidence(opp)} 未改变本方证据强度排序；维持防守立场（HOLD/观望在研究语境下期望值更优）`);
+  else args.push('多头反驳未提供新的可核验证据，维持防守立场');
+  return {
+    name: 'Bear-1 · 最终陈述',
+    arguments: args.slice(0, 2),
+    evidence: bear.slice(0, 1).map(({ seat, metric, value, direction, weight }) => ({ seat, metric, value, direction, weight })),
+  };
 }
 
+/** 裁决：加权证据求和（多头证据权重和 − 空头证据权重和），替换原三阈值单点判定 */
 function researchChief(digest, bull, bear, bullRebuttal, bearFinal) {
-  const w = digest.weightedBias;
+  const ev = digest.evidence ?? [];
+  const bullEv = ev.filter((e) => e.direction === 'bull');
+  const bearEv = ev.filter((e) => e.direction === 'bear');
+  const bullW = sumWeight(bullEv);
+  const bearW = sumWeight(bearEv);
+  const total = bullW + bearW;
+  const evidenceScore = total > 0 ? +((bullW - bearW) / total).toFixed(3) : 0;
+  // 证据图为主（0.7）、主理人加权偏多度为辅（0.3）——避免任一维度单独主导
+  const score = +(evidenceScore * 0.7 + digest.weightedBias * 0.3).toFixed(3);
   let verdict = 'HOLD';
   let reason;
-  if (w >= 0.35) {
+  if (score >= 0.35) {
     verdict = 'BUY';
-    reason = `多方证据加权优势明显（加权偏多度 ${w}），两轮辩论中多头结构性证据未被有效证伪，裁决为 BUY（研究倾向）`;
-  } else if (w <= -0.35) {
+    reason = `多头加权证据 ${bullW} 对空头 ${bearW}（证据分 ${evidenceScore}、融合分 ${score}）；两轮辩论中多头结构性证据未被有效证伪，裁决为 BUY（研究倾向）`;
+  } else if (score <= -0.35) {
     verdict = 'SELL';
-    reason = `空方证据加权优势明显（加权偏多度 ${w}），多头论证未能自洽，裁决为 SELL（研究倾向）`;
+    reason = `空头加权证据 ${bearW} 对多头 ${bullW}（证据分 ${evidenceScore}、融合分 ${score}）；多头论证未能自洽，裁决为 SELL（研究倾向）`;
   } else {
-    reason = `多空证据加权后接近均衡（加权偏多度 ${w}），依据"不和稀泥"铁律，明确裁决为 HOLD（研究倾向），等待更强的方向信号`;
+    reason = `多空加权证据接近均衡（多头 ${bullW} / 空头 ${bearW}，证据分 ${evidenceScore}、融合分 ${score}），依据"不和稀泥"铁律，明确裁决为 HOLD（研究倾向），等待更强的方向信号`;
   }
   return {
     name: 'Sensus · 研究主管',
     verdict,
     reason,
-    score: w,
+    score,
+    evidenceScore,
+    evidence: { bullWeight: bullW, bearWeight: bearW, bullCount: bullEv.length, bearCount: bearEv.length },
     rounds: 2,
+    method: 'evidence-graph-v1',
     rule: '铁律：不和稀泥，必须给出 BUY / SELL / HOLD 之一',
   };
 }
@@ -648,6 +776,17 @@ function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, fe
       stages: stages_,
       final: final_,
       disclaimer: DISCLAIMER,
+      // 规则引擎路径：云端大模型未配置，全部角色由本地规则引擎产出。
+      // 显式标注，避免用户把规则结论误当成大模型分析。
+      llmEnabled: false,
+      degraded: {
+        degraded: true,
+        llm: 0,
+        rule: 0,
+        total: 0,
+        seats: [],
+        reason: '云端大模型未配置：本次全部角色由本地规则引擎产出',
+      },
     };
     const reportId = reportstore.saveReport(trace, uid);
     return { ...trace, reportId, uid };
@@ -739,4 +878,4 @@ function digestPrice(digest) {
   return digest.price;
 }
 
-module.exports = { run, DISCLAIMER };
+module.exports = { run, DISCLAIMER, techAnalyst, fundamentalAnalyst, newsAnalyst, sentimentAnalyst, buildDigest, buildEvidenceGraph, bullResearcher, bearResearcher, bullRebut, bearFinal, researchChief, trader, riskTrio, riskChief };

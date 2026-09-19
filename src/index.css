@@ -15,6 +15,12 @@
   box-sizing: border-box;
 }
 
+html {
+  /* 页面切换时内容高度不同 → 竖滚动条出现/消失 → 视口宽度突变（整页横移抖动）。
+     常驻保留滚动条槽位，从根上消除该抖动（Chromium 94+）。 */
+  scrollbar-gutter: stable;
+}
+
 html,
 body {
   margin: 0;

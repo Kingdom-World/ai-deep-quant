@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { fmtDateTime } from '../lib/time';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 import { agentsApi, type AgentTrace } from '../api/dataService';
@@ -90,15 +91,20 @@ export default function AgentReportPage() {
 
   if (error) {
     return (
-      <div style={{ ...theme.page, padding: 24 }}>
+      <div style={{ ...theme.page }}>
         <TopNav />
+        <div style={{ padding: 24 }}>
         <div style={{ ...CARD, marginTop: 24, color: '#f87171' }}>✗ {error}</div>
+        </div>
       </div>
     );
   }
   if (!trace) {
     return (
-      <div style={{ ...theme.page, padding: 24, color: '#64748b' }}>加载报告中…</div>
+      <div style={{ ...theme.page, color: '#64748b' }}>
+        <TopNav />
+        <div style={{ padding: 24 }}>加载报告中…</div>
+      </div>
     );
   }
 
@@ -108,9 +114,10 @@ export default function AgentReportPage() {
   const debate = stages.debate ?? {};
 
   return (
-    <div style={{ ...theme.page, padding: '20px 24px 44px' }}>
+    <div style={{ ...theme.page }}>
       <TopNav />
-      <div style={{ maxWidth: 980, margin: '0 auto' }}>
+      <div style={{ padding: '20px 24px 44px' }}>
+      <div>
         {/* 文档头 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '18px 0 4px', flexWrap: 'wrap' }}>
           <span style={{ cursor: 'pointer', color: '#60a5fa', fontWeight: 700, fontSize: 15 }} onClick={() => navigate('/agents')}>
@@ -120,9 +127,24 @@ export default function AgentReportPage() {
             📄 团队研究报告 · {trace.symbol}
             {trace.name ? <span style={{ fontSize: 13, color: '#94a3b8', marginLeft: 8 }}>{trace.name}</span> : null}
           </h1>
+          <button
+            onClick={async () => {
+              if (!window.confirm(`确定删除报告 ${id}？删除后不可恢复。`)) return;
+              try {
+                const r = await agentsApi.remove(id ?? '');
+                if (!r.ok) throw new Error(r.error || '删除失败');
+                navigate('/agents');
+              } catch (e) {
+                window.alert((e as Error).message);
+              }
+            }}
+            style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12, color: '#f87171', backgroundColor: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 8, cursor: 'pointer' }}
+          >
+            🗑 删除此报告
+          </button>
         </div>
         <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
-          模式 {trace.mode} · 生成于 {String(trace.ranAt).slice(0, 19).replace('T', ' ')} · 报告编号 {trace.reportId}
+          模式 {trace.mode} · 生成于 {fmtDateTime(trace.ranAt)} · 报告编号 {trace.reportId}
         </div>
 
         {/* 合规声明 */}
@@ -139,8 +161,51 @@ export default function AgentReportPage() {
             fontWeight: 600,
           }}
         >
-          ⚠️ 合规声明：以下全部内容由本地程序化规则引擎自动生成的学术研究演示，**不构成任何投资建议**；数据来自公开行情与东方财富公开接口，未覆盖项已标注降级。
+          ⚠️ 合规声明：本报告由 <b>AI 多角色协作</b>自动生成，属学术研究演示，<b>不构成任何投资建议</b>；数据来自公开行情、东方财富公开接口与新浪滚动要闻，未覆盖项已标注降级。
         </div>
+
+        {/* AI 参与度：让「是否真的调用了云端大模型」可见。
+            以前这块信息只在后端 trace 里，界面看不到，导致团队静默退化成纯规则引擎时
+            用户仍以为报告是 AI 产出的——这里把它显式暴露出来。 */}
+        {(() => {
+          const roster = trace.llmRoster || [];
+          if (!roster.length) return null;
+          const llmCount = roster.filter((r) => r.engine === 'llm').length;
+          const ruleCount = roster.length - llmCount;
+          const allRule = llmCount === 0;
+          return (
+            <div style={{ ...CARD, marginBottom: 16, border: `1px solid ${allRule ? 'rgba(248,113,113,0.4)' : 'rgba(96,165,250,0.22)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: allRule ? '#f87171' : '#e2e8f0' }}>
+                  {allRule ? '⚠️ 本次分析未接入云端大模型' : '🛰️ AI 参与度'}
+                </div>
+                <div style={{ fontSize: 12.5, color: allRule ? '#f87171' : '#93c5fd', fontFamily: 'Consolas, monospace', fontWeight: 700 }}>
+                  {llmCount}/{roster.length} 个角色由大模型产出
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {roster.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, flexWrap: 'wrap' }}>
+                    <span style={{ width: 62, color: r.engine === 'llm' ? '#6ee7b7' : '#94a3b8' }}>{r.engine === 'llm' ? '🛰️ AI' : '⚙️ 规则'}</span>
+                    <span style={{ flex: 1, minWidth: 150, color: '#cbd5e1' }}>{r.seat}</span>
+                    <span style={{ color: '#64748b', fontFamily: 'Consolas, monospace' }}>{r.model}</span>
+                  </div>
+                ))}
+              </div>
+              {allRule && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: '#fbbf24', lineHeight: 1.7 }}>
+                  可能原因：云端模型未配置 / 免费额度被限流 / 网络不可达。此时结论由本地规则引擎给出，推理深度低于 AI 版本。
+                </div>
+              )}
+              {!allRule && ruleCount > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: '#fbbf24', lineHeight: 1.7 }}>
+                  本次有 {ruleCount} 个角色由规则引擎兜底（免费额度限流时常见），这些角色的论述深度低于 AI 版本，
+                  请以上方逐角色的引擎标注为准。
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 最终结论 */}
         <div style={{ ...CARD, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', border: `1px solid ${vColor}66` }}>
@@ -299,6 +364,7 @@ export default function AgentReportPage() {
         <div style={{ fontSize: 11, color: '#475569', textAlign: 'center', padding: '8px 0', lineHeight: 1.7 }}>
           {trace.disclaimer}
         </div>
+      </div>
       </div>
     </div>
   );

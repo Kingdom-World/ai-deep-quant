@@ -26,30 +26,42 @@ function readJsonl(file) {
       })
       .filter(Boolean);
   } catch {
+    // 文件不存在或无权限时优雅跳过，返回空数组
     return [];
   }
 }
 
 function main() {
-  const out = [];
+  // 各来源候选条目（最终会在全局去重阶段保留首次出现）
+  const userItems = []; // 1) 用户教学
+  const fbItems = [];   // 2) 反馈认可
+  const agentItems = [];// 3) Agent 报告
+  const histItems = []; // 4) 问答历史 quality 过滤
+
   // 1) 用户教学的知识条目（质量最高）
   try {
     const kb = JSON.parse(fs.readFileSync(path.join(AI_DIR, 'knowledge.json'), 'utf8'));
     for (const e of kb.entries ?? []) {
-      if (e.source === 'user' && (e.weight ?? 1) >= 0.8) {
-        out.push({ messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: e.q }, { role: 'assistant', content: e.a }] });
+      if (e.source === 'user' && (e.weight ?? 1) >= 0.8 && e.q && e.a) {
+        userItems.push({ qn: normalizeQ(e.q), messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: e.q }, { role: 'assistant', content: e.a }] });
       }
     }
   } catch { /* 无知识库 */ }
 
   // 2) 反馈为点赞的问答（用户认可的表达方式）
-  const feedback = readJsonl(path.join(AI_DIR, 'feedback.jsonl'));
-  const ups = new Set(feedback.filter((f) => f.rating === 'up').map((f) => normalizeQ(f.question)));
+  //    兼容 feedback.jsonl 与 feedback-archive.jsonl，两处的 rating==='up' 均视为认可样本
+  const ups = new Set();
+  for (const fn of ['feedback.jsonl', 'feedback-archive.jsonl']) {
+    for (const f of readJsonl(path.join(AI_DIR, fn))) {
+      if (f.rating === 'up' && f.question) ups.add(normalizeQ(f.question));
+    }
+  }
   const history = readJsonl(path.join(AI_DIR, 'history.jsonl'));
   for (const h of history) {
     if (h.type === 'learned') continue; // 知识命中已在 1 中覆盖
-    if (ups.has(normalizeQ(h.q))) {
-      out.push({ messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: h.q }, { role: 'assistant', content: h.a }] });
+    const qn = normalizeQ(h.q);
+    if (ups.has(qn)) {
+      fbItems.push({ qn, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: h.q }, { role: 'assistant', content: h.a }] });
     }
   }
 
@@ -70,13 +82,39 @@ function main() {
         ...(t.stages?.collect?.agents ?? []).map((a) => `· ${a.name}：${(a.findings ?? [])[0] ?? ''}`),
         t.stages?.debate?.chief ? `· 研究主管裁决：${t.stages.debate.chief.verdict}` : '',
       ].filter(Boolean).join('\n');
-      out.push({ messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: q }, { role: 'assistant', content: a }] });
+      agentItems.push({ qn: normalizeQ(q), messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: q }, { role: 'assistant', content: a }] });
     }
   } catch { /* 无报告历史 */ }
 
+  // 4) 问答历史 quality 过滤导出（本次扩增语料的主力来源）
+  //    过滤规则：排除 fallback 类型、空问题/回答、回答 < 40 字符；
+  //    并排除已在前 1/2/3 来源出现过的重复问题（按 normalizeQ 去重，保留首次出现）。
+  //    注意：来源4内部的重复问题予以保留（任务要求扩增语料，仅做跨来源去重）。
+  const seenBeforeHist = new Set([
+    ...userItems.map((i) => i.qn),
+    ...fbItems.map((i) => i.qn),
+    ...agentItems.map((i) => i.qn),
+  ]);
+  let histDupRemoved = 0;
+  for (const h of history) {
+    if (h.type === 'fallback') continue;          // 规则引擎兜底的低质回答
+    if (!h.q || !h.a) continue;                   // 问题或回答为空
+    if (String(h.a).length < 40) continue;        // 回答过短，训练价值低
+    const qn = normalizeQ(h.q);
+    if (seenBeforeHist.has(qn)) { histDupRemoved++; continue; } // 已在前来源出现，排除
+    histItems.push({ qn, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: h.q }, { role: 'assistant', content: h.a }] });
+  }
+
+  // 汇总输出（来源4内部重复已保留，仅去除跨来源重复）；沿用 {messages:[...]} 三段式结构
+  const out = [...userItems, ...fbItems, ...agentItems, ...histItems].map((i) => ({ messages: i.messages }));
+
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, out.map((o) => JSON.stringify(o)).join('\n') + (out.length ? '\n' : ''), 'utf8');
-  console.log(`语料导出完成: ${out.length} 条 → ${OUT}`);
+
+  console.log(`语料导出完成 → ${OUT}`);
+  console.log(`总条数: ${out.length} 条`);
+  console.log(`来源分布: 用户教学 ${userItems.length} / 反馈认可 ${fbItems.length} / Agent报告 ${agentItems.length} / 问答历史 ${histItems.length}`);
+  console.log(`去重后条数: ${out.length} 条（跨来源重复已排除 ${histDupRemoved} 条）`);
   console.log('用法：上传到云端训练环境，与 fin_seed.jsonl 合并后进行下一轮 QLoRA 训练。');
 }
 

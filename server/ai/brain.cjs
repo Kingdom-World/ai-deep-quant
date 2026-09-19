@@ -8,11 +8,14 @@
 // ─────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('../atomic-write.cjs');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data', 'ai');
 const SEED_FILE = path.join(__dirname, '..', '..', 'ai-training', 'dataset', 'fin_seed.jsonl');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
+const TAGS_FILE = path.join(DATA_DIR, 'knowledge-tags.json');
 const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.jsonl');
+const FEEDBACK_ARCHIVE_FILE = path.join(DATA_DIR, 'feedback-archive.jsonl');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.jsonl');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const TRAIN_LOG = path.join(DATA_DIR, 'train.log');
@@ -54,6 +57,24 @@ function init() {
         /* 忽略损坏文件 */
       }
     }
+    // A2 · 加载知识标签映射（确定性标签器产出），使 lookup() 中「标签参与分词」的分支真正生效。
+    //      此前 50 条知识全部无 tags，标签分支从未触发，同义问法检索不到。
+    if (fs.existsSync(TAGS_FILE)) {
+      try {
+        const tagMap = JSON.parse(fs.readFileSync(TAGS_FILE, 'utf8')).tags ?? {};
+        let tagged = 0;
+        for (const e of knowledge.entries) {
+          const t = tagMap[normalizeQ(e.q)];
+          if (Array.isArray(t) && t.length && !(e.tags ?? []).length) {
+            e.tags = t;
+            tagged += 1;
+          }
+        }
+        console.log(`[AI Brain] 知识标签已装载: ${tagged}/${knowledge.entries.length} 条`);
+      } catch (err) {
+        console.warn('[AI Brain] 标签映射加载失败:', err.message);
+      }
+    }
     if (fs.existsSync(STATE_FILE)) {
       try {
         state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) };
@@ -66,25 +87,26 @@ function init() {
 
 function persist() {
   try {
-    const tmp = `${KNOWLEDGE_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(knowledge, null, 2), 'utf8');
-    fs.renameSync(tmp, KNOWLEDGE_FILE);
-    const st = `${STATE_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(st, JSON.stringify(state, null, 2), 'utf8');
-    fs.renameSync(st, STATE_FILE);
+    writeJsonAtomic(KNOWLEDGE_FILE, knowledge, true);
+    writeJsonAtomic(STATE_FILE, state, true);
   } catch (e) {
     console.warn('[AI Brain] 持久化失败:', e.message);
   }
 }
 
+/** 追加一行 JSONL；仅当文件体积超过阈值时才读取并裁剪（避免每次写入都全量读盘） */
+const LINE_LOG_MAX_BYTES = Math.max(Number(process.env.AI_LOG_MAX_BYTES) || 1_500_000, 200_000);
 function appendLine(file, obj) {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.appendFileSync(file, JSON.stringify(obj) + '\n', 'utf8');
-    // 语料上限保护：超过 4000 行时只保留最近 2000 行
-    if (fs.existsSync(file)) {
-      const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
-      if (lines.length > 4000) fs.writeFileSync(file, lines.slice(-2000).join('\n') + '\n', 'utf8');
+    // 语料上限保护：先用 statSync 做廉价门禁，超过阈值才读取并裁掉前一半。
+    // 原实现在每次追加后都 readFileSync 整个文件再数行——而 recordQA/recordFeedback
+    // 都在问答热路径上，文件越大单次请求越慢，且同步读会阻塞事件循环。
+    const { size } = fs.statSync(file);
+    if (size > LINE_LOG_MAX_BYTES) {
+      const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+      fs.writeFileSync(file, lines.slice(-Math.floor(lines.length / 2)).join('\n') + '\n', 'utf8');
     }
   } catch { /* 只读 FS 忽略 */ }
 }
@@ -130,34 +152,72 @@ function addEntry(q, a, source = 'user') {
   return { ok: true };
 }
 
-/** 模糊检索知识库：返回 {entry, score} 或 null */
-function lookup(q) {
+/**
+ * 条目匹配打分：2-gram 重合度 + 标签直击加成
+ *   · 2-gram 重合度对「同义改写」鲁棒性差（问句里大量口语噪声 gram 会稀释分值）；
+ *   · A2 补齐的标签是领域同义词（ROE/净资产收益率、MACD/金叉…），标签原文出现在问句中
+ *     是远比 2-gram 更可靠的命中信号，因此作为加成项参与打分——这也是标签体系的实际价值所在。
+ */
+function scoreEntry(e, words, rawQ) {
+  const eWords = new Set(tokenize(e.q + ' ' + (e.tags ?? []).join(' ')));
+  let overlap = 0;
+  for (const w of words) {
+    for (const ew of eWords) {
+      if (ew.includes(w) || w.includes(ew)) {
+        overlap += 1;
+        break;
+      }
+    }
+  }
+  const nq = normalizeQ(rawQ);
+  let tagHits = 0;
+  if (nq) {
+    for (const t of e.tags ?? []) {
+      const nt = normalizeQ(t);
+      if (nt.length >= 2 && nq.includes(nt)) tagHits += 1;
+    }
+  }
+  const base = overlap / Math.max(words.length, 1);
+  const score = Math.min(1, base + Math.min(tagHits, 3) * 0.35);
+  return { overlap, tagHits, score, weighted: score * (0.6 + (0.4 * Math.min(e.weight ?? 1, 3)) / 3) };
+}
+
+/** 取最匹配条目（threshold 为加权分门槛） */
+function bestEntry(q, threshold) {
   const words = tokenize(q);
   if (!words.length) return null;
   let best = null;
   let bestScore = 0;
   for (const e of knowledge.entries) {
-    const eWords = new Set(tokenize(e.q + ' ' + (e.tags ?? []).join(' ')));
-    let overlap = 0;
-    for (const w of words) {
-      for (const ew of eWords) {
-        if (ew.includes(w) || w.includes(ew)) {
-          overlap += 1;
-          break;
-        }
-      }
-    }
-    const score = overlap / Math.max(words.length, 1);
-    const weighted = score * (0.6 + (0.4 * Math.min(e.weight ?? 1, 3)) / 3);
+    const { overlap, weighted } = scoreEntry(e, words, q);
     if (overlap >= 1 && weighted > bestScore) {
       bestScore = weighted;
       best = e;
     }
   }
-  if (!best || bestScore < 0.45) return null;
-  best.hits = (best.hits ?? 0) + 1;
+  return best && bestScore >= threshold ? { entry: best, score: bestScore } : null;
+}
+
+/**
+ * A1 · 反馈定位对应知识条目：优先精确匹配，其次模糊匹配（阈值与检索一致）。
+ * 语义依据：反馈针对的是「用户实际拿到的回答」——若该回答来自知识库，检索必然已命中（≥0.45）；
+ * 若未命中（云端/规则引擎作答），则无条目可调，反馈转入归档语料，属于正确行为而非缺陷。
+ * 原实现只做精确匹配 —— 用户问句与知识条目几乎不可能逐字相同，导致反馈权重永不生效、闭环空转。
+ */
+function findEntryFor(q) {
+  const exact = knowledge.entries.find((x) => normalizeQ(x.q) === normalizeQ(q));
+  if (exact) return { entry: exact, matched: 'exact' };
+  const hit = bestEntry(q, 0.45);
+  return hit ? { entry: hit.entry, matched: 'fuzzy' } : null;
+}
+
+/** 模糊检索知识库：返回 {entry, score} 或 null */
+function lookup(q) {
+  const hit = bestEntry(q, 0.45);
+  if (!hit) return null;
+  hit.entry.hits = (hit.entry.hits ?? 0) + 1;
   persist();
-  return { entry: best, score: +Math.min(bestScore, 1).toFixed(2) };
+  return { entry: hit.entry, score: +Math.min(hit.score, 1).toFixed(2) };
 }
 
 function bumpHits(id) {
@@ -171,14 +231,15 @@ function recordQA(question, answer, meta = {}) {
 
 function recordFeedback({ question, answer, rating, comment }) {
   appendLine(FEEDBACK_FILE, { t: new Date().toISOString(), rating, question: String(question || '').slice(0, 200), answer: String(answer || '').slice(0, 300), comment: String(comment || '').slice(0, 200) });
-  // 实时反馈：调整匹配知识条目的权重（正反馈增强、负反馈削弱）
-  const nq = normalizeQ(question);
-  const e = knowledge.entries.find((x) => normalizeQ(x.q) === nq);
-  if (e) {
-    e.weight = (e.weight ?? 1) + (rating === 'up' ? 0.5 : -0.7);
-    persist();
+  // A1 · 实时反馈：调整「最匹配」知识条目的权重（精确 → 模糊两级定位，见 findEntryFor）
+  const hit = findEntryFor(question);
+  if (!hit) {
+    return { ok: true, applied: false, reason: '未匹配到对应知识条目（反馈已落盘，将在夜间重放时再次尝试）' };
   }
-  return { ok: true };
+  const delta = rating === 'up' ? 0.5 : -0.7;
+  hit.entry.weight = +((hit.entry.weight ?? 1) + delta).toFixed(2);
+  persist();
+  return { ok: true, applied: true, matched: hit.matched, entryId: hit.entry.id, weight: hit.entry.weight };
 }
 
 /** 每日自训练（02:30 维护窗口内调用）：反馈重放 → 升降权 → 剪枝 → 待学习清单 → 反哺 */
@@ -198,14 +259,22 @@ function nightlyTrain() {
       for (const line of lines) {
         try {
           const f = JSON.parse(line);
-          const e = knowledge.entries.find((x) => normalizeQ(x.q) === normalizeQ(f.question));
-          if (e) {
-            if (f.rating === 'up') { e.weight = (e.weight ?? 1) + 0.2; report.promoted += 1; }
-            if (f.rating === 'down') { e.weight = (e.weight ?? 1) - 0.3; report.demoted += 1; }
+          const hit = findEntryFor(f.question);
+          if (hit) {
+            if (f.rating === 'up') { hit.entry.weight = +((hit.entry.weight ?? 1) + 0.2).toFixed(2); report.promoted += 1; }
+            if (f.rating === 'down') { hit.entry.weight = +((hit.entry.weight ?? 1) - 0.3).toFixed(2); report.demoted += 1; }
           }
         } catch { /* 跳过坏行 */ }
       }
-      fs.writeFileSync(FEEDBACK_FILE, '', 'utf8'); // 重放后清空
+      // A1 · 重放后**归档**而非丢弃：反馈是全平台最稀缺的监督信号，必须沉淀为训练语料。
+      //      原实现直接清空，等同把数据烧掉——反馈闭环「有回流、无沉淀」。
+      if (lines.length) {
+        try {
+          fs.appendFileSync(FEEDBACK_ARCHIVE_FILE, lines.join('\n') + '\n', 'utf8');
+          report.archived = lines.length;
+        } catch { /* 归档失败不阻塞主流程 */ }
+      }
+      fs.writeFileSync(FEEDBACK_FILE, '', 'utf8'); // 清空待处理队列（原始数据已归档）
     }
     // 2) 剪枝：权重过低且被多次使用仍被踩的条目
     const before = knowledge.entries.length;
@@ -235,14 +304,19 @@ function nightlyTrain() {
 }
 
 function stats() {
+  const archiveLines = (() => {
+    try { return fs.readFileSync(FEEDBACK_ARCHIVE_FILE, 'utf8').trim().split('\n').filter(Boolean).length; } catch { return 0; }
+  })();
   return {
     knowledge: knowledge.entries.length,
+    tagsCovered: knowledge.entries.filter((e) => (e.tags ?? []).length > 0).length,
+    feedbackArchive: archiveLines,
     trainCount: state.trainCount ?? 0,
     trainedAt: state.trainedAt,
     lastNightly: state.lastNightly,
     pendingQuestions: (state.pendingQuestions ?? []).length,
-    sample: knowledge.entries.slice(0, 5).map((e) => ({ q: e.q, source: e.source, weight: +(e.weight ?? 1).toFixed(2) })),
+    sample: knowledge.entries.slice(0, 5).map((e) => ({ q: e.q, source: e.source, weight: +(e.weight ?? 1).toFixed(2), tags: (e.tags ?? []).length })),
   };
 }
 
-module.exports = { init, addEntry, lookup, recordQA, recordFeedback, nightlyTrain, stats };
+module.exports = { init, addEntry, lookup, recordQA, recordFeedback, nightlyTrain, stats, findEntryFor };

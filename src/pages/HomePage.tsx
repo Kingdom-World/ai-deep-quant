@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TopNav from '../components/TopNav';
 import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
+import { setVisibilityInterval } from '../lib/polling';
 import SectorMarketPanel from '../components/SectorMarketPanel';
 import {
   getHistory,
@@ -10,6 +11,9 @@ import {
   getQuotesBatch,
   getQuote,
   getRecommendations,
+  moodApi,
+  watchlistApi,
+  type MarketMood,
   type UnifiedQuote,
 } from '../api/dataService';
 import { BACKEND_MODE } from '../config';
@@ -161,11 +165,13 @@ export default function HomePage() {
   const [recError, setRecError] = useState<string | null>(null);
   /** 本次评分时间（python 模式来自后端每日 16:00 定时快照） */
   const [scoreTime, setScoreTime] = useState<string | null>(null);
-  // 我的收藏（localStorage 持久化，可增删）
+  // 我的收藏（服务端持久化，可增删；localStorage 作迁移与离线回退）
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [favLoading, setFavLoading] = useState(false);
   const [favInput, setFavInput] = useState('');
   const [favMsg, setFavMsg] = useState<string | null>(null);
+  // 市场温度计（融合 TSP：涨跌家数/涨停跌停/情绪分/领涨行业）
+  const [mood, setMood] = useState<MarketMood | null>(null);
   // 指数迷你走势（30 日收盘，供卡片 sparkline）
   const [sparks, setSparks] = useState<Record<string, number[]>>({});
   // 全局 store（大盘指数写入，供跨页共享）
@@ -174,14 +180,33 @@ export default function HomePage() {
   // 防止组件卸载后 setState（轮询异步返回）
   const aliveRef = useRef(true);
 
-  // 加载收藏（共享 localStorage 模块）
+  // 加载收藏（服务端持久化为主：跨设备同步；localStorage 仅作首次迁移与离线回退）
   const loadFavorites = useCallback(async () => {
     try {
-      const list = getFavorites();
-      if (list.length === 0) {
-        setFavorites([]);
+      let base: { symbol: string; name: string }[] = [];
+      let usedServer = false;
+      try {
+        const r = await watchlistApi.list();
+        if (r.ok) {
+          usedServer = true;
+          base = r.items.map((w) => ({ symbol: w.symbol.toUpperCase(), name: w.name }));
+        }
+      } catch {
+        /* 后端不可用时回退 localStorage */
+      }
+      // 首次迁移：服务端为空且本地有收藏 → 全量推送到服务端
+      if (usedServer && base.length === 0) {
+        const localList = getFavorites();
+        await Promise.all(localList.map((f) => watchlistApi.add({ symbol: f.symbol, name: f.name }).catch(() => {})));
+      }
+      if (!usedServer) {
+        base = getFavorites().map((f) => ({ symbol: f.symbol, name: f.name || f.symbol }));
+      }
+      if (base.length === 0) {
+        if (aliveRef.current) setFavorites([]);
         return;
       }
+      const list = base.map((b) => ({ symbol: b.symbol, market: detectMarket(b.symbol), name: b.name }));
       setFavLoading(true);
       const items: FavoriteItem[] = [];
       // python 后端模式：批量报价一次聚合（单用户限流 10 次/分钟，需节约请求）
@@ -265,14 +290,16 @@ export default function HomePage() {
       /* 名称获取失败不影响收藏 */
     }
     addFavoriteEntry({ symbol: sym, market, name });
+    watchlistApi.add({ symbol: sym, name }).catch(() => {}); // 服务端同步（失败不影响本地收藏）
     setFavInput('');
     setFavMsg(`已收藏「${sym}」(${marketLabel(market)})`);
     await loadFavorites();
   };
 
-  // 删除收藏（五角星取消）
+  // 删除收藏（五角星取消，本地 + 服务端同步）
   const removeFavorite = (symbol: string) => {
     removeFavoriteEntry(symbol);
+    watchlistApi.remove(symbol).catch(() => {});
     setFavorites((prev) => prev.filter((f) => f.symbol !== symbol));
     setFavMsg(`已取消收藏「${symbol}」`);
   };
@@ -357,6 +384,20 @@ export default function HomePage() {
     })();
     loadFavorites();
   }, [loadFavorites]);
+
+  // 市场温度计：30 秒轮询
+  useEffect(() => {
+    const load = () =>
+      moodApi
+        .get()
+        .then((m) => {
+          if (aliveRef.current) setMood(m);
+        })
+        .catch(() => {});
+    load();
+    const stopPolling = setVisibilityInterval(load, 30000);
+    return () => stopPolling();
+  }, []);
 
   // 拉取指数迷你走势（一次即可，getHistory 自带 5 分钟缓存）
   useEffect(() => {
@@ -502,26 +543,14 @@ export default function HomePage() {
       style={{
         ...theme.page,
         position: 'relative',
-        overflow: 'hidden',
+        // overflow: clip 与 hidden 裁剪效果相同，但**不创建滚动容器**——
+        // 原先的 hidden 会让 sticky 导航在首页失效（祖先带 overflow 即失效的 CSS 规则）
+        overflow: 'clip',
         color: '#e2e8f0',
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* ── 顶部提示条（学术研究定位） ── */}
-      <div
-        style={{
-          textAlign: 'center',
-          padding: '8px 16px',
-          fontSize: '12px',
-          color: '#f59e0b',
-          backgroundColor: 'rgba(245, 158, 11, 0.08)',
-          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
-        }}
-      >
-        📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
-      </div>
-
-      {/* ── 顶部导航栏（全站统一） ── */}
+      {/* ── 顶部导航栏（全站统一；顶部声明条由 TopNav 内置，全站每页可见） ── */}
       <TopNav />
 
       {/* 全站动画关键帧 + 网格纹理 */}
@@ -560,7 +589,7 @@ export default function HomePage() {
       )}
 
       {/* ── 主体 ── */}
-      <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '28px 24px 48px' }}>
+      <main style={{ padding: '28px 24px 48px' }}>
         {/* Hero 标语 */}
         <section style={{ textAlign: 'center', margin: '14px 0 40px', position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
@@ -592,6 +621,59 @@ export default function HomePage() {
             真实市场数据 · 多因子量化分析 · 策略回测 · 模拟撮合 · 每 10 秒自动更新
           </p>
         </section>
+
+        {/* ── 市场温度计（融合 TSP 市场情绪模块） ── */}
+        {mood && (
+          <section style={{ marginBottom: '28px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '18px',
+                flexWrap: 'wrap',
+                padding: '12px 18px',
+                backgroundColor: 'rgba(17,24,39,0.6)',
+                backdropFilter: 'blur(14px)',
+                WebkitBackdropFilter: 'blur(14px)',
+                border: '1px solid rgba(96,165,250,0.16)',
+                borderRadius: '12px',
+                fontSize: 13,
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontSize: 11, color: '#64748b', letterSpacing: 1 }}>市场情绪</span>
+                <b style={{ fontSize: 22, color: mood.score >= 60 ? '#ef4444' : mood.score >= 45 ? '#e2e8f0' : '#60a5fa' }}>{mood.score}</b>
+                <span style={{ fontSize: 11, color: '#64748b' }}>
+                  {mood.score >= 75 ? '过热' : mood.score >= 60 ? '偏暖' : mood.score >= 45 ? '中性' : mood.score >= 30 ? '偏冷' : '冰点'}
+                </span>
+              </span>
+              <span style={{ color: '#ef4444' }}>▲ {mood.up}</span>
+              <span style={{ color: '#22c55e' }}>▼ {mood.down}</span>
+              <span style={{ color: '#f87171' }}>涨停 {mood.limitUp}</span>
+              <span style={{ color: '#4ade80' }}>跌停 {mood.limitDown}</span>
+              <span style={{ color: '#94a3b8' }}>成交 {(mood.totalAmount / 1e12).toFixed(2)} 万亿</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {mood.industries.slice(0, 4).map((i) => (
+                  <span
+                    key={i.name}
+                    style={{ fontSize: 12, padding: '2px 9px', borderRadius: 999, backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#fca5a5', cursor: 'pointer' }}
+                    onClick={() => navigate('/screener')}
+                    title="前往选股页查看"
+                  >
+                    {i.name} +{i.avgPct}%
+                  </span>
+                ))}
+                <button
+                  onClick={() => navigate('/screener')}
+                  style={{ fontSize: 12, padding: '3px 11px', color: '#93c5fd', backgroundColor: 'transparent', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 999, cursor: 'pointer' }}
+                >
+                  去选股 →
+                </button>
+              </span>
+            </div>
+          </section>
+        )}
 
         {/* ── 市场概况 ── */}
         <section style={{ marginBottom: '36px' }}>
@@ -640,8 +722,8 @@ export default function HomePage() {
               }}
             >
               {BACKEND_MODE === 'python'
-                ? '数据源：Baostock（历史K线）· 新浪/腾讯（实时行情）'
-                : '数据源：新浪/腾讯公开接口'}
+                ? '数据源：Baostock（历史K线）· 新浪/腾讯（实时行情）· 东方财富（板块/资金/财务）'
+                : '数据源：新浪/腾讯公开接口（行情）· 东方财富公开接口（板块/资金/财务/公告/新闻）'}
             </span>
             {indicesUpdatedAt && (
               <span style={{ fontSize: '12px', color: '#475569', marginBottom: '16px' }}>
@@ -761,7 +843,7 @@ export default function HomePage() {
               ⭐ 我的收藏
             </h2>
             <span style={{ fontSize: '12px', color: '#475569', marginBottom: '16px' }}>
-              收藏的股票会保存在本地浏览器
+              收藏云端同步至账号，换设备登录即见（首访自动迁移本地收藏）
             </span>
           </div>
 
@@ -1058,11 +1140,11 @@ export default function HomePage() {
         }}
       >
         <p style={{ margin: '0 0 6px' }}>
-          ⚠️ 本平台为<b>学生学术研究演示</b>，数据来源于公开财经网站（新浪/腾讯），
+          ⚠️ 本平台为<b>学生学术研究演示</b>，数据来源于公开财经网站（新浪/腾讯/东方财富），
           <b>不构成任何投资建议</b>，亦不涉及荐股、预测及实盘交易。
         </p>
         <p style={{ margin: '0 0 6px' }}>
-          📊 数据源：Baostock（历史K线，版权归 Baostock 所有）· 新浪/腾讯公开接口（实时行情）·
+          📊 数据源：Baostock（历史K线，版权归 Baostock 所有）· 新浪/腾讯公开接口（实时行情）· 东方财富公开接口（板块资金/财务/公告/新闻）·
           仅用于历史回测展示 · 请勿据此操作
         </p>
         <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>

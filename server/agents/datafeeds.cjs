@@ -4,6 +4,7 @@
 //   · 覆盖范围：沪深 A 股（sh/sz 前缀）；港股/美股返回 null
 // ─────────────────────────────────────────────────────────────
 const axios = require('axios');
+const newsEngine = require('../news/index.cjs');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 const cache = new Map();
 const lastGood = new Map();
@@ -152,18 +153,25 @@ function getFundamentals(symbol) {
   });
 }
 
-/** 公告列表（近 12 条标题）：用于新闻分析师关键词情绪扫描 */
+/** 公告列表（近 30 条标题）：用于新闻分析师关键词情绪扫描 */
 function getAnnouncements(symbol) {
   return cached('news:' + symbol, TTL.news, async () => {
     const digits = String(symbol).replace(/^(sh|sz|hk)/i, '');
     if (!/^\d{6}$/.test(digits)) return null;
     const url =
-      `https://np-anotice-stock.eastmoney.com/api/security/ann?sr=-1&page_size=12&page_index=1` +
+      `https://np-anotice-stock.eastmoney.com/api/security/ann?sr=-1&page_size=30&page_index=1` +
       `&ann_type=A&client_source=web&stock_list=${digits}`;
     const j = await getJSON(url, 'https://data.eastmoney.com/');
     const list = j?.data?.list;
     if (!Array.isArray(list) || !list.length) return null;
-    return list.map((x) => ({ date: String(x.notice_date || '').slice(0, 10), title: String(x.title || '') }));
+    return list.map((x) => ({
+      date: String(x.notice_date || '').slice(0, 10),
+      publishedAt: x.notice_date ? new Date(x.notice_date).toISOString() : '',
+      title: String(x.title || ''),
+      // 上游部分公告只返回标题和日期，使用可核验的股票公告来源页，不伪造单篇原文链接。
+      url: String(x.url || x.attach_url || x.pdf_url || `https://data.eastmoney.com/notices/stock/${digits}.html`),
+      media: '东方财富公告接口',
+    }));
   });
 }
 
@@ -194,33 +202,26 @@ function getValuation(symbol) {
   });
 }
 
-/** 个股新闻（东方财富全文搜索接口，返回标题/媒体/日期/摘要） */
+/**
+ * 个股新闻
+ * 旧实现仅用 6 位代码做全文检索，会把「百元股数量盘点」这类只是正文罗列代码的文章误召回。
+ * 改为走资讯匹配引擎：官方个股资讯接口 + 名称/代码双路召回 + 上游标注关联，按相关度打分排序。
+ */
 function getStockNews(symbol) {
   return cached('snews:' + symbol, TTL.news, async () => {
-    const digits = String(symbol).replace(/^(sh|sz|hk)/i, '');
-    if (!/^\d{6}$/.test(digits)) return null;
-    const param = JSON.stringify({
-      uid: '',
-      keyword: digits,
-      type: ['cmsArticleWebOld'],
-      client: 'web',
-      clientType: 'web',
-      clientVersion: 'cur',
-      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: 1, pageSize: 10, preTag: '', postTag: '' } },
-    });
-    const url = `https://search-api-web.eastmoney.com/search/jsonp?cb=&param=${encodeURIComponent(param)}`;
-    const raw = await getJSON(url, 'https://so.eastmoney.com/');
-    // jsonp 包裹（cb= 为空时仍可能返回 jsonp(...) 或直接 JSON）
-    const text = typeof raw === 'string' ? raw.replace(/^[\w$]+\(/, '').replace(/\);?\s*$/, '') : JSON.stringify(raw);
-    const j = JSON.parse(text);
-    const arts = j?.result?.cmsArticleWebOld;
-    if (!Array.isArray(arts) || !arts.length) return null;
-    return arts.map((a) => ({
-      date: String(a.date || '').slice(0, 10),
-      title: String(a.title || '').replace(/<[^>]+>/g, ''),
-      media: String(a.mediaName || ''),
-      snippet: String(a.content || '').replace(/<[^>]+>/g, '').slice(0, 120),
+    const norm = String(symbol).toLowerCase();
+    if (!/^(sh|sz|bj)\d{6}$/.test(norm)) return null;
+    const { items } = await newsEngine.getStockNews(norm, { limit: 30 });
+    if (!Array.isArray(items) || !items.length) return null;
+    return items.map((a) => ({
+      date: String(a.publishedAt || '').slice(0, 10),
+      publishedAt: String(a.publishedAt || ''),
+      title: String(a.title || ''),
+      media: String(a.media || '东方财富资讯'),
+      snippet: String(a.snippet || ''),
       url: String(a.url || ''),
+      matchScore: a.matchScore,
+      matchReason: a.matchReason,
     }));
   });
 }
@@ -274,8 +275,28 @@ function getNorthHold(symbol) {
   });
 }
 
+/** 新浪滚动财经要闻（市场背景，非个股检索——新浪公开接口不支持关键词过滤） */
+async function getMarketNews() {
+  return cached('market_news', 5 * 60_000, async () => {
+    const url = 'https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=12&page=1';
+    const res = await axios.get(url, { headers: { 'User-Agent': UA, Referer: 'https://finance.sina.com.cn/' }, timeout: 8000 });
+    const items = res.data?.result?.data ?? [];
+    const rows = items
+      .filter((n) => n?.title)
+      .map((n) => ({
+        title: String(n.title).slice(0, 60),
+        publishedAt: n.ctime ? new Date(Number(n.ctime) * 1000).toISOString() : '',
+        date: n.ctime ? new Date(Number(n.ctime) * 1000).toISOString().slice(0, 10) : '',
+        media: '新浪财经',
+        // 滚动接口部分版本不返回单篇链接，退回新浪财经滚动来源页并保留来源标识。
+        url: String(n.url || n.link || 'https://finance.sina.com.cn/roll/'),
+      }));
+    return rows.length ? rows : null;
+  });
+}
+
 async function getAll(symbol) {
-  const [moneyFlow, fundamentals, announcements, valuation, stockNews, marginData, northHold] = await Promise.all([
+  const [moneyFlow, fundamentals, announcements, valuation, stockNews, marginData, northHold, marketNews] = await Promise.all([
     getMoneyFlow(symbol).catch(() => null),
     getFundamentals(symbol).catch(() => null),
     getAnnouncements(symbol).catch(() => null),
@@ -283,8 +304,9 @@ async function getAll(symbol) {
     getStockNews(symbol).catch(() => null),
     getMarginData(symbol).catch(() => null),
     getNorthHold(symbol).catch(() => null),
+    getMarketNews().catch(() => null),
   ]);
-  return { moneyFlow, fundamentals, announcements, valuation, stockNews, marginData, northHold };
+  return { moneyFlow, fundamentals, announcements, valuation, stockNews, marginData, northHold, marketNews };
 }
 
-module.exports = { getAll, getMoneyFlow, getFundamentals, getAnnouncements, getValuation, getStockNews, getMarginData, getNorthHold };
+module.exports = { getAll, getMoneyFlow, getFundamentals, getAnnouncements, getValuation, getStockNews, getMarginData, getNorthHold, getMarketNews };

@@ -1,0 +1,87 @@
+{
+  "category": "basis",
+  "categoryLabel": "口径",
+  "description": "本平台每一项计算所采用的具体口径与依据（费率、复权、日历、限价、基准等）。凡平台输出的数字，都能在此找到它遵循的定义与出处。",
+  "entries": [
+    {
+      "id": "basis-fee-cn",
+      "title": "A 股交易成本口径（佣金 / 印花税 / 过户费）",
+      "body": "本平台回测与模拟盘共用同一费率表（server/paper/fees.cjs），不允许两处独立实现。当前口径：① 佣金——万 2.5，单笔最低 5 元，买卖双边收取；② 印花税——万 5，仅卖出方缴纳（2008-09-19 起单边征收；2023-08-28 起税率由千 1 减半至万 5）；③ 过户费——成交金额的 0.001%，买卖双边收取。港股与美股在本平台简化为同等佣金、无印花税与过户费。所有参数集中定义，修改必须同步更新 test/paper.test.cjs 的费用断言与 test/quant.test.cjs 的净值期望。",
+      "source": "官方依据：财政部、国家税务总局公告 2023 年第 39 号《关于减半征收证券交易印花税的公告》（2023-08-27 发布，2023-08-28 起施行）；中国证券登记结算有限责任公司《证券登记结算业务收费标准》关于 A 股过户费（成交金额 0.001%，双边）；佣金费率由券商自主定价，万 2.5 为市场主流区间取值。",
+      "tags": ["费率", "佣金", "印花税", "过户费", "交易成本", "fees.cjs"],
+      "related": ["term-turnover", "method-cost-sensitivity"]
+    },
+    {
+      "id": "basis-pctchg",
+      "title": "涨跌幅判定必须用官方 pctChg 字段",
+      "body": "本项目本地归档为不复权价 + 复权因子。若用相邻两日不复权 close 的比值计算涨跌幅，在除权除息日会出现虚假的大幅波动（例如每 10 股派 5 元会凭空制造约 5% 的跌幅），进而误报数据质量问题。因此数据质量校验（server/dataquality.cjs）一律使用官方 pctChg 字段作为涨跌幅真值，它已由数据源按前收盘价完成复权调整。这是数据层铁律：不复权序列上做涨跌幅类断言必须用 pctChg，不得用 close 比值。",
+      "source": "接口文档：Baostock 日线数据接口 field=pctChg 定义（涨跌幅，以百分数表示，已按除权除息调整）；依据同 term-qfq 引用的交易所除权除息价格计算规则。",
+      "tags": ["pctChg", "涨跌幅", "复权", "数据质量", "dataquality.cjs"],
+      "related": ["term-qfq", "method-adjust-illusion"]
+    },
+    {
+      "id": "basis-rsi-wilder",
+      "title": "RSI 口径：Wilder 标准定义（单一实现）",
+      "body": "本平台 RSI 采用 Wilder 原始定义：RS = 平均涨幅 / 平均跌幅，平均值为 Wilder 平滑（亦称修正移动平均，等效于 α = 1/n 的指数平滑，而非简单算术平均），RSI = 100 − 100/(1 + RS)。常见的简单移动平均版本与本口径会给出不同数值（实测相对差可达 13%）。为避免口径分裂，本项目将实现统一为唯一来源 shared/rsi.mjs，前端 import、后端 require，全仓不得存在第二份实现。修改 RSI 口径会改变回测结果（历史上曾出现 rsi 策略交易数 39 → 11 的变化），必须同步回归测试。",
+      "source": "原始定义：Wilder, J.W.（1978）《New Concepts in Technical Trading Systems》(Trend Research) 第 6 章 RSI 原始公式与 Wilder 平滑法；口径对照说明：StockCharts 等主流技术分析文档对 Wilder RSI 与 SMA 版 RSI 的差异说明。",
+      "tags": ["RSI", "Wilder", "技术指标", "单一实现", "rsi.mjs"],
+      "related": ["method-single-source", "basis-fee-cn"]
+    },
+    {
+      "id": "basis-financial-pubdate",
+      "title": "财务数据 PIT 口径：按 pubDate 只增不改",
+      "body": "本项目自建 PIT 财务层：Baostock 财务数据中的 pubDate（披露日）是唯一可用性时点。写入规则为只增不改——同一报告期若发生财务重述，保留原始记录并追加新记录，由决策日过滤选取当时可见版本。回测与 Agent 取数时一律以「决策日不早于 pubDate」作为过滤条件，而非以报告期（如 statDate）为准。这样做的代价是数据量冗余，收益是彻底消除前视偏差，并使历史结论可复现。",
+      "source": "接口文档：Baostock 财务数据接口字段 pubDate（公司披露财报的日期）与 statDate（报表统计截止日）的定义区分；方法论依据同 term-pit 引用的 López de Prado (2018)。",
+      "tags": ["财务", "PIT", "pubDate", "披露日", "只增不改", "前视偏差"],
+      "related": ["term-pit", "method-lookahead"]
+    },
+    {
+      "id": "basis-limit-guard",
+      "title": "涨跌停守卫的实现层与取舍",
+      "body": "涨跌停判定在本平台是单一实现（server/paper/matcher.cjs 的 priceLimitPct / limitPrices），模拟盘与回测共用。模拟盘规则：市价单触板直接拒单，限价挂单触板则继续挂起等待。回测规则：开盘即触板的信号保留至次日重试（不制造不可能的成交）。判定依赖行情中的 quote.prevClose（前收盘价）；若该字段缺失则 fail-open（放行），这是已知取舍——宁可漏判也不误杀，代价是极端行情下可能高估可成交性，故在数据质量报告中显式提示。",
+      "source": "官方规则依据同 term-limit-up-down（沪深北交易所交易规则价格涨跌幅条款）；本平台实现取舍记录于 server/paper/matcher.cjs 头部注释与 test/paper-limits.test.cjs 断言。",
+      "tags": ["涨跌停", "matcher", "prevClose", "fail-open", "回测", "模拟盘"],
+      "related": ["term-limit-up-down", "method-silent-fallback"]
+    },
+    {
+      "id": "basis-calendar",
+      "title": "交易日历：双数据源与优先级",
+      "body": "交易日判定优先使用 data/calendar.json——由 Baostock query_trade_dates 接口每日 06:00 同步，覆盖范围内以该集合为准，因此调休与临时休市都能自动正确。兜底使用 shared/cn-holidays.json（硬编码的官方节假日表），用于归档未覆盖的日期或同步失败时。后端 server/calendar.cjs 负责判断，前端 src/lib/marketHours.ts 同源导入同一份数据，确保前后端口径一致。兜底表每年 11 月需增补新年份（国务院办公厅发布次年放假安排之后）。",
+      "source": "数据源：Baostock query_trade_dates 接口（交易日查询）；官方依据：国务院办公厅每年发布的《关于部分节假日安排的通知》及沪深交易所每年发布的《全年休市安排》。",
+      "tags": ["交易日历", "calendar", "休市", "调休", "Baostock"],
+      "related": ["basis-pctchg", "method-single-source"]
+    },
+    {
+      "id": "basis-slippage",
+      "title": "滑点模型：回测 0.1%、模拟盘零滑点",
+      "body": "回测（quant.cjs）与横截面引擎（crosssect.cjs）默认对每次成交施加 0.1% 的滑点，可通过参数覆盖（QUANT 请求可传 slippage，范围 0 到 0.05 为前端约束、内核支持更宽）。模拟盘（paper）当前为零滑点成交——这是已知简化，因为模拟盘以实时报价撮合，未建模冲击成本与排队。两者差异已在「已知遗留」中登记，不作为等价口径使用：跨模拟盘与回测对比收益时必须意识到该差异。",
+      "source": "方法论参考：Grinold & Kahn《Active Portfolio Management》第 9 章关于交易成本建模；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39（冲击成本与最优执行）。",
+      "tags": ["滑点", "slippage", "成交", "回测", "模拟盘", "冲击成本"],
+      "related": ["basis-fee-cn", "method-cost-sensitivity"]
+    },
+    {
+      "id": "basis-benchmark",
+      "title": "基准选择：同股买入持有 + 沪深300 叠加",
+      "body": "单标的回测同时给出两条参照：① 同股买入持有（Buy & Hold）——回答择时是否战胜了躺着不动；② 沪深300 指数基准线叠加——回答是否战胜了市场整体。两者用途不同：同股对比剔除个股 beta 的影响，适合评估择时能力；指数对比回答跑赢大盘没有，适合对外汇报。因子层面的评估则使用等权组合基准（见 term-equal-weight），因为因子研究关注横截面选股能力，等权基准能避免市值因子混入。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 2 章基准与主动管理框架；指数数据：中证指数有限公司沪深300指数编制方案（样本空间与加权方式）。",
+      "tags": ["基准", "买入持有", "沪深300", "等权", "对比"],
+      "related": ["term-equal-weight", "method-benchmark-choice"]
+    },
+    {
+      "id": "basis-fingerprint",
+      "title": "实验四要素指纹（可复现承诺）",
+      "body": "每条实验记录绑定四要素指纹：数据源（source）、复权方式（adjust）、数据截止日（lastDate）、行数据哈希（rowsHash）。指纹一致即代表输入数据完全一致，从而结论可复现。已知的复现承诺边界：/api/backtest 支持 slippage 与 count 两个参数；/experiments 的复现按钮带入 symbol/strategy/fast/slow/capital/count/slippage；而 limitPct 与 market 由后端按标的自动判定，不属于复现承诺范围（按钮提示已明示）。这是一个诚实的边界声明——不承诺无法保证的东西。",
+      "source": "实现：server/fingerprint.cjs（build 与 rowsHash）；承诺边界记录于 src/api/dataService.ts 的复现按钮 title 与 server/index.cjs 的回测路由注释。",
+      "tags": ["指纹", "复现", "fingerprint", "实验记录", "承诺边界"],
+      "related": ["method-reproducibility", "basis-slippage"]
+    },
+    {
+      "id": "basis-limit-guard-depth",
+      "title": "整手交易与最小变动单位",
+      "body": "A 股买入以 100 股（1 手）为最小单位，卖出可以为零股（持有不足 100 股时须一次卖出）。本平台回测、横截面引擎与模拟盘的下单量一律向下取整到整手，避免出现 137 股这类不可实现的持仓。价格最小变动单位为 0.01 元（人民币），撮合与成本计算均按该精度处理。港股的每手股数因股而异（由上市公司确定），美股为 1 股——本平台目前对港股按 A 股整手规则简化处理，属已知简化。",
+      "source": "官方规则：上海证券交易所《交易规则》关于申报数量应为 100 股或其整数倍的规定；深圳证券交易所《交易规则》同类条款；港股每手股数由发行人公告确定（香港交易所上市规则）。",
+      "tags": ["整手", "100股", "最小变动单位", "下单", "取整"],
+      "related": ["basis-limit-guard", "term-turnover"]
+    }
+  ]
+}

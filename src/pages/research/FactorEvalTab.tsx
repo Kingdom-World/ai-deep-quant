@@ -10,7 +10,14 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
 import { theme } from '../../lib/theme';
-import { researchApi, type FactorEvalItem, type FactorEvalResult, type FactorVerdict } from '../../api/dataService';
+import {
+  researchApi,
+  type CrossBacktestResult,
+  type FactorEvalItem,
+  type FactorEvalResult,
+  type FactorVerdict,
+  type LayerAnalysisResult,
+} from '../../api/dataService';
 
 const VERDICT_STYLE: Record<FactorVerdict, { bg: string; fg: string }> = {
   稳健: { bg: 'rgba(56,189,248,0.16)', fg: '#38bdf8' },
@@ -151,10 +158,319 @@ function SummaryBanner({ data }: { data: FactorEvalResult }) {
   );
 }
 
+/** 分层柱状图：横向柱，层号固定「1 = 因子值最高」，颜色按收益正负（A股：红正绿负） */
+function LayerBarChart({ data, metric }: { data: LayerAnalysisResult; metric: 'annualizedPct' | 'meanPeriodRetPct' }) {
+  const rows = data.layers ?? [];
+  if (!rows.length) return null;
+  // 周期数少时年化会被极端放大（如 1 期年化 = 单期收益 × 252/interval），故展示期均更稳
+  const vals = rows.map((r) => r[metric] ?? 0);
+  const max = Math.max(0.01, ...vals.map((v) => Math.abs(v)));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      {rows.map((r) => {
+        const v = r[metric] ?? 0;
+        const w = (Math.abs(v) / max) * 100;
+        return (
+          <div key={r.layer} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span
+              style={{
+                width: 132,
+                fontSize: 11.5,
+                color: r.layer === 1 || r.layer === rows.length ? '#cbd5e1' : theme.color.textMuted,
+                fontWeight: r.layer === 1 || r.layer === rows.length ? 600 : 400,
+                flexShrink: 0,
+              }}
+            >
+              {r.label}
+            </span>
+            <div
+              style={{
+                flex: 1,
+                height: 16,
+                position: 'relative',
+                backgroundColor: 'rgba(148,163,184,0.07)',
+                borderRadius: 3,
+                minWidth: 40,
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  width: `${Math.min(50, w / 2)}%`,
+                  transform: v >= 0 ? 'none' : 'translateX(-100%)',
+                  height: '100%',
+                  backgroundColor: numColor(v),
+                  borderRadius: 3,
+                  opacity: 0.8,
+                }}
+              />
+            </div>
+            <span
+              style={{
+                width: 76,
+                textAlign: 'right',
+                fontSize: 11.5,
+                color: numColor(v),
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {metric === 'meanPeriodRetPct' ? `${v.toFixed(4)}%` : `${v.toFixed(2)}%`}
+            </span>
+            <span style={{ width: 52, textAlign: 'right', fontSize: 11, color: theme.color.textFaint }}>
+              {r.periods} 期
+            </span>
+            <span
+              style={{ width: 74, textAlign: 'right', fontSize: 11, color: theme.color.textFaint, fontVariantNumeric: 'tabular-nums' }}
+              title="年化收益——期数少时会放大单期收益，仅供参考"
+            >
+              年化 {r.annualizedPct.toFixed(1)}%
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 分层回测面板（M2.1 消费端）。
+ * 核心判据用 `mono.strategyAligned`（后端已按 mom/rev 分判），**不看 ρ 的裸符号**——
+ * 层号语义固定 1=因子值最高，rev* 的正确单调性 ρ 反而是正的。
+ */
+function LayerPanel({ data, loading, err, onReload }: {
+  data: LayerAnalysisResult | null;
+  loading: boolean;
+  err: string;
+  onReload: () => void;
+}) {
+  if (loading) {
+    return (
+      <div style={{ ...theme.card, textAlign: 'center', padding: '30px 16px', color: theme.color.textMuted, fontSize: 13 }}>
+        正在做分层回测（全池按因子排序等分，逐层等权）…
+      </div>
+    );
+  }
+  if (err) {
+    return (
+      <div style={{ ...theme.card, borderLeft: `3px solid ${theme.color.down}` }}>
+        <div style={{ fontWeight: 700, marginBottom: 6, color: theme.color.text }}>分层回测失败</div>
+        <div style={{ fontSize: 13, color: theme.color.textMuted }}>{err}</div>
+        <button
+          onClick={onReload}
+          style={{
+            marginTop: 12, padding: '7px 16px', fontSize: 13, color: '#0a0e17',
+            backgroundColor: theme.color.primary, border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600,
+          }}
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
+  if (!data) return null;
+  if (data.error) {
+    return (
+      <div style={{ ...theme.card, borderLeft: `3px solid ${theme.color.warn}`, fontSize: 13, color: theme.color.textMuted }}>
+        分层回测不可用：{data.error}
+      </div>
+    );
+  }
+
+  const rows = data.layers ?? [];
+  const mono = data.mono;
+  const aligned = mono?.strategyAligned === true;
+  const monoOk = mono?.monotonic === true;
+  // 单调但与策略方向相反 = 最危险的情形：结论看起来「很单调」，
+  // 但按策略方向选股会系统性亏损。必须给出与「单调有效」不同的措辞。
+  const verdictTone = !monoOk
+    ? { fg: theme.color.warn, label: '非单调（有效性可能只在极值端）' }
+    : aligned
+      ? { fg: theme.color.accent, label: '单调且与策略方向一致' }
+      : { fg: theme.color.down, label: '单调但与策略方向相反' };
+
+  return (
+    <div style={{ ...theme.card, marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9' }}>
+          分层回测 · {data.factor}
+        </span>
+        <span
+          style={{
+            fontSize: 11.5, fontWeight: 700, color: verdictTone.fg,
+            padding: '3px 9px', borderRadius: 6,
+            backgroundColor: `${verdictTone.fg}22`, border: `1px solid ${verdictTone.fg}55`,
+          }}
+        >
+          {verdictTone.label}
+        </span>
+        {data.isReversal !== undefined && (
+          <span style={{ fontSize: 11, color: theme.color.textFaint }}>
+            因子族：{data.isReversal ? '反转（rev*）' : '动量（mom*）'}
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 12, color: theme.color.textFaint, lineHeight: 1.85, marginBottom: 14 }}>
+        把全池（{data.universeSize} 只）按因子值排序等分为 {rows.length} 层，
+        每层等权、每 {data.rebalanceEvery} 个交易日再平衡。
+        <br />
+        Spearman ρ = {mono?.spearman === null || mono?.spearman === undefined ? '不可计算' : mono.spearman.toFixed(4)}
+        （阈值 {mono?.threshold}）· 第1层−第{rows.length}层 期均差{' '}
+        <strong style={{ color: numColor(mono?.longShortSpreadPct) }}>
+          {mono?.longShortSpreadPct === undefined
+            ? '--'
+            : `${mono.longShortSpreadPct >= 0 ? '+' : ''}${mono.longShortSpreadPct.toFixed(4)}pp`}
+        </strong>
+        （正负号读法：A股红涨绿跌）。
+      </div>
+
+      <LayerBarChart data={data} metric="meanPeriodRetPct" />
+      <div style={{ fontSize: 11, color: theme.color.textFaint, marginTop: 6, marginBottom: 14 }}>
+        上图为<strong style={{ color: theme.color.textMuted }}>期均收益</strong>（去量纲，跨期数可比）。已省略年化——期数较少时年化会把单期收益放大数倍，易误读。
+      </div>
+
+      {mono?.strategyNote && (
+        <div
+          style={{
+            padding: '10px 13px', fontSize: 12, lineHeight: 1.8, borderRadius: 8,
+            color: theme.color.textMuted,
+            backgroundColor: 'rgba(17,24,39,0.6)',
+            border: `1px solid ${verdictTone.fg}44`,
+          }}
+        >
+          <strong style={{ color: verdictTone.fg }}>结论：</strong>
+          {mono.strategyNote}。{mono.interpretation}。
+          {mono.factorDirection && (
+            <>
+              <br />
+              因子层面的方向（与策略无关）：{mono.factorDirection}。
+            </>
+          )}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: theme.color.textFaint, marginTop: 12, lineHeight: 1.8 }}>
+        ⚠️ 口径：{data.layerBasis}
+        <strong style={{ color: theme.color.warn }}>本图收益与上表「全区间超额」不可直接比较。</strong>
+        {data.note}
+      </div>
+    </div>
+  );
+}
+
+/** IC 显著性面板（M2.2 消费端） */
+function ICPanel({ data }: { data: CrossBacktestResult }) {
+  const ic = data.ic;
+  if (!ic) return null;
+  // degraded = 「不可检验」（如 IC 方差为 0 → t 无定义），与「不显著」是两回事，必须分开说。
+  if (ic.degraded) {
+    return (
+      <div style={{ ...theme.card, borderLeft: `3px solid ${theme.color.warn}`, marginBottom: 22 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9', marginBottom: 6 }}>
+          IC 显著性检验 · {data.factor}
+        </div>
+        <div style={{ fontSize: 13, color: theme.color.textMuted, lineHeight: 1.85 }}>
+          <strong style={{ color: theme.color.warn }}>不可检验</strong>（≠ 不显著）：
+          {ic.degradeReason ?? '样本不足以估计波动与显著性'}。
+          <br />
+          已记录 IC 期数 {ic.n} 期，IC 均值{' '}
+          {ic.icMean === null || ic.icMean === undefined ? '--' : ic.icMean.toFixed(6)}。
+        </div>
+      </div>
+    );
+  }
+
+  const sig = ic.significant2;
+  const tone = sig ? (ic.icMean !== null && ic.icMean !== undefined && ic.icMean >= 0 ? theme.color.up : theme.color.down) : theme.color.textMuted;
+  const tStr = ic.t !== null && ic.t !== undefined ? ic.t.toFixed(4) : '--';
+  const pStr = ic.p !== null && ic.p !== undefined ? (ic.p < 1e-6 ? '<1e-6' : ic.p.toFixed(6)) : '--';
+
+  return (
+    <div style={{ ...theme.card, marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9' }}>
+          IC 显著性检验 · {data.factor}
+        </span>
+        <span
+          style={{
+            fontSize: 11.5, fontWeight: 700, color: tone,
+            padding: '3px 9px', borderRadius: 6,
+            backgroundColor: `${tone}22`, border: `1px solid ${tone}55`,
+          }}
+        >
+          {sig ? '5% 水平显著' : '不显著'}
+        </span>
+        <span style={{ fontSize: 11, color: theme.color.textFaint }}>
+          Rank IC（Spearman）· {ic.n} 期
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))', gap: 10, marginBottom: 12 }}>
+        {[
+          { k: 'IC 均值', v: ic.icMean === null || ic.icMean === undefined ? '--' : ic.icMean.toFixed(6), c: numColor(ic.icMean ?? undefined) },
+          { k: 'IC 标准差', v: ic.icStd === null || ic.icStd === undefined ? '--' : ic.icStd.toFixed(6), c: theme.color.text },
+          { k: 'ICIR', v: ic.icir === null || ic.icir === undefined ? '--' : ic.icir.toFixed(4), c: numColor(ic.icir ?? undefined) },
+          { k: 'IC > 0 占比', v: ic.icPositiveRate === null || ic.icPositiveRate === undefined ? '--' : `${(ic.icPositiveRate * 100).toFixed(1)}%`, c: theme.color.text },
+          { k: 't 统计量', v: tStr, c: tone },
+          { k: 'p 值', v: pStr, c: tone },
+        ].map((it) => (
+          <div
+            key={it.k}
+            style={{
+              padding: '9px 11px', borderRadius: 8,
+              backgroundColor: 'rgba(15,22,36,0.7)', border: `1px solid ${theme.color.border}`,
+            }}
+          >
+            <div style={{ fontSize: 10.5, color: theme.color.textFaint, marginBottom: 4 }}>{it.k}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: it.c, fontVariantNumeric: 'tabular-nums' }}>{it.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11.5, color: theme.color.textFaint, lineHeight: 1.85 }}>
+        Newey-West 稳健标准误 <strong style={{ color: theme.color.textMuted }}>{ic.se?.toFixed(6) ?? '--'}</strong>
+        （滞后 {ic.neweyWestLag} 阶）vs 独立同分布假设 <strong style={{ color: theme.color.textMuted }}>{ic.seIid?.toFixed(6) ?? '--'}</strong>。
+        {ic.se !== null && ic.se !== undefined && ic.seIid !== null && ic.seIid !== undefined && (
+          <>
+            {' '}两者差异即
+            <strong style={{ color: theme.color.textMuted }}>
+              {((ic.se / ic.seIid - 1) * 100).toFixed(1)}%
+            </strong>
+            ——IC 序列存在自相关，独立同分布假设会低估或高估显著性。
+          </>
+        )}
+        <br />
+        {ic.basis}
+      </div>
+    </div>
+  );
+}
+
 export default function FactorEvalTab() {
   const [data, setData] = useState<FactorEvalResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+
+  // ── M2：分层回测 + IC 显著性（独立加载，互不阻塞主表的逐年评估）──
+  // 分层用与主表一致的 topN 语境（rebalanceEvery=20）；factor 固定 mom20 作为示范口径，
+  // 与 crossBacktest 的默认因子保持一致，便于三处结论交叉印证。
+  const [layerData, setLayerData] = useState<LayerAnalysisResult | null>(null);
+  const [layerLoading, setLayerLoading] = useState(true);
+  const [layerErr, setLayerErr] = useState('');
+  const [icData, setIcData] = useState<CrossBacktestResult | null>(null);
+
+  const loadLayers = async () => {
+    setLayerLoading(true);
+    setLayerErr('');
+    try {
+      setLayerData(await researchApi.factorLayers({ factor: 'mom20', layers: 5, rebalanceEvery: 20 }));
+    } catch (e: unknown) {
+      setLayerErr(e instanceof Error ? e.message : '分层回测失败');
+    } finally {
+      setLayerLoading(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -170,6 +486,12 @@ export default function FactorEvalTab() {
 
   useEffect(() => {
     void load();
+    void loadLayers();
+    // IC 数据随净值回测一并取回（同一请求已含 ic 块，无需单独接口）
+    researchApi
+      .crossBacktest({ factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000 })
+      .then(setIcData)
+      .catch(() => setIcData(null)); // IC 属增强信息，失败静默降级为不显示，不影响主表
   }, []);
 
   return (
@@ -224,6 +546,10 @@ export default function FactorEvalTab() {
         {data && !loading && (
           <>
             <SummaryBanner data={data} />
+
+            {icData && <ICPanel data={icData} />}
+
+            <LayerPanel data={layerData} loading={layerLoading} err={layerErr} onReload={() => void loadLayers()} />
 
             {data.invalidFactors.length > 0 && (
               <div style={{ fontSize: 12, color: theme.color.warn, marginBottom: 14 }}>

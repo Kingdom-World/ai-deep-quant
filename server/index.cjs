@@ -1222,6 +1222,31 @@ app.get('/api/crossbacktest', (req, res) => {
 });
 
 /**
+ * GET /api/factor-layers —— 因子分层回测（M2.1）
+ *   用途：判定因子有效性是**贯穿全截面**还是只集中在头部/尾部。
+ *   单看 topN 组合净值无法区分这两种情形——后者往往是数据噪声或市值效应。
+ *   query: factor | layers(2-10，默认5) | rebalanceEvery | startDate | endDate
+ *   ⚠️ 口径：**不计手续费与滑点**。本接口度量因子原始预测力，成本影响由
+ *      /api/crossbacktest 的净值体现；两处口径有意分离，不构成可直接比较的收益。
+ *   ⚠️ 层号语义固定「layer 1 = 因子值最高」：mom* 期望 rho<0（强层跑赢），
+ *      rev* 期望 rho>0。响应含 alignedWithStrategy 按因子方向分判，勿只看 rho 符号。
+ */
+app.get('/api/factor-layers', (req, res) => {
+  try {
+    const result = require('./crosssect.cjs').layerAnalysis({
+      factor: String(req.query.factor || 'mom20'),
+      layers: Number(req.query.layers) || 5,
+      rebalanceEvery: Number(req.query.rebalanceEvery) || 20,
+      startDate: req.query.startDate ? String(req.query.startDate) : undefined,
+      endDate: req.query.endDate ? String(req.query.endDate) : undefined,
+    });
+    res.status(result.error ? 400 : 200).json(result);
+  } catch (e) {
+    res.status(500).json({ error: `分层回测失败: ${e.message?.slice(0, 80)}` });
+  }
+});
+
+/**
  * GET /api/factor-eval —— 因子稳健性评估（全区间 + 逐年对照）
  *   用途：判定因子是否稳健。单看全区间收益会被**路径依赖**放大——
  *   本项目实测：rev60 全区间超额 +253pp，但逐年 6 正 5 负、平均 -0.82pp。

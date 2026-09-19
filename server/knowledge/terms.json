@@ -9,7 +9,7 @@
       "body": "PIT 指「在历史每一时点，只使用当时真实可获得的信息」的数据组织方式。以财务数据为例：某公司 2023 年报披露日为 2024-04-25，则 2024-04-25 之前的任何回测决策都不得使用该年报数据。若用「按报告期归属」（如把 2023 年报数据标注为 2023-12-31 可用）就会产生前视偏差（look-ahead bias），使回测收益虚高。本项目自建 PIT：财务记录按 pubDate（披露日）只增不改，回测取数时按「决策日不早于 pubDate」过滤。",
       "source": "教材：Marcos López de Prado《Advances in Financial Machine Learning》(Wiley, 2018) 第 7 章 Cross-Validation in Finance 关于 look-ahead bias 的论述；实践对照：Baostock 日线接口字段 pubDate（披露日）定义。",
       "tags": ["PIT", "时点数据", "前视偏差", "look-ahead", "财务", "pubDate"],
-      "related": ["method-lookahead", "basis-financial-pubdate"]
+      "related": ["method-lookahead", "basis-financial-pubdate", "paper-lopez-de-prado-2018", "method-reproducibility"]
     },
     {
       "id": "term-qfq",
@@ -25,7 +25,7 @@
       "body": "IC 衡量因子值与下期收益之间的相关性，是因子预测能力的核心度量。常用两种：Pearson IC（线性相关，对极端值敏感）与 Rank IC / Spearman IC（秩相关，稳健，量化实践更常用）。逐期计算得到 IC 序列后，可导出 IC 均值（方向与强度）、IC 标准差（稳定性）与 IC 大于 0 占比（胜率）。判断经验：IC 均值绝对值在 0.03~0.05 量级已具备一定选股能力，0.1 以上较为优秀——但须结合 IR 与显著性检验共同判断，单看 IC 均值易被少数极端期误导。",
       "source": "教材：丁鹏《量化投资：策略与技术》(电子工业出版社) 因子有效性检验章节；论文：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章 The Fundamental Law of Active Management 关于 IC 与信息比率的理论推导。",
       "tags": ["IC", "信息系数", "Rank IC", "Spearman", "因子有效性"],
-      "related": ["term-ir", "method-multiple-testing"]
+      "related": ["term-ir", "method-multiple-testing", "paper-grinold-kahn-2000", "term-spearman", "method-layer-monotonic"]
     },
     {
       "id": "term-ir",
@@ -33,7 +33,7 @@
       "body": "在因子研究中，IR 通常指 IC 均值与 IC 标准差之比（ICIR）：IR = mean(IC) / std(IC)，刻画因子预测能力相对其波动的大小，等价于 IC 序列的 t 统计量按 √T 缩放。注意与绩效指标中的信息比率区分——后者是组合超额收益均值与跟踪误差之比（Grinold & Kahn 定义）。实践中 ICIR 大于 0.3 常被视为因子稳定的参考线，但阈值应结合样本期长度与显著性检验判定，不可教条套用。",
       "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章；Clarke, de Silva & Thorley《Minimum-Variance Portfolios in the U.S. Equity Market》(Journal of Portfolio Management, 2006) 对 IC 到 IR 转换的讨论。",
       "tags": ["IR", "信息比率", "ICIR", "跟踪误差", "因子稳定"],
-      "related": ["term-ic", "term-stats-significance"]
+      "related": ["term-ic", "term-stats-significance", "paper-grinold-kahn-2000"]
     },
     {
       "id": "term-newey-west",
@@ -41,7 +41,7 @@
       "body": "回归或均值检验中，若残差存在异方差与自相关（时序数据几乎必然），普通 OLS 标准误会低估真实标准误，导致 t 值虚高、把噪声当成显著。Newey-West（1987）提出异方差自相关一致（HAC）协方差矩阵估计，通过对不同滞后的自协方差加权（常用 Bartlett 核，权重随滞后线性衰减）来修正。关键参数是滞后阶数 L：取太小无法消除自相关，太大损失效率。常用经验法则 L = floor(4 × (T/100)^(2/9))。当 L = 0 时 Newey-West 退化为普通（异方差稳健）标准误。",
       "source": "原始论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708。实现参考：statsmodels 库 statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式；教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 12 章 Serial Correlation and Heteroskedasticity in Time Series Regressions。",
       "tags": ["Newey-West", "HAC", "标准误", "自相关", "异方差", "显著性"],
-      "related": ["term-stats-significance", "method-multiple-testing"]
+      "related": ["term-stats-significance", "method-multiple-testing", "paper-newey-west-1987", "paper-harvey-liu-zhu-2016"]
     },
     {
       "id": "term-stats-significance",
@@ -49,7 +49,7 @@
       "body": "检验某因子的平均收益是否真的不为零时，构造 t = mean(r) / (s/√T)，其中 r 为逐期收益序列、s 为样本标准差、T 为期数。t 的绝对值越大越不可能是偶然。p 值为原假设为真时出现当前或更极端结果的概率，p 小于 0.05 常称显著（5% 水平）。三个常见陷阱：① 忽略自相关导致 t 虚高（须用 Newey-West 修正）；② 多重比较（同时检验大量因子，必然有若干显著是巧合）；③ 样本过短，t 分布的近似不成立。学术界常用 |t| 不小于 2（约 p<0.05）与 |t| 不小于 3（Harvey 等提出的更高门槛）作为参考线。",
       "source": "教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 4 章假设检验；论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68（提出 |t|>3 的更高门槛以应对多重比较）。",
       "tags": ["t检验", "p值", "显著性", "假设检验", "t统计量"],
-      "related": ["term-newey-west", "method-multiple-testing"]
+      "related": ["term-newey-west", "method-multiple-testing", "paper-harvey-liu-zhu-2016", "term-ir", "method-sample-length", "paper-newey-west-1987", "paper-benjamini-hochberg-1995"]
     },
     {
       "id": "term-sharpe",
@@ -57,7 +57,7 @@
       "body": "夏普比率 = (组合收益率 − 无风险利率) / 收益率标准差，衡量每承担一单位总波动获得的超额回报。注意三点：① 分母是总风险（含非系统性风险），不是跟踪误差；② 对收益率序列的自相关与偏度敏感，高频/持有期短的策略会因序列相关而虚高，需做年化与自相关调整；③ 比较夏普必须在同一频率、同一区间、同一无风险利率口径下进行。年化常用 Sharpe_annual = Sharpe_period × √(每年期数)，但该公式假设收益独立同分布，日内或高频数据需谨慎。",
       "source": "原始论文：Sharpe, W.F. (1966). Mutual Fund Performance. Journal of Business, 39(1), 119-138；教材：Bodie, Kane & Marcus《Investments》第 5 章风险与收益度量；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52（关于自相关调整）。",
       "tags": ["夏普比率", "Sharpe", "风险调整收益", "年化"],
-      "related": ["term-maxdrawdown", "term-annualized"]
+      "related": ["term-maxdrawdown", "term-annualized", "term-volatility"]
     },
     {
       "id": "term-maxdrawdown",
@@ -81,7 +81,7 @@
       "body": "组合换手率指一定期间内买卖金额占组合资产的比例，反映策略的交易频率。换手直接影响净收益：净值 = 毛收益 − 换手带来的成本（佣金 + 印花税 + 过户费 + 滑点 + 冲击成本）。高换手策略在毛收益上可能亮眼，但被成本吞噬后可能转负——这正是成本敏感度检验的意义。计算时须注意：单边换手与双边换手的口径差异、调仓日部分换手（因子排序变动小）的处理。",
       "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 9 章 Trading Costs, Turnover, and Taxes；Frazzini, A., Israel, R. & Moskowitz, T.J. (2018). Trading Costs. SSRN Working Paper（机构交易成本的实证估计）。",
       "tags": ["换手率", "turnover", "交易成本", "滑点", "成本敏感度"],
-      "related": ["basis-fee-cn", "method-cost-sensitivity"]
+      "related": ["basis-fee-cn", "method-cost-sensitivity", "paper-grinold-kahn-2000", "paper-almgren-chriss-2001", "basis-limit-guard-depth"]
     },
     {
       "id": "term-spearman",
@@ -105,7 +105,7 @@
       "body": "动量因子指过去一段时间收益率较高的股票在未来一段时间继续表现较好（或反之，视市场与周期而定），源于 Jegadeesh & Titman (1993) 的经典发现（美股 3~12 个月形成期、持有期策略显著）。常见构造：mom{n} = 过去 n 个交易日累计收益（或对数收益）。重要提示：动量在中国 A 股市场并不稳定，短期（数日至数周）常表现为反转（reverse）；本项目实测 mom 因子在所选样本上呈现高分组收益低于低分组，即动量失效/反转特征——这是数据结论，不是模型错误，须如实呈现。",
       "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。",
       "tags": ["动量", "momentum", "反转", "因子", "Jegadeesh"],
-      "related": ["method-cross-section", "method-layer-monotonic"]
+      "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993"]
     },
     {
       "id": "term-limit-up-down",
@@ -121,7 +121,7 @@
       "body": "等权基准指每只成分股分配相同权重（1/N），定期再平衡。用途：作为没有选股能力的参照线——如果策略跑不赢等权组合，说明选股未创造价值。相比市值加权，等权基准：① 天然偏向小市值与波动（rebalancing 效应），长期收益常高于市值加权指数；② 更能反映广撒网的可实现收益。做因子评估时用等权更公平（避免市值因子混入）。注意：等权再平衡本身产生换手成本，基准也应计成本才可比。",
       "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》第 2 章基准选择；研究：DeMiguel, V., Garlappi, L. & Uppal, R. (2009). Optimal Versus Naive Diversification: How Inefficient is the 1/N Portfolio Strategy? Review of Financial Studies, 22(5), 1915-1953（1/N 基准的稳健性论证）。",
       "tags": ["等权", "基准", "equal weight", "1/N", "再平衡"],
-      "related": ["method-benchmark-choice", "method-cross-section"]
+      "related": ["method-benchmark-choice", "method-cross-section", "paper-grinold-kahn-2000", "basis-benchmark"]
     }
   ]
 }

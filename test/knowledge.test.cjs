@@ -40,6 +40,56 @@ test('分类覆盖：术语/口径/方法论三类均非空（M1 内容规划）
   assert.equal(sum, kb.stats().total, '分类计数之和应等于总条目数');
 });
 
+// ── 文献类（paper）非孤岛（M1 收尾遗留项 ①）──
+//   背景：新增 10 篇文献条目后，结构检查全绿（无断链、无重复 id），
+//   但**入链数全部为 0**——原 39 条把文献写在 source 散文里而非 related id，
+//   文献类成了检索得到、点不进去的信息孤岛。
+//   结构绿 ≠ 内容可达，这条测试锁的是「可达性」，不是「合法性」。
+
+test('文献类（paper）非空且已接入分类体系', () => {
+  const cats = kb.categories();
+  const paper = cats.find((c) => c.key === 'paper');
+  assert.ok(paper, '缺少 paper 分类');
+  assert.ok(paper.count >= 10, `文献条目应 ≥10，实际 ${paper.count}`);
+});
+
+test('文献类 id 唯一且每条带完整出处', () => {
+  const papers = kb.search('', { category: 'paper', limit: 100 }).items;
+  const ids = papers.map((e) => e.id);
+  assert.equal(new Set(ids).size, ids.length, 'paper 分类内 id 不得重复');
+  for (const e of papers) {
+    assert.ok(e.source && e.source.length >= 20, `${e.id} 出处过短或缺失`);
+  }
+});
+
+test('【可达性】每篇文献都至少被一条非文献条目引用（不得为孤岛）', () => {
+  const all = kb.search('', { limit: 1000 }).items;
+  const indeg = new Map();
+  for (const e of all) {
+    for (const r of e.related) indeg.set(r, (indeg.get(r) || 0) + 1);
+  }
+  const papers = all.filter((e) => e.id.startsWith('paper-'));
+  const orphans = papers.filter((p) => !(indeg.get(p.id) > 0));
+  assert.equal(
+    orphans.length,
+    0,
+    `以下文献条目无人引用（信息孤岛）：${orphans.map((o) => o.id).join(', ')}`,
+  );
+});
+
+test('【可达性】文献条目的 related 必须回指引用它的条目（双向闭合）', () => {
+  const all = kb.search('', { limit: 1000 }).items;
+  const byId = new Map(all.map((e) => [e.id, e]));
+  const asym = [];
+  for (const e of all) {
+    for (const r of e.related) {
+      const t = byId.get(r);
+      if (t && !t.related.includes(e.id)) asym.push(`${e.id} → ${r}`);
+    }
+  }
+  assert.equal(asym.length, 0, `单向关联（对方未回指）：${asym.join(', ')}`);
+});
+
 test('检索：单词命中且结果包含该词的条目', () => {
   const r = kb.search('PIT');
   assert.ok(r.total > 0, 'PIT 应有命中');

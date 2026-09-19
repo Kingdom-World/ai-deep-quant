@@ -1,0 +1,87 @@
+{
+  "category": "paper",
+  "categoryLabel": "文献",
+  "description": "本库引用的核心文献。每条给出完整出版信息与「它在库内支撑哪些条目」，使任何结论都能回溯到可核查的出处——这是本平台「结论可核查」主张的落地。所有文献均为真实出版物，禁止编造。",
+  "entries": [
+    {
+      "id": "paper-lopez-de-prado-2018",
+      "title": "López de Prado (2018)《Advances in Financial Machine Learning》",
+      "body": "Marcos López de Prado 著，Wiley 2018 年出版。金融机器学习领域的标准参考书之一。本库引用其两处：① 第 7 章 Cross-Validation in Finance 系统论述前视偏差（look-ahead bias）与金融数据的交叉验证陷阱，是 PIT 数据层与时间对齐方法论的直接来源；② 第 8 章 The Dangers of Backtesting 讨论回测过拟合与多重比较的危害；③ 第 1 章主张研究流程必须可复现。该书的立场与本平台一致：量化研究的主要风险不是模型不够复杂，而是研究者用不严谨的流程欺骗自己。",
+      "source": "López de Prado, M. (2018). Advances in Financial Machine Learning. John Wiley & Sons. ISBN 978-1119482086。相关章节：第 1 章（可复现研究流程）、第 7 章（Cross-Validation in Finance）、第 8 章（The Dangers of Backtesting）。",
+      "tags": ["教材", "金融机器学习", "前视偏差", "交叉验证", "回测过拟合", "López de Prado"],
+      "related": ["term-pit", "method-lookahead", "method-multiple-testing", "method-reproducibility"]
+    },
+    {
+      "id": "paper-newey-west-1987",
+      "title": "Newey & West (1987) HAC 协方差矩阵估计",
+      "body": "Whitney K. Newey 与 Kenneth D. West 发表于 Econometrica 的论文，提出异方差自相关一致（Heteroskedasticity and Autocorrelation Consistent, HAC）协方差矩阵估计量。核心贡献：在残差同时存在异方差与自相关时，给出标准误的相合估计，且保证估计量为半正定。金融时序数据几乎必然同时具备这两种特征，若沿用普通 OLS 标准误会系统性低估，导致 t 值虚高、把噪声判为显著。本平台的实现（server/statstest.cjs 的 seNeweyWest）采用 Bartlett 核，滞后阶数用 statsmodels 的经验法则 L = floor(4 × (T/100)^(2/9))，并在 L=0 时严格退化为普通标准误。",
+      "source": "Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708. DOI: 10.2307/1913610。实现对照：statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式。",
+      "tags": ["论文", "计量经济学", "HAC", "标准误", "自相关", "异方差", "Econometrica"],
+      "related": ["term-newey-west", "term-stats-significance", "method-multiple-testing"]
+    },
+    {
+      "id": "paper-harvey-liu-zhu-2016",
+      "title": "Harvey, Liu & Zhu (2016) 截面收益的多重检验校正",
+      "body": "Campbell R. Harvey、Yan Liu 与 Heqing Zhu 发表于 Review of Financial Studies 的论文，提出面对「研究者在同一数据集上反复尝试」导致的多重比较问题时，沿用传统的 |t| ≥ 2 门槛远远不够，建议将截面因子研究的显著门槛提高到 |t| ≥ 3。论证要点：随着被检验因子数量增长，随机噪声中被判为「显著」的数量期望随之上升；若考虑学术发表偏倚，实际所需的门槛更高。本平台在统计检验输出中同时给出 |t| ≥ 2 与 |t| ≥ 3 两个判定（server/statstest.cjs 的 significant2 / significant3），正是为了不把「够 2 就算数」当作默认结论。",
+      "source": "Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. DOI: 10.1093/rfs/hhv059。",
+      "tags": ["论文", "多重比较", "数据窥探", "t 值门槛", "重复研究", "RFS"],
+      "related": ["term-stats-significance", "method-multiple-testing", "term-newey-west", "method-sample-length"]
+    },
+    {
+      "id": "paper-grinold-kahn-2000",
+      "title": "Grinold & Kahn (2000)《Active Portfolio Management》",
+      "body": "Richard C. Grinold 与 Ronald N. Kahn 著，McGraw-Hill 第 2 版（2000 年）。主动管理领域的标准教材。本库引用其四处：① 第 2 章确立基准选择与主动管理框架（基准须可比、可实现、事前确定）；② 第 6 章 The Fundamental Law of Active Management 推导信息系数（IC）与信息比率（IR）之间的理论关系，是因子有效性度量的理论基础；③ 第 7 章给出因子组合构建与分层分析方法；④ 第 9 章 Trading Costs, Turnover, and Taxes 讨论换手与交易成本建模。需注意书中 IR 指组合超额收益与跟踪误差之比，与因子研究中常用的 ICIR（IC 均值/IC 标准差）不是同一个量。",
+      "source": "Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management: A Quantitative Approach for Producing Superior Returns and Controlling Risk (2nd ed.). McGraw-Hill. ISBN 978-0070248823。相关章节：第 2 章（基准选择）、第 6 章（Fundamental Law）、第 7 章（因子组合）、第 9 章（交易成本）。",
+      "tags": ["教材", "主动管理", "信息系数", "信息比率", "基准选择", "交易成本", "因子组合"],
+      "related": ["term-ic", "term-ir", "term-turnover", "term-equal-weight", "basis-benchmark", "method-layer-monotonic", "method-cross-section", "basis-slippage", "method-cost-sensitivity", "method-benchmark-choice"]
+    },
+    {
+      "id": "paper-jegadeesh-titman-1993",
+      "title": "Jegadeesh & Titman (1993) 动量效应的经典发现",
+      "body": "Narasimhan Jegadeesh 与 Sheridan Titman 发表于 Journal of Finance 的论文，首次系统报告美股中「过去 3~12 个月收益较高的股票，未来数月至一年继续表现较好」的动量效应，且该效应在扣除交易成本后仍未被完全解释。这是动量因子的原始文献。重要限定：该结论基于美股样本。本平台在 A 股样本上实测 mom 因子时观察到高分组收益低于低分组（即动量失效或表现为反转），这与大量中国市场的后续研究一致——本平台将其如实呈现为数据结论而非模型错误，不因与经典文献不符而修改结果。",
+      "source": "Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91. DOI: 10.1111/j.1540-6261.1993.tb04702.x。中国市场对照：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal.",
+      "tags": ["论文", "动量因子", "因子异象", "A 股反转", "Journal of Finance"],
+      "related": ["term-momentum-factor", "method-cross-section", "method-layer-monotonic"]
+    },
+    {
+      "id": "paper-benjamini-hochberg-1995",
+      "title": "Benjamini & Hochberg (1995) 错误发现率控制方法",
+      "body": "Yoav Benjamini 与 Yosef Hochberg 发表于 Journal of the Royal Statistical Society Series B 的论文，提出错误发现率（False Discovery Rate, FDR）控制方法。与传统的族错误率（FWER）控制相比，FDR 允许在大量假设检验中有一定比例的误判，换取更高的检验功效（即更少漏掉真实效应）。核心做法：将各检验的 p 值升序排列，与控制线 (i/m)·α 比较，找到最大的满足 p(i) ≤ (i/m)·α 的 i，拒绝前 i 个假设。这是因子筛选中控制多重比较问题的两条主流路径之一（另一条是 Harvey 等提出的提高 t 门槛）。",
+      "source": "Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing. Journal of the Royal Statistical Society: Series B, 57(1), 289-300. DOI: 10.1111/j.2517-6161.1995.tb02031.x。",
+      "tags": ["论文", "多重比较", "FDR", "错误发现率", "假设检验", "JRSS-B"],
+      "related": ["method-multiple-testing", "term-stats-significance"]
+    },
+    {
+      "id": "paper-bailey-lopez-2014",
+      "title": "Bailey & López de Prado (2014) 通缩夏普比率",
+      "body": "David H. Bailey 与 Marcos López de Prado 发表于 Journal of Portfolio Management 的论文，提出通缩夏普比率（Deflated Sharpe Ratio, DSR）。要解决的问题：当研究者在同一策略族中尝试了大量变体（不同参数、不同样本切分）后，选出表现最好的那个报告夏普比率，该数值必然包含选择偏差——即使真实夏普为零，试得足够多也总能挑出一个「看起来很高」的。DSR 依据尝试次数、各次夏普的标准差与样本长度，对观测到的夏普做收缩修正，并给出「考虑选择偏差后仍显著」的概率。这是对「参数稳健性三防」的统计补充。",
+      "source": "Bailey, D.H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094。同组作者另见：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5), 458-471。",
+      "tags": ["论文", "通缩夏普", "选择偏差", "回测过拟合", "参数稳健性", "JPM"],
+      "related": ["method-benchmark-overfit", "method-parameter-robust", "method-multiple-testing"]
+    },
+    {
+      "id": "paper-fama-french-1993",
+      "title": "Fama & French (1993) 三因子模型与分层组合法",
+      "body": "Eugene F. Fama 与 Kenneth R. French 发表于 Journal of Financial Economics 的论文，提出市场、规模、价值三因子模型解释股票收益横截面差异。除因子结论本身外，本库更重视其**方法贡献**：论文系统使用「按特征排序分层、构造各层组合、比较多空收益差」的做法来检验因子有效性，这成为后续因子研究的标准范式。本平台的分层回测（按因子值分 5 层、各层等权、观察单调性与多空差）直接沿用该范式。该论文也是「因子须有经济解释」这一审慎立场的重要来源。",
+      "source": "Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56. DOI: 10.1016/0304-405X(93)90023-5。",
+      "tags": ["论文", "三因子模型", "分层组合", "横截面", "因子检验范式", "JFE"],
+      "related": ["method-layer-monotonic", "method-cross-section", "term-momentum-factor"]
+    },
+    {
+      "id": "paper-wilder-1978",
+      "title": "Wilder (1978) 技术交易系统中的 RSI 原始定义",
+      "body": "J. Welles Wilder Jr. 著，Trend Research 1978 年出版的经典技术分析著作，首次系统提出包括 RSI（相对强弱指标）在内的多个技术指标。本库引用其第 6 章 RSI 的原始定义，关键是**平均值的计算方式**：Wilder 使用的是「修正移动平均」（也称 Wilder 平滑），等价于 α = 1/n 的指数平滑，而非简单算术平均。这一差异并非无关紧要：本平台实测 Wilder 口径与 SMA 口径的 RSI 数值相对差可达 13%，并曾导致同一策略的交易次数从 39 次变为 11 次。因此本项目将 RSI 实现统一为唯一来源（shared/rsi.mjs），防止口径分裂。",
+      "source": "Wilder, J.W. (1978). New Concepts in Technical Trading Systems. Trend Research. 相关章节：第 6 章（RSI 原始公式与 Wilder 平滑法）。口径差异的第三方说明可对照 StockCharts 技术指标文档中 Wilder RSI 与 SMA 版 RSI 的区分。",
+      "tags": ["著作", "技术分析", "RSI", "Wilder 平滑", "指标口径", "单一实现"],
+      "related": ["basis-rsi-wilder", "method-single-source"]
+    },
+    {
+      "id": "paper-almgren-chriss-2001",
+      "title": "Almgren & Chriss (2001) 最优执行与冲击成本",
+      "body": "Robert Almgren 与 Neil Chriss 发表于 Journal of Risk 的论文，建立最优执行（optimal execution）的连续时间框架：在「快速交易承受较大冲击成本」与「缓慢交易承受较大价格风险」之间求最优权衡。给出的核心洞见是——交易成本不是固定的百分比，而是随下单量与市场流动性变化的函数，规模越大偏差越大。本平台据此在口径中明确声明：回测使用固定百分比滑点（默认 0.1%）是**保守近似**，并不建模真实冲击成本；因此任何策略的成本敏感度检验都应理解为下限估计，而非实盘成本的精算。",
+      "source": "Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041。",
+      "tags": ["论文", "最优执行", "冲击成本", "滑点", "流动性", "交易成本建模"],
+      "related": ["basis-slippage", "method-cost-sensitivity", "term-turnover"]
+    }
+  ]
+}

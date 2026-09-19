@@ -54,7 +54,7 @@
     {
       "id": "basis-slippage",
       "title": "滑点模型：回测 0.1%、模拟盘零滑点",
-      "body": "回测（quant.cjs）与横截面引擎（crosssect.cjs）默认对每次成交施加 0.1% 的滑点，可通过参数覆盖（QUANT 请求可传 slippage，范围 0 到 0.05 为前端约束、内核支持更宽）。模拟盘（paper）当前为零滑点成交——这是已知简化，因为模拟盘以实时报价撮合，未建模冲击成本与排队。两者差异已在「已知遗留」中登记，不作为等价口径使用：跨模拟盘与回测对比收益时必须意识到该差异。",
+      "body": "回测（quant.cjs）与横截面引擎（crosssect.cjs）默认对每次成交施加 0.1% 的滑点，可通过参数覆盖（QUANT 请求可传 slippage）。有效范围 0 到 0.05（5%）——该区间在三个入口处均被硬性夹取：路由层 server/index.cjs:1072、按需回测 quant.cjs:44、横截面引擎 crosssect.cjs:158，均为 Math.min(Math.max(v,0),0.05)。超出区间的取值会被静默截断到边界，不会报错，使用时须注意。模拟盘（paper）当前为零滑点成交——这是已知简化，因为模拟盘以实时报价撮合，未建模冲击成本与排队。两者差异已在「已知遗留」中登记，不作为等价口径使用：跨模拟盘与回测对比收益时必须意识到该差异。",
       "source": "方法论参考：Grinold & Kahn《Active Portfolio Management》第 9 章关于交易成本建模；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39（冲击成本与最优执行）。",
       "tags": ["滑点", "slippage", "成交", "回测", "模拟盘", "冲击成本"],
       "related": ["basis-fee-cn", "method-cost-sensitivity"]

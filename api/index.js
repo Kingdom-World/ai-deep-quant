@@ -24,6 +24,19 @@
 // ─────────────────────────────────────────────────────────────
 import { createRequire } from 'node:module';
 
+// ── 进程级错误捕获（2026-09-20 追加）──────────────────────────
+//   背景：线上日志只出现 [PaperStore] 的 warn，却没有任何致命错误，
+//   但请求一律 500 —— 典型特征是**错误发生在 Express 之外**：
+//   未捕获异常/未处理的 Promise 拒绝会让 Node 进程直接退出，
+//   Vercel 随即返回平台通用 500 页（不经过我们的 handler）。
+//   这里把进程级错误显式打到运行日志，否则它们会静默消失。
+process.on('uncaughtException', (e) => {
+  console.error('[vercel-entry] uncaughtException:', (e && e.stack) || e);
+});
+process.on('unhandledRejection', (r) => {
+  console.error('[vercel-entry] unhandledRejection:', (r && r.stack) || r);
+});
+
 const require_ = createRequire(import.meta.url);
 
 let app = null;

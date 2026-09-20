@@ -83,3 +83,6 @@ python_backend/
 requirements.txt
 render.yaml
 render_app.py
+
+# 运维手册（含部署细节）
+公网部署运行手册.md

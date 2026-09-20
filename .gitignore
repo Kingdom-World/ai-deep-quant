@@ -68,3 +68,6 @@ AGENT-MEMORY.md
 
 # 本地归档备份
 backups/
+
+# 基础设施文档（含内网拓扑与凭据，公开仓库下不入库）
+Tailscale内网穿透指南.md

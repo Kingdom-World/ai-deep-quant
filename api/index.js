@@ -39,6 +39,45 @@ process.on('unhandledRejection', (r) => {
 
 const require_ = createRequire(import.meta.url);
 
+// ── Serverless 只读 FS 单点兜底（2026-09-20 追加）────────────────
+//   背景：Vercel 的 /var/task 是**只读**的。本应用有十余处「模块加载期」的
+//   `fs.mkdirSync(data/...)`（paper / auth / reports / news / experiments …），
+//   **任何一处抛出都会让整个函数加载失败 → 全站 500**。
+//
+//   已实测到"拉锯"现象：修好 `paper/store.cjs:load()` 后，下一个立刻浮出
+//   `paper/strategies.cjs:load()` —— 而两者报错文本**一字不差**
+//   （都是 `mkdir '/var/task/data/paper'`），极易误判为"上次没修好"。
+//   逐个打补丁 = 每轮一次部署（~2 分钟）才能露下一个，代价过高。
+//
+//   故在此做**单点兜底**：仅当 VERCEL=1 时，把 `fs.mkdirSync` 包成
+//   "失败即降级 + 逐次告警"。只读环境下无法持久化的模块按内存态运行 ——
+//   这与既定「Vercel 承载边界」一致（模拟盘 / 回测留痕本就不在 Vercel 支持范围）。
+//
+//   ⚠️ 为什么不算"静默降级"（项目铁律 #4）：每次降级都打 `[vercel-fs-guard]`
+//   警告，并在 `/api/__ping` 的 `fsGuardCount` 中计数，异常外露可查。
+function installReadOnlyFsGuard() {
+  if (!process.env.VERCEL) return;
+  const fs = require_('node:fs');
+  if (fs.__roGuardInstalled) return;
+  const orig = fs.mkdirSync;
+  fs.mkdirSync = function (p, opts) {
+    try {
+      return orig.call(fs, p, opts);
+    } catch (e) {
+      fs.__roGuardCount = (fs.__roGuardCount || 0) + 1;
+      console.warn(
+        '[vercel-fs-guard] mkdirSync 降级（只读 FS）:',
+        String(p),
+        '→',
+        e.code || e.message,
+      );
+      return undefined;
+    }
+  };
+  fs.__roGuardInstalled = true;
+}
+installReadOnlyFsGuard();
+
 let app = null;
 let initError = null;
 let initMs = 0;
@@ -91,6 +130,7 @@ export default function handler(req, res) {
       initMs,
       node: process.version,
       urlSeenByFunction: urlSeen,
+      fsGuardCount: require_('node:fs').__roGuardCount || 0,
       vercel: process.env.VERCEL || null,
       region: process.env.VERCEL_REGION || null,
     });

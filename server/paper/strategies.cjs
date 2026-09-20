@@ -18,7 +18,17 @@ let strategies = [];
 let deps = {}; // { getQuote, fetchDailyRows }
 
 function load() {
-  fs.mkdirSync(path.dirname(STRAT_FILE), { recursive: true });
+  // ⚠️ 只读文件系统（Vercel Serverless）降级：建目录失败不能拖垮整个进程。
+  //    与 paper/store.cjs:load() 同一处理方式——那里已踩过这个坑：
+  //    Vercel 上 /var/task 只读，抛 ENOENT → **模块加载即崩 → 全站 500**。
+  //    注意：本行原报错信息与 store.cjs 的**完全相同**（都是
+  //    mkdir '/var/task/data/paper'），极易被误认为"上次没修好"，实为另一个调用点。
+  try {
+    fs.mkdirSync(path.dirname(STRAT_FILE), { recursive: true });
+  } catch (e) {
+    console.warn('[Strategies] 持久化不可用，降级为内存态:', e.message);
+    return;
+  }
   if (fs.existsSync(STRAT_FILE)) {
     try {
       strategies = JSON.parse(fs.readFileSync(STRAT_FILE, 'utf8'));

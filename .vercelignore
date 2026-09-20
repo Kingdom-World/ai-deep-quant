@@ -66,3 +66,20 @@ t2.json
 # ── 含基础设施信息 / 内部规划文档（不得上传，2026-09-20 审计补充）──
 Tailscale内网穿透指南.md
 升级规划书.md
+
+# ── 自训练模型资产（用户明确要求：不得外传）──
+ai-training/
+
+# ── 规划书 / 内部报告（不得外传）──
+plans/
+升级规划书.md
+OPTIMIZATION_REPORT.md
+DEPLOY.md
+
+# ── 非运行时目录（部署不需要，减少上传面）──
+test/
+scripts/
+python_backend/
+requirements.txt
+render.yaml
+render_app.py

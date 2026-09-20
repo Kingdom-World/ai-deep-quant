@@ -71,3 +71,9 @@ backups/
 
 # 基础设施文档（含内网拓扑与凭据，公开仓库下不入库）
 Tailscale内网穿透指南.md
+
+# 自训练模型资产与内部资料（不得外传，2026-09-20）
+ai-training/
+plans/
+升级规划书.md
+OPTIMIZATION_REPORT.md

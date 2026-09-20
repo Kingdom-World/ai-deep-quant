@@ -71,7 +71,17 @@ class PaperStore {
   }
 
   load() {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // ⚠️ 只读文件系统（Vercel Serverless 等）降级：建目录失败不能拖垮整个进程。
+    //    背景（2026-09-20 线上实测）：本行原先无 try/catch，Vercel 上抛
+    //    ENOENT: mkdir '/var/task/data/paper' → 模块加载即崩 →
+    //    整个 Serverless 函数 500、全站不可用。
+    //    与同类中的 acquireLock() 保持一致——那里早已显式处理只读 FS。
+    //    降级语义：无法持久化则按内存态运行（模拟盘在无持久存储的环境本就不该可用）。
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    } catch (e) {
+      console.warn('[PaperStore] 持久化不可用，降级为内存态:', e.message);
+    }
     if (fs.existsSync(STATE_FILE)) {
       try {
         const loaded = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));

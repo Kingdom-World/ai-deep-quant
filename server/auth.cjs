@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { writeJsonAtomic } = require('./atomic-write.cjs');
+const invites = require('./invites.cjs');
 
 // 认证数据目录。AUTH_DATA_DIR 供测试隔离（与 PAPER_DATA_DIR 同思路）——
 //   ⚠️ 抽取时发现：本模块此前**不可隔离**，任何集成测试都会读写真实 data/auth/users.json。
@@ -255,10 +256,30 @@ function router(opts = {}) {
   r.post('/register', (req, res) => {
     try {
       const { username, password, invite } = req.body || {};
-      if (inviteCode() && String(invite || '').trim() !== inviteCode()) {
+      // 邀请码两种模式（2026-09-20）：
+      //   · 一码一人（invites.isEnabled()）—— 优先；码存在 data/auth/invites.json
+      //   · 共享码（.env 的 INVITE_CODE）—— 未启用一码一人时回落，保持向后兼容
+      const oneByOne = invites.isEnabled();
+      let pendingCode = null;
+      if (oneByOne) {
+        const chk = invites.check(invite);
+        if (!chk.ok) return res.status(403).json({ ok: false, error: chk.error });
+        pendingCode = chk.entry.code;
+      } else if (inviteCode() && String(invite || '').trim() !== inviteCode()) {
         return res.status(403).json({ ok: false, error: '邀请码不正确，请向站点管理员索取' });
       }
+
+      // 🔴 以下三步必须在**同一个同步块**内完成，中途不得有 await——
+      //    否则两个并发注册可能各自通过 check 却共用同一张码（Node 单线程，
+      //    只有"全同步"才能保证这里是一个原子序列）。
+      //    顺序也重要：先建用户（可能因重名抛错，此时**不消费**码），
+      //    成功后才消费码——避免"码烧掉了但账号没建成"。
       const user = createUser(username, password);
+      if (pendingCode) {
+        const c = invites.consume(pendingCode, user.username);
+        if (!c.ok) return res.status(403).json({ ok: false, error: c.error });
+      }
+
       const token = issueSession(user);
       res.setHeader('Set-Cookie', sessionCookie(token));
       res.json({ ok: true, username: user.username, token });
@@ -289,6 +310,56 @@ function router(opts = {}) {
     const user = getUserFromRequest(req);
     if (!user) return res.json({ ok: false, username: null, isAdmin: false });
     res.json({ ok: true, username: user.username, uid: user.uid, isAdmin: !!adminName && user.username === adminName });
+  });
+
+  // ── 邀请码管理（仅管理员；一码一人模式）──────────────────────
+  //   为何放在 /api/auth 下：本路由段在鉴权中间件之前挂载（注册/登录必须免鉴权），
+  //   故这里**自行校验管理员身份**。管理员判定与会话一致 =
+  //   用户名等于 .env 的 SITE_USERNAME（见 adminName）。
+  //   ⚠️ 非管理员一律 403，且错误信息不透露"是否存在邀请码"这类信息。
+  const requireAdmin = (req, res) => {
+    const user = getUserFromRequest(req);
+    if (!user || !adminName || user.username !== adminName) {
+      res.status(403).json({ ok: false, error: '仅管理员可管理邀请码' });
+      return null;
+    }
+    return user;
+  };
+
+  r.get('/invites', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const codes = invites.list();
+    res.json({
+      ok: true,
+      enabled: invites.isEnabled(),
+      codes,
+      // 汇总便于管理员一眼看清配额使用情况
+      summary: {
+        total: codes.length,
+        unused: codes.filter((c) => !c.usedBy && !c.revoked).length,
+        used: codes.filter((c) => c.usedBy).length,
+        revoked: codes.filter((c) => c.revoked).length,
+      },
+    });
+  });
+
+  r.post('/invites', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const { note, ttlDays } = req.body || {};
+      const ttl = Number(ttlDays) > 0 ? Number(ttlDays) : undefined;
+      const entry = invites.create({ note, ttlDays: ttl });
+      res.json({ ok: true, entry });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `生成失败：${e.message}` });
+    }
+  });
+
+  r.post('/invites/revoke', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const { code } = req.body || {};
+    const r2 = invites.revoke(String(code || '').trim());
+    res.status(r2.ok ? 200 : 404).json(r2);
   });
 
   // 改密接口：/api/auth/* 不走鉴权中间件，这里自行校验登录态

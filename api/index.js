@@ -71,6 +71,31 @@ function sendJson(res, status, body) {
 }
 
 export default function handler(req, res) {
+  // ── 探针端点（2026-09-20 追加）────────────────────────────────
+  //   目的：一次性把"故障在哪一层"问清楚，不再靠猜。
+  //   · 若 /api/__ping 返回 200 而 /api/health 仍 500
+  //       → 函数本体、打包、Node 运行时都正常，问题在 Express 路由或请求路径；
+  //   · 若 /api/__ping 同样 500
+  //       → 问题在函数/平台层（打包缺文件、超时、入口格式）。
+  //   该端点**不经过 Express**，也不依赖任何业务模块，故可作为"最小可运行单元"。
+  //   同时把函数实际看到的 req.url 打进日志 —— 这是验证 vercel.json 的
+  //   rewrite 是否把路径改掉（Express 因此找不到路由）的关键证据。
+  const urlSeen = String(req.url || '');
+  console.log('[vercel-entry] req.url =', urlSeen, '| method =', req.method);
+  if (urlSeen.includes('__ping')) {
+    return sendJson(res, 200, {
+      ok: true,
+      probe: 'entry-alive',
+      appReady: !initError,
+      initError: initError ? initError.message.slice(0, 300) : null,
+      initMs,
+      node: process.version,
+      urlSeenByFunction: urlSeen,
+      vercel: process.env.VERCEL || null,
+      region: process.env.VERCEL_REGION || null,
+    });
+  }
+
   // ── 初始化失败：给出可诊断的响应，而不是让 Vercel 抛通用 500 ──
   if (initError) {
     const detail = exposeErrors()

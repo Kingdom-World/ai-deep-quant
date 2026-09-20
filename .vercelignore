@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────
+# Vercel 部署忽略清单（2026-09-20）
+#
+# 🔴 为什么必须有这个文件：
+#   `vercel` CLI **不读 .gitignore**（Vercel 官方文档明确：CLI 只认 Vercel
+#   内置默认忽略表 + 本文件）。它上传的是**整个工作目录**。
+#   而内置默认表只忽略 `.env.local` / `.env.*.local` —— **裸 `.env` 不在其中**。
+#   若直接 `vercel --prod`，会把本地凭据、账本、会话密钥一并上传。
+#
+#   另一条更根本的路：**用 Git 连接的部署**——那样构建环境里只有已提交的文件，
+#   被 gitignore 的东西**物理上不存在**，风险从根上消失。
+#   本文件是"用 CLI 时的兜底"，不是"可以随便用 CLI"的许可。
+#
+# 用法：与 .gitignore 并列放在项目根目录即可，无需其他配置。
+# ─────────────────────────────────────────────────────────────
+
+# ── 凭据与密钥（最高优先级，任何一条都不得上传）──
+.env
+.env.*
+!.env.example
+访问账号密码.md
+AGENT-MEMORY.md
+
+# ── 运行时数据：账本 / 会话签名密钥 / 用户表 ──
+data/
+backups/
+
+# ── 含基础设施拓扑的规划文档 ──
+Vercel部署与资源分配规划.md
+
+# ── 工作区与中间稿（含登录 cookie、测试凭据）──
+.tmpdir/
+.workbuddy/
+.zcode/
+
+# ── 日志与自检报告 ──
+logs/
+reports/
+*.log
+
+# ── 构建产物与缓存（应由 Vercel 自行构建，不要传本地旧产物）──
+node_modules/
+dist/
+dist-ssr/
+__pycache__/
+python_backend/data/
+*.pyc
+*.pyo
+
+# ── 游离临时文件 ──
+t1.json
+t2.json
+
+# ── 版本控制与编辑器配置 ──
+.git/
+.gitignore
+.vercelignore
+.vercel/
+.vscode/
+.idea/
+.DS_Store
+
+# ── SQLite 缓存 ──
+*.db

@@ -23,6 +23,15 @@ reports/
 # SQLite 缓存数据库（本地 Baostock 缓存，不入库）
 python_backend/data/
 
+# Python 字节码构建产物（不入库；此前被追踪过，已用 git rm --cached 解除）
+__pycache__/
+*.pyc
+*.pyo
+
+# 根目录游离临时文件（AI 问答测试样本，非项目资产）
+/t1.json
+/t2.json
+
 # Vercel
 .vercel
 

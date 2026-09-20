@@ -21,6 +21,7 @@ const fingerprint = require('../fingerprint.cjs');
 const { runBacktest } = require('../quant.cjs');
 const paramscan = require('../paramscan.cjs');
 const factoreval = require('../factoreval.cjs');
+const crosssect = require('../crosssect.cjs');
 const knowledgeBase = require('../knowledge.cjs');
 
 /** 统一的成功返回 */
@@ -211,6 +212,64 @@ function createToolbox(deps = {}) {
           `${r.params.yearFrom}-${r.params.yearTo} 逐年评估：\n${lines.join('\n')}`,
           r.factors.map((f) => ({ factor: f.factor, full: f.full, stability: f.stability })),
           fingerprint.build({ params: { topN, rebalanceEvery, yearFrom: r.params.yearFrom }, data: { source: 'archive', adjust: 'none+factor' } }),
+        );
+      },
+    },
+
+    // ── 因子 IC / 分层诊断（M2.5 + M3）──
+    //   为什么给 Agent 这个工具：模型被问「这个因子有效吗」时，最容易犯的错是
+    //   凭因子的"名字"和常见认知作答（例如断言"动量在 A 股有效"）。
+    //   本工具返回**本次样本的实测统计量**，并要求模型据实回答，而不是照搬教科书。
+    //   ⚠️ 语义红线（本工具存在的核心价值，写进 tool desc 供模型遵守）：
+    //     · `degraded=true` 是「**不可检验**」而非「不显著」——IC 序列方差为 0 时
+    //       t 统计量无定义（分母为 0），不能说成"没有效果"。
+    //     · 方向判定必须读 `strategyAligned`（三态：true/false/**null=不可判**）。
+    //       null 表示表达式方向不定（如 mom60 - mom20 含减法），不可说成"方向相反"。
+    //     · 层号语义固定「layer1 = 因子值最高」。
+    {
+      name: 'factor_ic',
+      desc: '因子有效性诊断：返回 IC 序列统计（均值/ICIR/t/p/Newey-West 滞后）与分层单调性。factor 可传预置名（mom20/rev60）或自定义表达式（如 "mom60 - mom20"）。用于回答「这个因子在我们样本里到底有没有预测力」。',
+      params: [
+        { name: 'factor', type: 'string', required: true, default: 'mom20' },
+        { name: 'layers', type: 'number', required: false, default: 5 },
+        { name: 'rebalanceEvery', type: 'number', required: false, default: 20 },
+      ],
+      async run({ factor, layers, rebalanceEvery }) {
+        const f = String(factor || 'mom20').trim();
+        const opts = {
+          topN: 20,
+          rebalanceEvery: Number(rebalanceEvery) || 20,
+          capital: 1_000_000,
+        };
+        const bt = crosssect.runCrossBacktest({ factor: f, ...opts });
+        if (bt.error) return fail(`因子「${f}」无法计算：${bt.error}`);
+
+        const ly = crosssect.layerAnalysis({ factor: f, layers: Number(layers) || 5, rebalanceEvery: opts.rebalanceEvery });
+        const ic = bt.ic || {};
+        const mono = ly.error ? null : ly.mono;
+
+        // 摘要措辞严格区分三态，避免模型把"不可检验"说成"无效"
+        const icLine = ic.degraded
+          ? `IC：**不可检验**（非不显著）——${ic.degradeReason || '样本不足'}`
+          : `IC：均值 ${ic.icMean}，ICIR ${ic.icir}，t=${ic.t}，p=${ic.p}，Newey-West 滞后 ${ic.neweyWestLag} 阶，${ic.significant2 ? '5% 水平显著' : '不显著'}（IC>0 占比 ${ic.icPositiveRate}）`;
+        const dirLine = !mono
+          ? `分层：不可用（${ly.error}）`
+          : mono.strategyAligned === null
+            ? `分层：rho=${mono.spearman}，单调=${mono.monotonic}；**方向不可判**（该因子混合动量与反转语义，不宜声称与策略一致或相反）`
+            : `分层：rho=${mono.spearman}，单调=${mono.monotonic}，与策略方向${mono.strategyAligned ? '一致' : '**相反**（按此方向选股将系统性亏损）'}，第1层−第N层期均差 ${mono.longShortSpreadPct}pp`;
+        const basis = `区间 ${bt.range?.start}~${bt.range?.end}，样本 ${bt.universeSize} 只，调仓 ${opts.rebalanceEvery} 日；分层不计费不计滑点`;
+
+        return ok(
+          `因子「${f}」（${bt.factorKind === 'expr' ? '自定义表达式' : '预置'}，窗口 ${bt.factorWindow}）\n${icLine}\n${dirLine}\n口径：${basis}`,
+          {
+            factor: f,
+            factorKind: bt.factorKind,
+            factorWindow: bt.factorWindow,
+            ic: { n: ic.n, icMean: ic.icMean, icir: ic.icir, t: ic.t, p: ic.p, neweyWestLag: ic.neweyWestLag, significant2: ic.significant2, icPositiveRate: ic.icPositiveRate, degraded: ic.degraded, degradeReason: ic.degradeReason },
+            layer: mono ? { spearman: mono.spearman, monotonic: mono.monotonic, strategyAligned: mono.strategyAligned, longShortSpreadPct: mono.longShortSpreadPct, directionUncertain: !!ly.directionUncertain } : null,
+            range: bt.range,
+          },
+          fingerprint.build({ params: { factor: f, ...opts }, data: { source: 'archive', adjust: 'none+factor' } }),
         );
       },
     },

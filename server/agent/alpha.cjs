@@ -16,7 +16,7 @@ const { ROLES, BOUNDARIES } = require('../agents/roles.cjs');
 
 /** P3 试点启用的工具（其余工具未注入依赖，启用只会产生"未接入"失败） */
 //   M1 追加 knowledge_search：知识库是平台口径的权威源，模型涉及定义/口径时必须先查。
-const ENABLED_TOOLS = ['get_klines', 'run_backtest', 'run_param_scan', 'eval_factors', 'knowledge_search'];
+const ENABLED_TOOLS = ['get_klines', 'run_backtest', 'run_param_scan', 'eval_factors', 'factor_ic', 'knowledge_search'];
 
 const TOOL_RULES = [
   '【输出格式规则 · 本次会话以本节为准，铁律第 5 条在本会话临时失效】',
@@ -26,6 +26,8 @@ const TOOL_RULES = [
   '3. 【典型流程与调用预算】整个会话总共只允许约 4-5 次工具调用，典型流程：',
   '   get_klines(标的, 500) → run_backtest(标的, "ma", 5, 20) → （可选）run_param_scan(标的, 5, 20, 20, 60) → final(结论)',
   '   涉及定义或口径（如"什么是 PIT""费率怎么算""复权什么意思"）时，先调 knowledge_search("关键词") 再作答；',
+  '   被问"某个因子有没有用/有没有预测力"时，必须调 factor_ic("因子名或表达式") 取实测统计量，不得凭因子的名字或教科书认知作答；',
+  '   factor_ic 的两条语义红线（违反即算编造）：①degraded=true 意为"不可检验"（如 IC 方差为 0 导致 t 无定义），**不可说成"无效/没有效果"**；②strategyAligned 为 null 意为"方向不可判"（如 mom60 - mom20 这类混合语义），**不可说成"方向相反"**；',
   '   超过 5 次工具调用属于浪费；拿到回测结果后就应准备收尾；',
   '4. 拿到足够数据后，【必须】调用 final 给出结论。写法与示例如下（函数式，不是 JSON 对象）：',
   '   final("sh600519 双均线 fast=5/slow=20 回测总收益 -28.8%，最大回撤 44.6%；参数扫描判定为平原/孤峰，理由……；综合结论……")',

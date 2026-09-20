@@ -44,7 +44,7 @@ function init({ getQuote, fetchDailyRows }) {
 }
 
 // ── 指标 ──
-const { wilderRsiLast } = require('../../shared/rsi.mjs');
+const { wilderRsiLast } = require('../../shared/rsi.cjs');
 
 function smaLast(closes, n) {
   if (closes.length < n) return null;
@@ -52,7 +52,7 @@ function smaLast(closes, n) {
   return s / n;
 }
 /**
- * RSI —— 口径统一为 **Wilder 标准**（唯一实现见 shared/rsi.mjs）
+ * RSI —— 口径统一为 **Wilder 标准**（唯一实现见 shared/rsi.cjs）
  *   历史：此处原为本地「简单均值」实现，注释还写着"与回测口径一致"——
  *   但回测已是 Wilder（S6 起），该注释当时已成假话。现改为直接引用唯一实现源，
  *   使「模拟盘策略」与「回测」真正同口径。

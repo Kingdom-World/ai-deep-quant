@@ -9,7 +9,7 @@
 //   及新浪滚动要闻，未覆盖项明确标注降级；模型不可用的角色自动由本地规则引擎兜底并标注。
 // ─────────────────────────────────────────────────────────────
 const reportstore = require('./reportstore.cjs');
-const { wilderRsiLast } = require('../../shared/rsi.mjs');
+const { wilderRsiLast } = require('../../shared/rsi.cjs');
 
 const DISCLAIMER =
   '本报告由 AI 多角色协作系统自动生成，属学术研究演示，不构成任何投资建议，不代表任何真实机构或分析师观点。' +
@@ -20,7 +20,7 @@ const sma = (arr, n) => {
   return arr.slice(-n).reduce((a, b) => a + b, 0) / n;
 };
 
-/** RSI 最新值 —— 口径统一为 **Wilder 标准**（实现见 shared/rsi.mjs；S6 收敛为单一实现） */
+/** RSI 最新值 —— 口径统一为 **Wilder 标准**（实现见 shared/rsi.cjs；S6 收敛为单一实现） */
 const rsiLast = wilderRsiLast;
 
 function emaSeries(values, period) {

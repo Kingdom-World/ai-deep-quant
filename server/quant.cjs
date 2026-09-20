@@ -8,7 +8,7 @@
 //     - 建仓失败（资金不足一手）不再静默空转，结果带 note 说明
 // ─────────────────────────────────────────────────────────────
 const { calcFees, marketOf } = require('./paper/fees.cjs');
-const { wilderRsiSeries } = require('../shared/rsi.mjs');
+const { wilderRsiSeries } = require('../shared/rsi.cjs');
 
 /** SMA 序列（不足 N 为 null） */
 function smaSeries(values, n) {
@@ -23,7 +23,7 @@ function smaSeries(values, n) {
 }
 
 /**
- * RSI 序列 —— 口径统一为 **Wilder 标准**（实现见 shared/rsi.mjs，前后端共用同一份源码）
+ * RSI 序列 —— 口径统一为 **Wilder 标准**（实现见 shared/rsi.cjs，前后端共用同一份源码）
  *   历史：此处原为「窗口简单均值」实现；项目曾同时存在 4 套各自为政、且**均非行业标准**的 RSI。
  *   S6 起收敛为单一实现。⚠️ 口径切换会改变穿越 30/70 的信号时点（实测两口径相对差可达 13%），
  *   故回测结果会与切换前不同 —— 该差异属**口径修正**，非缺陷。

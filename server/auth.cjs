@@ -98,8 +98,10 @@ function validatePassword(p) {
   return typeof p === 'string' && p.length >= 6 && p.length <= 64;
 }
 
-/** 注册成功返回用户对象；失败抛 Error(message) */
-function createUser(username, password) {
+/** 注册成功返回用户对象；失败抛 Error(message)
+ *  opts.memoryOnly=true 时跳过落盘（只读 FS 上的**引导管理员**专用：
+ *  该账号由环境变量每次冷启动重建、各实例一致，本就不需要持久化） */
+function createUser(username, password, opts = {}) {
   username = String(username || '').trim();
   if (!validateUsername(username)) throw new Error('用户名需为 2-20 位中英文/数字/下划线');
   if (!validatePassword(password)) throw new Error('密码长度需为 6-64 位');
@@ -113,7 +115,12 @@ function createUser(username, password) {
     createdAt: new Date().toISOString(),
   };
   users.users.push(user);
-  persist();
+  if (opts.memoryOnly) {
+    // 显式告知，不静默：该账号不进磁盘，靠环境变量在每次冷启动重建
+    console.warn('[认证] 存储不可写 → 引导管理员仅创建于内存（每次冷启动重建，各实例一致）');
+  } else {
+    persist();
+  }
   return { username: user.username, uid: user.uid };
 }
 
@@ -209,13 +216,18 @@ function getUserFromRequest(req) {
   return null;
 }
 
-/** 首次启动引导：用户表为空时，用 .env 的站点账号创建管理员（保证运维脚本可用） */
+/** 首次启动引导：用户表为空时，用 .env 的站点账号创建管理员（保证运维脚本可用）
+ *  ⚠️ 只读 FS（Vercel）上走 memoryOnly：账号由环境变量在**每次冷启动重建**，
+ *     因此各实例一致、登录稳定 —— 这正是不需要数据库也能"用自己的账号登录"的原因。 */
 function ensureBootstrapAdmin(username, password) {
   if (users.users.length > 0) return false;
   if (!username || !password) return false;
   try {
-    createUser(username, password);
-    console.log(`👤 [认证] 已创建引导管理员: ${username}（请尽快在网站内注册个人账号）`);
+    createUser(username, password, { memoryOnly: !persistent });
+    console.log(
+      `👤 [认证] 已创建引导管理员: ${username}` +
+        (persistent ? '' : '（内存态：只读 FS，每次冷启动按环境变量重建）'),
+    );
     return true;
   } catch (e) {
     console.warn(`👤 [认证] 引导管理员创建失败: ${e.message}`);

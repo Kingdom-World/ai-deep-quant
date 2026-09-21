@@ -120,7 +120,11 @@ export default function handler(req, res) {
   //   同时把函数实际看到的 req.url 打进日志 —— 这是验证 vercel.json 的
   //   rewrite 是否把路径改掉（Express 因此找不到路由）的关键证据。
   const urlSeen = String(req.url || '');
-  console.log('[vercel-entry] req.url =', urlSeen, '| method =', req.method);
+  // 逐请求打印 req.url 是当时为定位"rewrite 是否改路径"加的诊断，现已完成使命。
+  // 默认关闭（每个请求一行日志既有噪声也有成本）；需要时置 DEBUG_ERRORS=1 复现。
+  if (process.env.DEBUG_ERRORS === '1') {
+    console.log('[vercel-entry] req.url =', urlSeen, '| method =', req.method);
+  }
   if (urlSeen.includes('__ping')) {
     return sendJson(res, 200, {
       ok: true,

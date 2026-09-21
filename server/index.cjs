@@ -137,6 +137,14 @@ if (!AUTH_ENABLED) {
 
 // 用户系统初始化（会话密钥/用户表）+（可选）首次启动用环境变量账号引导创建管理员
 auth.init();
+if (AUTH_ENABLED && !auth.isPersistent()) {
+  console.warn(
+    '🔴 [认证] 已开启鉴权，但存储不可写（只读文件系统）：\n' +
+      '    · 由环境变量引导的管理员在每次冷启动重建 ⇒ 登录**可用且各实例一致**；\n' +
+      '    · 但**新注册的账号不会被保存**，注册接口将显式返回 503（不假装成功）。\n' +
+      '    要支持多人各自注册账号，必须接入可写存储（如 Vercel Postgres / KV）。',
+  );
+}
 if (BOOTSTRAP_ADMIN) {
   auth.ensureBootstrapAdmin(SITE_USERNAME, SITE_PASSWORD);
 } else if (AUTH_ENABLED) {

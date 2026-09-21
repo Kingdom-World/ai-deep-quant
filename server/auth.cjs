@@ -26,6 +26,12 @@ const COOKIE_SECURITY = SECURE_COOKIE ? '; Secure' : '';
 
 let users = { users: [] }; // [{username, uid, salt, hash, createdAt}]
 let sessionSecret = '';
+// 存储是否真的可写。只读文件系统（Vercel Serverless）上为 false。
+//   🔴 为什么必须显式记录：此前 `persist()` 失败会被上层 catch 吞掉，
+//   表现为「注册接口返回成功、账号却只存在于本实例内存」——
+//   换一个实例即登录失败。这违反项目铁律 #4「禁止静默降级」：
+//   用户会误以为注册好了，实际什么都没留下。
+let persistent = false;
 
 function init() {
   try {
@@ -46,15 +52,30 @@ function init() {
         users = { users: [] };
       }
     }
+    // 写探针：mkdir 成功不代表可写（只读挂载下 mkdir 也可能"成功"或已被绕过）
+    const probe = path.join(DATA_DIR, '.write-probe');
+    fs.writeFileSync(probe, String(Date.now()));
+    fs.unlinkSync(probe);
+    persistent = true;
   } catch (e) {
     // 只读文件系统（如 Vercel Serverless）降级：会话仅存内存，进程重启后需重新登录
-    console.warn('[认证] 持久化不可用，降级为内存会话:', e.message);
+    persistent = false;
+    console.warn('[认证] 存储不可写，降级为内存态（新注册的账号不会被保存）:', e.message);
     if (!sessionSecret) sessionSecret = crypto.randomBytes(32).toString('hex');
   }
 }
 
+/** 存储是否可写（供上层显式降级提示用） */
+function isPersistent() {
+  return persistent;
+}
+
 /** 原子写入（临时文件 + rename，含 Windows EPERM 重试），防止写入中途崩溃损坏用户表 */
 function persist() {
+  if (!persistent) {
+    // 显式失败优于静默丢数据（铁律 #4）
+    throw new Error('本部署的存储不可写（只读文件系统），账号无法持久化');
+  }
   writeJsonAtomic(USERS_FILE, users, true);
 }
 
@@ -260,6 +281,16 @@ function router(opts = {}) {
   };
 
   r.post('/register', (req, res) => {
+    // 🔴 存储不可写时**明确拒绝**，而不是让注册"成功"后再蒸发。
+    //    只读 FS（Vercel）上账号只存在于单个函数实例的内存里，换实例即查无此人；
+    //    若返回 200，用户会误以为注册好了（违反铁律 #4 禁止静默降级）。
+    if (!persistent) {
+      return res.status(503).json({
+        ok: false,
+        error:
+          '本部署的存储不可写（只读文件系统），注册暂不可用 —— 账号无法保存。请联系站点管理员。',
+      });
+    }
     try {
       const { username, password, invite } = req.body || {};
       // 邀请码两种模式（2026-09-20）：
@@ -314,13 +345,16 @@ function router(opts = {}) {
 
   r.get('/me', (req, res) => {
     const user = getUserFromRequest(req);
-    if (!user) return res.json({ ok: false, username: null, isAdmin: false, authEnabled });
+    // `persistent` 外露给运维/自查：为 false 时说明本部署注册不可用（只读 FS）。
+    // 属于"显式降级"信号，不是错误——前端/运维据此提示，而不是静默失败。
+    if (!user) return res.json({ ok: false, username: null, isAdmin: false, authEnabled, persistent });
     res.json({
       ok: true,
       username: user.username,
       uid: user.uid,
       isAdmin: !!adminName && user.username === adminName,
       authEnabled,
+      persistent,
     });
   });
 
@@ -390,4 +424,4 @@ function router(opts = {}) {
   return r;
 }
 
-module.exports = { init, createUser, verifyUser, changePassword, ensureBootstrapAdmin, middleware, router, getUserFromRequest };
+module.exports = { init, createUser, verifyUser, changePassword, ensureBootstrapAdmin, middleware, router, getUserFromRequest, isPersistent };

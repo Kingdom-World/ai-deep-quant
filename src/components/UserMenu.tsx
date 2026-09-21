@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { authApi } from '../api/dataService';
 import { theme } from '../lib/theme';
+import InviteManagerModal from './InviteManagerModal';
 
 const MENU_BTN = {
   width: '100%',
@@ -101,6 +102,7 @@ export default function UserMenu() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -194,6 +196,18 @@ export default function UserMenu() {
           <div style={{ padding: '7px 14px', fontSize: 11, color: theme.color.textFaint, borderBottom: `1px solid ${theme.color.border}`, marginBottom: 4 }}>
             已登录：{username}
           </div>
+          {/* 邀请码管理：仅管理员可见（后端 /api/auth/invites 同样会校验，前端只是不显示入口） */}
+          {isAdmin && (
+            <button
+              style={{ ...MENU_BTN, borderRadius: 7 }}
+              onClick={() => {
+                setMenuOpen(false);
+                setInviteOpen(true);
+              }}
+            >
+              🎫 邀请码管理
+            </button>
+          )}
           <button
             style={{ ...MENU_BTN, borderRadius: 7 }}
             onClick={() => {
@@ -217,6 +231,7 @@ export default function UserMenu() {
       )}
 
       {pwdOpen && <ChangePasswordModal username={username} onClose={() => setPwdOpen(false)} />}
+      {inviteOpen && <InviteManagerModal onClose={() => setInviteOpen(false)} />}
     </span>
   );
 }

@@ -985,6 +985,32 @@ export const authApi = {
   changePassword: (oldPassword: string, newPassword: string) =>
     apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/change-password', { oldPassword, newPassword }),
   logout: () => apiPost<{ ok: boolean }>('/auth/logout', {}),
+
+  // ── 邀请码管理（一码一人）──────────────────────────────────
+  //   后端挂在 /api/auth/* 下（该路由段在鉴权中间件之前，故**自行校验管理员身份**，
+  //   非管理员一律 403）。管理员判定 = 用户名等于后端 SITE_USERNAME。
+  listInvites: () =>
+    apiGet<{
+      ok: boolean;
+      enabled: boolean;
+      codes: InviteEntry[];
+      summary?: { total: number; unused: number; used: number; revoked: number };
+    }>('/auth/invites'),
+  createInvite: (note: string, ttlDays?: number) =>
+    apiPost<{ ok: boolean; entry?: InviteEntry; error?: string }>('/auth/invites', { note, ttlDays }),
+  revokeInvite: (code: string) =>
+    apiPost<{ ok: boolean; entry?: InviteEntry; error?: string }>('/auth/invites/revoke', { code }),
+};
+
+/** 邀请码条目 —— 字段与 server/invites.cjs 的 rowToEntry 一一对应（勿臆造字段名） */
+export type InviteEntry = {
+  code: string;
+  note: string;
+  createdAt: string | null;
+  usedBy: string | null;
+  usedAt: string | null;
+  revoked: boolean;
+  expiresAt: string | null;
 };
 
 // ───────────── Agent 团队分析 ─────────────

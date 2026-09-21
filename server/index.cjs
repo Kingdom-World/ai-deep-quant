@@ -202,7 +202,7 @@ app.use((req, res, next) => {
 });
 
 // 认证路由：注册 / 登录 / 登出 / 会话查询
-app.use('/api/auth', auth.router({ adminUsername: AUTH_ENABLED ? SITE_USERNAME : '' }));
+app.use('/api/auth', auth.router({ adminUsername: AUTH_ENABLED ? SITE_USERNAME : '', authEnabled: AUTH_ENABLED }));
 
 
 // ───────────── AI 请求保护（单实例兜底；公网部署仍需 Redis） ─────────────

@@ -222,6 +222,12 @@ function router(opts = {}) {
   const express = require('express');
   const r = express.Router();
   const adminName = opts.adminUsername || '';
+  // 后端是否启用了鉴权（由 index.cjs 传入）。必须外露给前端：
+  //   2026-09-21 线上实测的死锁 —— Vercel 上未配 SITE_PASSWORD ⇒ AUTH_ENABLED=false
+  //   ⇒ 后端 /api/* 全开、且**没有也不会创建任何账号**；但前端 App.tsx 只看 `ok`
+  //   就判定"未登录"，于是整站被挡在登录页后、而登录**永远不可能成功**。
+  //   外露本字段后，前端得知"本部署不需要登录"即可正常进入。
+  const authEnabled = opts.authEnabled !== false;
   // 邀请码每次请求实时读取：改 .env 免重启即生效
   const inviteCode = () => (process.env.INVITE_CODE || '').trim();
 
@@ -308,8 +314,14 @@ function router(opts = {}) {
 
   r.get('/me', (req, res) => {
     const user = getUserFromRequest(req);
-    if (!user) return res.json({ ok: false, username: null, isAdmin: false });
-    res.json({ ok: true, username: user.username, uid: user.uid, isAdmin: !!adminName && user.username === adminName });
+    if (!user) return res.json({ ok: false, username: null, isAdmin: false, authEnabled });
+    res.json({
+      ok: true,
+      username: user.username,
+      uid: user.uid,
+      isAdmin: !!adminName && user.username === adminName,
+      authEnabled,
+    });
   });
 
   // ── 邀请码管理（仅管理员；一码一人模式）──────────────────────

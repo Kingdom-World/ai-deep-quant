@@ -976,7 +976,8 @@ export const checkBridgeHealth = async (): Promise<{ ok: boolean; mcpReady: bool
 
 /** 11. 认证 API（/api/auth/*，Cookie 会话由后端 Set-Cookie 维护） */
 export const authApi = {
-  me: () => apiGet<{ ok: boolean; username: string | null; isAdmin?: boolean }>('/auth/me'),
+  me: () =>
+    apiGet<{ ok: boolean; username: string | null; isAdmin?: boolean; authEnabled?: boolean }>('/auth/me'),
   login: (username: string, password: string) =>
     apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/login', { username, password }),
   register: (username: string, password: string, invite?: string) =>

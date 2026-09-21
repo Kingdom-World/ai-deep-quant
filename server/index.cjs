@@ -114,17 +114,38 @@ loadEnvFile();
 
 const SITE_USERNAME = process.env.SITE_USERNAME || 'admin';
 const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
-const AUTH_ENABLED = Boolean(SITE_PASSWORD);
+// ── 鉴权开关 与「引导管理员」解耦（2026-09-21）────────────────────
+//  原先 `AUTH_ENABLED = Boolean(SITE_PASSWORD)` 把两件事绑死：
+//    「是否开启鉴权」 ＝ 「是否用环境变量造一个管理员账号」。
+//  后果（线上实测）：要么整站无鉴权，要么必须存在一个**由环境变量定义的账号**
+//  —— 用户无法"用自己的账号登录并成为管理员"，等于被迫用共享/默认账号。
+//  现在：AUTH_ENABLED 可单独由 `AUTH_ENABLED=1` 打开；
+//        SITE_PASSWORD 只用于**可选的**引导管理员（给了才创建）。
+//  ⚠️ 向后兼容：仍设置 SITE_PASSWORD 的老部署行为完全不变
+//     （BOOTSTRAP_ADMIN 等价于原来的 AUTH_ENABLED）。
+const AUTH_ENABLED =
+  ['1', 'true', 'on'].includes(String(process.env.AUTH_ENABLED || '').toLowerCase()) ||
+  Boolean(SITE_PASSWORD);
+const BOOTSTRAP_ADMIN = AUTH_ENABLED && Boolean(SITE_PASSWORD);
 if (!AUTH_ENABLED) {
   console.warn(
-    '⚠️ 未配置 SITE_PASSWORD：整站 /api/* 无访问鉴权（仅建议本机/可信局域网使用）。' +
-      '模拟盘改按来源 IP 分账以避免多设备串号；请勿在无鉴权状态下把服务暴露到公网。',
+    '⚠️ 未开启鉴权（AUTH_ENABLED 未置 1 且未配置 SITE_PASSWORD）：整站 /api/* 无访问鉴权' +
+      '（仅建议本机/可信局域网使用）。模拟盘改按来源 IP 分账以避免多设备串号；' +
+      '请勿在无鉴权状态下把服务暴露到公网。',
   );
 }
 
-// 用户系统初始化（会话密钥/用户表）+ 首次启动用 .env 账号引导创建管理员
+// 用户系统初始化（会话密钥/用户表）+（可选）首次启动用环境变量账号引导创建管理员
 auth.init();
-auth.ensureBootstrapAdmin(AUTH_ENABLED ? SITE_USERNAME : '', SITE_PASSWORD);
+if (BOOTSTRAP_ADMIN) {
+  auth.ensureBootstrapAdmin(SITE_USERNAME, SITE_PASSWORD);
+} else if (AUTH_ENABLED) {
+  console.log(
+    '👤 [认证] 已开启鉴权，但未配置引导管理员（SITE_PASSWORD 为空）——' +
+      `请通过注册页自行创建账号。管理员判定用户名为「${SITE_USERNAME}」，` +
+      '故 SITE_USERNAME 需设为你自己的用户名。',
+  );
+}
 brain.init();
 
 // ── AI 助手平台上下文与会话历史 ──

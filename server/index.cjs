@@ -139,21 +139,30 @@ if (!AUTH_ENABLED) {
 auth.init();
 if (AUTH_ENABLED && !auth.isPersistent()) {
   console.warn(
-    '🔴 [认证] 已开启鉴权，但存储不可写（只读文件系统）：\n' +
+    '🔴 [认证] 已开启鉴权，但既无数据库、文件系统也不可写：\n' +
       '    · 由环境变量引导的管理员在每次冷启动重建 ⇒ 登录**可用且各实例一致**；\n' +
       '    · 但**新注册的账号不会被保存**，注册接口将显式返回 503（不假装成功）。\n' +
-      '    要支持多人各自注册账号，必须接入可写存储（如 Vercel Postgres / KV）。',
+      '    要支持多人各自注册，请接入可写存储（本项目已支持 Postgres，配好 DATABASE_URL 即可）。',
   );
 }
-if (BOOTSTRAP_ADMIN) {
-  auth.ensureBootstrapAdmin(SITE_USERNAME, SITE_PASSWORD);
-} else if (AUTH_ENABLED) {
-  console.log(
-    '👤 [认证] 已开启鉴权，但未配置引导管理员（SITE_PASSWORD 为空）——' +
-      `请通过注册页自行创建账号。管理员判定用户名为「${SITE_USERNAME}」，` +
-      '故 SITE_USERNAME 需设为你自己的用户名。',
+// 数据库探测与引导管理员创建都是**异步**的：不阻塞启动，但失败必须显式可见（不静默）。
+const bootAuth = () => {
+  if (BOOTSTRAP_ADMIN) return auth.ensureBootstrapAdmin(SITE_USERNAME, SITE_PASSWORD);
+  if (AUTH_ENABLED) {
+    console.log(
+      '👤 [认证] 已开启鉴权，但未配置引导管理员（SITE_PASSWORD 为空）——' +
+        `请通过注册页自行创建账号。管理员判定用户名为「${SITE_USERNAME}」，` +
+        '故 SITE_USERNAME 需设为你自己的用户名。',
+    );
+  }
+  return undefined;
+};
+Promise.resolve()
+  .then(() => (typeof auth.ready === 'function' ? auth.ready() : null))
+  .then(bootAuth)
+  .catch((e) =>
+    console.error('🔴 [认证] 存储初始化失败（若已配置数据库，请检查连接串是否可用）:', e.message),
   );
-}
 brain.init();
 
 // ── AI 助手平台上下文与会话历史 ──

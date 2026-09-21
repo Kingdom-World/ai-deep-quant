@@ -31,10 +31,10 @@ function pad(s, n) {
   return String(s) + ' '.repeat(Math.max(0, n - w));
 }
 
-function cmdNew() {
+async function cmdNew() {
   const [note = '', ttl] = rest;
   const ttlDays = Number(ttl) > 0 ? Number(ttl) : undefined;
-  const e = invites.create({ note, ttlDays });
+  const e = await invites.create({ note, ttlDays });
   console.log('✅ 已生成邀请码（一次性，用后即失效）\n');
   console.log(`   邀请码：${e.code}`);
   if (e.note) console.log(`   备注　：${e.note}`);
@@ -42,8 +42,8 @@ function cmdNew() {
   console.log(`\n把「邀请码」发给对方，注册时填入即可。一张码只能注册一个账号。`);
 }
 
-function cmdList() {
-  const codes = invites.list();
+async function cmdList() {
+  const codes = await invites.list();
   if (!codes.length) {
     console.log('（暂无邀请码。用 node scripts/invite.cjs new "给某某" 生成）');
     return;
@@ -60,18 +60,20 @@ function cmdList() {
   }
 }
 
-function cmdRevoke() {
+async function cmdRevoke() {
   const code = (rest[0] || '').trim();
   if (!code) { console.error('请提供要吊销的邀请码'); process.exit(1); }
-  const r = invites.revoke(code);
+  const r = await invites.revoke(code);
   if (!r.ok) { console.error(`❌ ${r.error}`); process.exit(1); }
   const used = r.entry.usedBy ? `（注意：它已被 ${r.entry.usedBy} 使用过，吊销不影响该账号）` : '';
   console.log(`✅ 已吊销 ${code}${used}`);
 }
 
-switch (cmd) {
-  case 'new': cmdNew(); break;
-  case 'list': cmdList(); break;
-  case 'revoke': cmdRevoke(); break;
-  default: usage(); process.exit(cmd ? 1 : 0);
-}
+(async () => {
+  switch (cmd) {
+    case 'new': await cmdNew(); break;
+    case 'list': await cmdList(); break;
+    case 'revoke': await cmdRevoke(); break;
+    default: usage(); process.exit(cmd ? 1 : 0);
+  }
+})().catch((e) => { console.error('❌ ' + e.message); process.exit(1); });

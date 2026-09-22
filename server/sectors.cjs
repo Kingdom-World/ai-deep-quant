@@ -12,27 +12,45 @@ const TYPE_NAME = { industry: '行业板块', concept: '概念板块', region: '
 const cache = new Map();
 const lastGood = new Map(); // 上游限流/断连时的最后有效数据（10 分钟内兜底）
 
+/**
+ * 带**总预算**的上游请求。
+ *
+ * 🔴 为什么必须是"总预算"而不是"每轮超时"：
+ *   原实现是 `for (i<3) { push2(6s) → push2delay(6s); sleep(400) }`，
+ *   最坏 3×(6+6+0.4) ≈ **37 秒**，而运行环境对单次请求有明确上限（30 秒）⇒
+ *   请求**总在返回自己的错误之前被平台掐断**，表现为 504 而非
+ *   `{ok:false,error:'板块数据源暂不可用'}`。即"优雅报错"被写成了"必然超时"。
+ *   ⚠️ 通用原则：**上游重试预算必须显著小于运行环境的请求上限**。
+ *
+ * 现值：单次 3.5 秒、总预算 9 秒 ⇒ 最坏约 10.5 秒、典型（两域名都失败）约 7 秒，
+ * 稳在平台上限之内，保证控制流能走到自己的错误分支。
+ */
+const UPSTREAM_TIMEOUT_MS = 3500;
+const UPSTREAM_TOTAL_BUDGET_MS = 9000;
+
 async function getJSON(url) {
-  // 东财接口间歇性断连/限流：重试 + push2delay 备用域名
+  const started = Date.now();
+  const urls = url.includes('push2.eastmoney.com')
+    ? [url, url.replace('push2.eastmoney.com', 'push2delay.eastmoney.com')]
+    : [url];
   let lastErr = null;
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await axios.get(url, { headers: { 'User-Agent': UA, Referer: 'https://quote.eastmoney.com/' }, timeout: 6000 });
-      return res.data;
-    } catch (e) {
-      lastErr = e;
-      if (url.includes('push2.eastmoney.com')) {
-        try {
-          const res2 = await axios.get(url.replace('push2.eastmoney.com', 'push2delay.eastmoney.com'), { headers: { 'User-Agent': UA }, timeout: 6000 });
-          return res2.data;
-        } catch (e2) {
-          lastErr = e2;
-        }
+  for (let round = 0; round < 2; round++) {
+    for (const u of urls) {
+      if (Date.now() - started > UPSTREAM_TOTAL_BUDGET_MS) {
+        throw lastErr ?? new Error('上游超时预算用尽');
       }
-      await new Promise((r) => setTimeout(r, 400));
+      try {
+        const res = await axios.get(u, {
+          headers: { 'User-Agent': UA, Referer: 'https://quote.eastmoney.com/' },
+          timeout: UPSTREAM_TIMEOUT_MS,
+        });
+        return res.data;
+      } catch (e) {
+        lastErr = e;
+      }
     }
   }
-  throw lastErr;
+  throw lastErr ?? new Error('上游不可达');
 }
 
 function cached(key, ttl, loader) {

@@ -167,7 +167,9 @@ export default function TopNav() {
     if (box.scrollWidth > box.clientWidth + 1) return;
     if (visibleCount >= NAV_ITEMS.length) return;
     const avg = visibleCount ? box.scrollWidth / visibleCount : 100;
-    if (box.clientWidth - box.scrollWidth > avg * 0.6) setVisibleCount(visibleCount + 1);
+    // 🔴 滞后阈值必须 > 1×avg：放回会消耗约 1×avg 空间，若只在富余 0.6×avg 时放回，
+    //    放回后立即溢出（挂载曾落在"4 页签+溢出"的稳态）。1.05 保证放回后仍有余量。
+    if (box.clientWidth - box.scrollWidth > avg * 1.05) setVisibleCount(visibleCount + 1);
   }, [narrow]);
 
   // 🔴 滚动收敛守卫（手机"切换页面后导航失效"的核心修复）：

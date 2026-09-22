@@ -287,7 +287,8 @@ export default function TopNav() {
               }}
               className={`pq-tab${activeHidden ? ' pq-tab-active' : ''}`}
             >
-              更多 ▾
+              {/* 显示收起的数量：让用户知道"还有 N 个选项"在折叠里，而不是以为选项丢了 */}
+              更多{hiddenItems.length > 0 ? `(${hiddenItems.length})` : ''} ▾
             </span>
             {moreOpen && (
               <div

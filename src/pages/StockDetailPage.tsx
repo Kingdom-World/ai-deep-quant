@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
+import { useIsNarrow } from '../lib/useIsNarrow';
 import { setVisibilityInterval } from '../lib/polling';
 import { wilderRsiSeries } from '../../shared/rsi.mjs';
 import {
@@ -151,6 +152,7 @@ export default function StockDetailPage() {
   const [rangeChange, setRangeChange] = useState<number | null>(null);
   const [updateTime, setUpdateTime] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const narrow = useIsNarrow(); // 手机上把摘要栅格换成 2 列并允许收缩，避免右侧数值被裁掉
   const [error, setError] = useState<string | null>(null);
 
   // 状态管理（多维度变化）
@@ -1521,7 +1523,15 @@ export default function StockDetailPage() {
               </span>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(100px, auto))', gap: '8px 24px', fontSize: '13px' }}>
+          {/* 窄屏换 2 列并允许收缩：3 列定宽在手机上会溢出，右列（最高/近30日）被裁掉 */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))',
+              gap: '8px 16px',
+              fontSize: '13px',
+            }}
+          >
             {[
               { label: '今开', value: lastBar ? formatCurrency(lastBar.open) : '--', color: '#e2e8f0' },
               { label: '昨收', value: prevClose ? formatCurrency(prevClose) : '--', color: '#e2e8f0' },
@@ -1530,7 +1540,7 @@ export default function StockDetailPage() {
               { label: '成交量', value: lastBar?.volume != null ? formatVolume(lastBar.volume) : '--', color: '#e2e8f0' },
               { label: `近${HISTORY_COUNT}日`, value: formatPercent(rangeChange), color: pctColor(rangeChange) },
             ].map((it) => (
-              <div key={it.label}>
+              <div key={it.label} style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
                 <span style={{ color: '#64748b', marginRight: 8 }}>{it.label}</span>
                 <span style={{ color: it.color, fontWeight: 600, fontFamily: 'Consolas, monospace' }}>{it.value}</span>
               </div>

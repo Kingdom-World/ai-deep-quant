@@ -349,25 +349,15 @@ export default function TopNav() {
         .pq-topnav-scroll::-webkit-scrollbar { display: none; }
         .pq-tab {
           padding: 7px 13px; font-size: 13px; border-radius: 8px; cursor: pointer;
-          white-space: nowrap; flex-shrink: 0; position: relative;
+          white-space: nowrap; flex-shrink: 0;
           color: #94a3b8; border: 1px solid transparent;
           transition: color .18s ease, background-color .18s ease, border-color .18s ease;
         }
-        /* 🔴 激活态加粗的宽度预留：每个页签内嵌一份隐形加粗文本（0 高、不可见），
-           使布局宽度恒等于"加粗宽度"——激活切换时宽度零变化，
-           不会撑宽/收窄而触发收纳算法重排（用户实测：切页时其他菜单项整体位移）。 */
-        .pq-tab::after {
-          content: attr(data-label);
-          display: inline-block; /* inline-block 才会把内容宽度贡献给行盒（block 会填满容器、等于没预留） */
-          height: 0;
-          overflow: hidden;
-          visibility: hidden;
-          font-weight: 700;
-          white-space: nowrap;
-          pointer-events: none;
-        }
+        /* 🔴 激活态刻意不用 font-weight:700 —— 中文方字虽不变宽，但「更多(N) ▾」里的
+           数字/箭头加粗会变宽（实测 ±2.5~10px），激活切换就会推挤相邻页签。
+           激活标识已有四重：蓝字 + 底色 + 边框 + 底部滑动指示线，无需加粗。 */
         .pq-tab:hover { color: #e2e8f0; background-color: rgba(96,165,250,0.08); }
-        .pq-tab-active { color: #60a5fa; font-weight: 700; background-color: rgba(96,165,250,0.1); border-color: rgba(96,165,250,0.3); }
+        .pq-tab-active { color: #60a5fa; background-color: rgba(96,165,250,0.1); border-color: rgba(96,165,250,0.3); }
       `}</style>
 
       {/* 品牌（手机端只留 logo，把宽度让给页签区；搜索模式下整块暂隐） */}

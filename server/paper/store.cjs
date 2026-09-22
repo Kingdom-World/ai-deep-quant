@@ -26,6 +26,10 @@ function emptyState() {
 class PaperStore {
   constructor() {
     this.state = emptyState();
+    // uid → 该 uid 数据最后一次"来自数据库"的时钟（DB now()，毫秒）。
+    //  跨实例新鲜度判断用：DB 行的 updated_at 比它新 ⇒ 有别的实例写过 ⇒ 读前刷新。
+    //  时钟统一取数据库时间（UPSERT RETURNING updated_at），规避应用服务器之间的时钟偏差。
+    this.dirtyAt = Object.create(null);
     this.load();
     this.acquireLock(); // 双实例会在此处报错退出（防止内存态互相覆盖回滚交易）
     // 定时快照任务：每 60s 强制落盘一次（要求 #2：严防重启丢数据）
@@ -115,11 +119,13 @@ class PaperStore {
         equity: this.state.equity[uid] ?? [],
         dailyPnl: this.state.dailyPnl[uid] ?? {},
       };
-      await db.query(
+      const w = await db.query(
         `INSERT INTO paper_state (uid, data, updated_at) VALUES ($1, $2::jsonb, now())
-         ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+         ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+         RETURNING updated_at`,
         [uid, JSON.stringify(data)],
       );
+      if (w.rows[0]) this.dirtyAt[uid] = new Date(w.rows[0].updated_at).getTime();
     }
   }
 
@@ -129,6 +135,33 @@ class PaperStore {
     db.query(`DELETE FROM paper_state WHERE uid = $1`, [uid]).catch((e) =>
       console.warn('[PaperStore] 删除数据库镜像失败:', e.message),
     );
+  }
+
+  /**
+   * 跨实例新鲜度检查（2026-09-22 用户拍板实施方案②）：
+   * DB 行的 updated_at 比本实例最后接触该 uid 的时刻新 ⇒ 有别的实例写过
+   * ⇒ 把该 uid 的内存态替换为 DB 版本（调用方需持该 uid 的账户锁）。
+   * 修掉实测的"热实例陈旧读"（撤单后刷新仍显示 resting），并把
+   * "陈旧实例写覆盖新数据"的窗口压缩到单次写路径内（彻底根治仍需行级存储+行锁）。
+   * 时钟统一用数据库 now()，无应用服务器时钟偏差问题。
+   */
+  async refreshIfStale(uid) {
+    if (!db.hasDb() || !uid) return;
+    await this.whenReady();
+    const r = await db.query(`SELECT updated_at FROM paper_state WHERE uid = $1`, [uid]);
+    if (!r.rows.length) return;
+    const dbAt = new Date(r.rows[0].updated_at).getTime();
+    if (dbAt <= (this.dirtyAt[uid] || 0)) return; // 本实例掌握的已是最新
+    const d = await db.query(`SELECT data FROM paper_state WHERE uid = $1`, [uid]);
+    const fresh = d.rows[0]?.data || {};
+    const s = this.state;
+    if (fresh.accounts) s.accounts[uid] = fresh.accounts;
+    if (Array.isArray(fresh.positions)) s.positions[uid] = fresh.positions;
+    if (Array.isArray(fresh.orders)) s.orders[uid] = fresh.orders;
+    if (Array.isArray(fresh.equity)) s.equity[uid] = fresh.equity;
+    if (fresh.dailyPnl && typeof fresh.dailyPnl === 'object') s.dailyPnl[uid] = fresh.dailyPnl;
+    this.dirtyAt[uid] = dbAt;
+    console.log(`🔄 [PaperStore] 检测到其他实例写入，已从数据库刷新 uid=${String(uid).slice(0, 10)}… 的本地状态`);
   }
 
   /**

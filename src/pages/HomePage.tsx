@@ -1148,7 +1148,7 @@ export default function HomePage() {
           仅用于历史回测展示 · 请勿据此操作
         </p>
         <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>
-          🌐 当前为公网演示版，国内部分网络可能无法访问，请使用代理或后续等待自定义域名上线。
+          🌐 公网演示版：已启用自定义域名，可直接访问。行情来自公开接口，个别数据源可能临时不可用。
         </p>
         <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
           © 2026 AI深度量化 · 仅供学习参考

@@ -52,6 +52,7 @@ export default function ScreenerPage() {
   const [strategy, setStrategy] = useState('volumeSurge');
   const [result, setResult] = useState<ScreenerResult | null>(null);
   const [mood, setMood] = useState<MarketMood | null>(null);
+  const [moodError, setMoodError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [industryFilter, setIndustryFilter] = useState<string>('');
@@ -61,7 +62,16 @@ export default function ScreenerPage() {
   }, []);
 
   const loadMood = useCallback(() => {
-    moodApi.get().then(setMood).catch(() => {});
+    // 失败必须可见（铁律 #4 禁止静默降级）：原实现是 `.catch(() => {})`，
+    // 会把错误**完全吞掉** —— 横幅永远停在"加载中…"，用户无法区分
+    // 「还在加载」与「数据源已挂」。线上实测：东财不可用时正是这种表现。
+    moodApi
+      .get()
+      .then((m) => {
+        setMood(m);
+        setMoodError(null);
+      })
+      .catch((e) => setMoodError((e as Error).message || '数据源不可用'));
   }, []);
 
   const run = useCallback(async (key: string) => {
@@ -135,6 +145,8 @@ export default function ScreenerPage() {
               </div>
             </div>
           </>
+        ) : moodError ? (
+          <span style={{ color: '#f87171', fontSize: 13 }}>⚠️ 市场温度计暂不可用：{moodError}</span>
         ) : (
           <span style={{ color: '#64748b', fontSize: 13 }}>市场温度计加载中…</span>
         )}
@@ -174,7 +186,7 @@ export default function ScreenerPage() {
       <div style={CARD}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
           <span style={{ fontWeight: 700 }}>
-            {result ? `命中 ${result.matched} / ${result.scanned} 只（展示前 ${rows.length}）` : '扫描中…'}
+            {error ? '扫描失败（见上方提示）' : result ? `命中 ${result.matched} / ${result.scanned} 只（展示前 ${rows.length}）` : '扫描中…'}
           </span>
           {industryFilter && (
             <button style={{ padding: '3px 10px', fontSize: 12, color: '#93c5fd', backgroundColor: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 999, cursor: 'pointer' }} onClick={() => setIndustryFilter('')}>
@@ -218,8 +230,11 @@ export default function ScreenerPage() {
                 </td>
               </tr>
             ))}
-            {!rows.length && !loading && (
+            {!rows.length && !loading && !error && (
               <tr><td colSpan={9} style={{ padding: '18px 8px', color: '#475569', textAlign: 'center' }}>当前策略暂无命中（快照约 60 秒刷新，可稍后重试或换策略）</td></tr>
+            )}
+            {!rows.length && !loading && error && (
+              <tr><td colSpan={9} style={{ padding: '18px 8px', color: '#f87171', textAlign: 'center' }}>扫描未能完成——见上方错误提示。这不是「没有命中」，而是数据没取到。</td></tr>
             )}
           </tbody>
         </table>

@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
+const db = require('../db.cjs');
 
 const DATA_DIR = process.env.PAPER_DATA_DIR || path.join(__dirname, '..', '..', 'data', 'paper');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
@@ -41,6 +42,92 @@ class PaperStore {
     process.on('exit', finalFlush);
     process.on('SIGINT', () => process.exit(0));
     process.on('SIGTERM', () => process.exit(0));
+  }
+
+  // ── Postgres 镜像（托管环境的持久化）──────────────────────────
+  //  为什么需要：Vercel 文件系统**只读** ⇒ 上面的 write-through 与 60s 快照都写不进去，
+  //  订单/持仓只活单实例内存 ⇒ 冷启动即丢（用户实测：刷新/重开订单消失）。
+  //  方案：**按 uid 分行**存 Postgres —— 冷启动一次性载入全部行（个位数用户，成本可忽略）；
+  //  落盘时按 uid UPSERT，跨用户互不影响。
+  //  ⚠️ 已知边界（如实说明）：**跨实例**并发写同一 uid 仍是后写覆盖 ——
+  //     个位数用户、低频交易的规模下可接受；要彻底解决需按订单行级存储 + 数据库行锁。
+  whenReady() {
+    if (!db.hasDb()) return Promise.resolve(false);
+    if (!this.dbReady) {
+      this.dbReady = (async () => {
+        await db.ready();
+        await this.hydrateFromDb();
+        return true;
+      })().catch((e) => {
+        this.dbReady = null; // 允许后续请求重试，而不是永久卡死
+        throw e;
+      });
+    }
+    return this.dbReady;
+  }
+
+  /** 冷启动载入：以数据库为准填充内存（此时内存应为空）。 */
+  async hydrateFromDb() {
+    const r = await db.query(`SELECT uid, data FROM paper_state`);
+    let n = 0;
+    for (const row of r.rows) {
+      const d = row.data || {};
+      if (d.accounts && !this.state.accounts[row.uid]) this.state.accounts[row.uid] = d.accounts;
+      if (d.positions && !this.state.positions[row.uid]) this.state.positions[row.uid] = d.positions;
+      if (d.orders && !this.state.orders[row.uid]) this.state.orders[row.uid] = d.orders;
+      if (d.equity && !this.state.equity[row.uid]) this.state.equity[row.uid] = d.equity;
+      if (d.dailyPnl && !this.state.dailyPnl[row.uid]) this.state.dailyPnl[row.uid] = d.dailyPnl;
+      n++;
+    }
+    if (n) console.log(`💾 [PaperStore] 已从数据库载入 ${n} 个账户的状态`);
+  }
+
+  /**
+   * 落盘后调度一次数据库同步（800ms 去抖：把同一瞬间的多次写合并成一轮 UPSERT）。
+   * 同步失败**显式打日志**（数据仍在内存，下一轮落盘会再试）—— 不静默。
+   */
+  scheduleDbSync() {
+    if (!db.hasDb()) return;
+    if (this.dbSyncTimer) return; // 已排程，去重
+    this.dbSyncTimer = setTimeout(() => {
+      this.dbSyncTimer = null;
+      this.syncToDb().catch((e) =>
+        console.error('[PaperStore] 数据库同步失败（数据仍在内存，下轮落盘会再试）:', e.message),
+      );
+    }, 800);
+    if (this.dbSyncTimer.unref) this.dbSyncTimer.unref();
+  }
+
+  /** 把内存中每个 uid 的五段数据 UPSERT 回数据库（个位数用户，量级极小） */
+  async syncToDb() {
+    await this.whenReady();
+    const uids = new Set([
+      ...Object.keys(this.state.accounts),
+      ...Object.keys(this.state.positions),
+      ...Object.keys(this.state.orders),
+    ]);
+    for (const uid of uids) {
+      const data = {
+        accounts: this.state.accounts[uid] ?? null,
+        positions: this.state.positions[uid] ?? [],
+        orders: this.state.orders[uid] ?? [],
+        equity: this.state.equity[uid] ?? [],
+        dailyPnl: this.state.dailyPnl[uid] ?? {},
+      };
+      await db.query(
+        `INSERT INTO paper_state (uid, data, updated_at) VALUES ($1, $2::jsonb, now())
+         ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+        [uid, JSON.stringify(data)],
+      );
+    }
+  }
+
+  /** 从数据库删除某 uid 的镜像（配合账户重置，避免"重置后被载回"） */
+  deleteDbMirror(uid) {
+    if (!db.hasDb()) return;
+    db.query(`DELETE FROM paper_state WHERE uid = $1`, [uid]).catch((e) =>
+      console.warn('[PaperStore] 删除数据库镜像失败:', e.message),
+    );
   }
 
   /**
@@ -102,6 +189,8 @@ class PaperStore {
    * @returns {boolean} 是否成功落盘
    */
   save() {
+    // 写文件之外，调度一次数据库镜像（托管环境的持久化通道；内部有去抖与显式失败日志）
+    this.scheduleDbSync();
     const payload = JSON.stringify(this.state);
     const tmp = `${STATE_FILE}.${process.pid}.tmp`;
     try {
@@ -150,6 +239,8 @@ class PaperStore {
     delete this.state.orders[uid];
     delete this.state.equity[uid];
     delete this.state.dailyPnl[uid];
+    // 🔴 必须同时删掉数据库镜像，否则下次冷启动会把旧状态**载回**（重置等于没重置）
+    this.deleteDbMirror(uid);
     this.ensureAccount(uid);
     this.save();
   }

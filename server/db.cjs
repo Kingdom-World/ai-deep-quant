@@ -66,6 +66,15 @@ async function migrate() {
       revoked    boolean NOT NULL DEFAULT false,
       expires_at timestamptz
     )`);
+  // 模拟盘状态镜像（托管环境唯一可行的持久化通道）
+  //   · 一行 = 一个 uid 的全部模拟盘数据（accounts/positions/orders/equity/dailyPnl）
+  //   · jsonb 而非拆列：PaperStore 是整体文档模型，行级拆解收益低、迁移成本高
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS paper_state (
+      uid        text PRIMARY KEY,
+      data       jsonb NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
 }
 
 /**

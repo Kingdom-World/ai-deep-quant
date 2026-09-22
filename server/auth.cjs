@@ -108,7 +108,12 @@ async function createUser(username, password, opts = {}) {
   const salt = crypto.randomBytes(16).toString('hex');
   const user = {
     username,
-    uid: crypto.randomUUID(),
+    // stableUid：uid 由用户名**确定性派生**而非随机 ——
+    //   供环境变量引导的管理员在无状态托管环境里跨实例保持同一 uid，
+    //   否则模拟盘等按 uid 分账的数据会在每次冷启动后"换主人"。
+    uid: opts.stableUid
+      ? 'u' + crypto.createHash('sha256').update(`stable:${username}`).digest('hex').slice(0, 20)
+      : crypto.randomUUID(),
     salt,
     hash: hashPassword(password, salt),
     createdAt: new Date().toISOString(),
@@ -305,7 +310,9 @@ async function ensureBootstrapAdmin(username, password) {
         return false;
       }
     }
-    await createUser(username, password, { memoryOnly: !persistent });
+    // stableUid：引导管理员（环境变量派生）的 uid 必须跨实例稳定，
+    // 否则模拟盘等按 uid 分账的数据会在冷启动后"换主人"
+    await createUser(username, password, { memoryOnly: !persistent, stableUid: true });
     console.log(
       `👤 [认证] 已创建引导管理员: ${username}` +
         (isPersistent() ? '' : '（内存态：只读 FS，每次冷启动按环境变量重建）'),

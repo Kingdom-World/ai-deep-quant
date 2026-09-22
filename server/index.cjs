@@ -2392,6 +2392,21 @@ if (!IS_VERCEL && !MAINTAIN_ONCE) {
   strategies.startLoop();
 }
 
+/**
+ * 托管环境下，模拟盘状态要先从数据库载入再服务请求。
+ *  若不设此门禁：冷启动后第一个请求会看到"空账"并据此建新账，
+ *  随后的数据库载入会把旧状态填回来 ⇒ 用户的订单/持仓被静默覆盖。
+ *  失败时返回 503（显式拒绝，不假装成功）——铁律 #4。
+ */
+app.use('/api/paper', async (req, res, next) => {
+  try {
+    await broker.store.whenReady();
+    next();
+  } catch (e) {
+    res.status(503).json({ ok: false, error: `交易存储初始化失败: ${e.message?.slice(0, 80)}` });
+  }
+});
+
 /** 账户总览：现金/持仓/净值曲线/当日盈亏 */
 app.get('/api/paper/account', async (req, res) => {
   try {

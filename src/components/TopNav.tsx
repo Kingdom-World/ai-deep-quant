@@ -26,6 +26,12 @@ const NAV_ITEMS = [
   { path: '/features', label: '功能介绍' },
 ];
 
+// 🔴 模块级可见集缓存：TopNav 在每个页面组件内各自渲染（pages/* 共 13 处），
+// 路由切换 = 卸载旧页（连它的 TopNav）+ 挂载新页的新 TopNav —— 组件状态全部重置。
+// visibleCount 一旦重置为 11，收敛/放回会围绕新激活项重新平衡 ⇒
+// 实测表现为「切换页面时其他菜单项整体位移」。缓存让可见集跨重挂载保持不变。
+let vcCache: number | null = null;
+
 export default function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -120,7 +126,9 @@ export default function TopNav() {
   //   每次渲染后检查页签区是否溢出：溢出则把末尾项收进「更多 ▾」下拉，逐格收敛；
   //   放回需留 >0.6 项宽余量（按平均项宽估算），防止"放回→溢出→收回"震荡。
   //   由此 NAV_ITEMS 随便加项，布局永不再截断。
-  const [visibleCount, setVisibleCount] = useState(NAV_ITEMS.length);
+  const [visibleCount, setVisibleCount] = useState(() =>
+    vcCache == null ? NAV_ITEMS.length : Math.max(1, Math.min(vcCache, NAV_ITEMS.length)),
+  );
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePos, setMorePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
   const moreRef = useRef<HTMLDivElement>(null);
@@ -129,6 +137,7 @@ export default function TopNav() {
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
+    vcCache = visibleCount; // 跨重挂载保持可见集（模块级缓存，见 NAV_ITEMS 下方说明）
     if (box.scrollWidth > box.clientWidth + 1 && visibleCount > 1) {
       setVisibleCount(visibleCount - 1);
     }

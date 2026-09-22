@@ -30,16 +30,32 @@ export default function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const [kw, setKw] = useState('');
-  // 窄屏（≤520px）：收紧导航内边距与间距。
-  //  为什么：375px 视口实测导航内容 408px（溢出 33px），把用户菜单挤出屏幕 ⇒ 不可点。
-  //  导航项本身已有"收进更多▾"的自适应，缺的是**容器级**的收缩。
+  // 窄屏（≤690px）：折叠搜索框为图标、品牌只留 logo、收紧间距。
+  //  为什么是 690：桌面布局的固定宽度（品牌 137 + 常驻输入框 150 + 完整用户胶囊 146
+  //  + 间距/内边距 ~116）≈ 549px，543px 视口实测页签区被压成 clientWidth=0 ——
+  //  页签全部停在可视区外（"导航失效"）。690 = 549 + 页签最少可用宽度。
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 520px)');
+    const mq = window.matchMedia('(max-width: 690px)');
     const onChange = () => setNarrow(mq.matches);
     onChange();
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // 声明条实测高度 → 占位符跟随：手机 webview 的字体放大一旦把声明折成两行，
+  // 写死的 34px 占位会让 fixed 声明压住导航（用户 2026-09-22 手机实测）。
+  // 占位高度恒等于声明条实际高度，折不折行都不会重叠。
+  const decRef = useRef<HTMLDivElement>(null);
+  const [decH, setDecH] = useState(34);
+  useEffect(() => {
+    const el = decRef.current;
+    if (!el) return;
+    const sync = () => setDecH(el.offsetHeight || 34);
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
   // 手机端搜索折叠：默认只显示搜索图标，点开进入「搜索模式」——输入框独占一整行，页签暂隐。
   //  为什么：搜索框原为 clamp(150px,…)+flexShrink:0 永不收缩 —— 360px 视口下页签区仅剩
@@ -77,16 +93,34 @@ export default function TopNav() {
     }
   }, [measure, searchOpen]); // searchOpen：手机搜索模式收起/恢复页签后重测指示器
 
-  useEffect(() => {
-    window.addEventListener('resize', measure, { passive: true });
-    return () => window.removeEventListener('resize', measure);
-  }, [measure]);
+  // 横向滚动收敛：把 scrollLeft 压回合法区间；内容不溢出时归零。
+  const clampScroll = useCallback(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const max = Math.max(0, box.scrollWidth - box.clientWidth);
+    if (box.scrollLeft > max) box.scrollLeft = max;
+    if (box.scrollWidth <= box.clientWidth && box.scrollLeft !== 0) box.scrollLeft = 0;
+  }, []);
 
-  // 移动端：激活页签横向滚入可视区中央（桌面容器无滚动时等效于无操作）
+  useEffect(() => {
+    const onResize = () => {
+      measure();
+      clampScroll();
+    };
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, [measure, clampScroll]);
+
+  // 移动端：激活页签横向滚入可视区中央（桌面容器无滚动时等效于无操作）。
+  //  若激活页签已完整可见则不滚 —— 否则路由切换会无谓地把其余页签滚出可视区。
   useEffect(() => {
     const box = scrollRef.current;
     const el = tabRefs.current.get(activeKey);
     if (box && el) {
+      const fullyVisible =
+        el.offsetLeft >= box.scrollLeft &&
+        el.offsetLeft + el.offsetWidth <= box.scrollLeft + box.clientWidth;
+      if (fullyVisible) return;
       box.scrollTo({
         left: el.offsetLeft - box.clientWidth / 2 + el.offsetWidth / 2,
         behavior: 'smooth',
@@ -117,6 +151,16 @@ export default function TopNav() {
       if (box.clientWidth - box.scrollWidth > avg * 0.6) setVisibleCount(visibleCount + 1);
     }
   });
+
+  // 🔴 滚动收敛守卫（手机"切换页面后导航失效"的核心修复）：
+  //  路由切换会把页签平滑滚动到激活项；紧随其后的溢出收纳卸载页签 ⇒ 内容变窄。
+  //  桌面 Chrome 会自动回卷 scrollLeft，部分手机 webview 不会 ⇒ 剩余页签全部停在
+  //  可视区外（实测：页签区整条空白、无处可点、指示器悬空）。
+  //  收纳/放回的每一步都收敛一次滚动 + 重测指示器。
+  useEffect(() => {
+    clampScroll();
+    measure();
+  }, [visibleCount, measure, clampScroll]);
 
   // 点击外部关闭「更多」下拉
   useEffect(() => {
@@ -259,6 +303,7 @@ export default function TopNav() {
           声明条与导航是兄弟节点，故用两个占位：声明条 fixed 需等高 spacer，
           导航回归文档流后不再需要占位（原实现整块 fixed + 92px spacer）。 */}
       <div
+        ref={decRef}
         style={{
           position: 'fixed',
           top: 0,
@@ -268,6 +313,7 @@ export default function TopNav() {
           textAlign: 'center',
           padding: '8px 16px',
           fontSize: '12px',
+          lineHeight: 1.35,
           color: '#f59e0b',
           backgroundColor: 'rgba(20,16,8,0.96)',
           backdropFilter: 'blur(10px)',
@@ -277,8 +323,8 @@ export default function TopNav() {
       >
         📚 本平台为学术研究项目，数据仅供参考，不构成投资建议
       </div>
-      {/* 占位：仅补声明条高度（8+8 padding + 约 17 行高 ≈ 33px） */}
-      <div style={{ height: 34 }} aria-hidden />
+      {/* 占位：高度恒等于声明条实测高度（折行也不重叠；单行时 ≈34px 与原值一致） */}
+      <div style={{ height: decH }} aria-hidden />
 
       <nav
         style={{

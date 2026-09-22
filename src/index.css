@@ -19,6 +19,11 @@ html {
   /* 页面切换时内容高度不同 → 竖滚动条出现/消失 → 视口宽度突变（整页横移抖动）。
      常驻保留滚动条槽位，从根上消除该抖动（Chromium 94+）。 */
   scrollbar-gutter: stable;
+  /* 🔴 禁用移动端 webview 的"字体放大"（font boosting / text autosizing）：
+     中文页面小字号文本常被放大 1.3-1.6 倍，实测把顶栏合规声明挤成两行、
+     页签文本变宽引发收纳算法抖动（2026-09-22 手机实测）。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html,

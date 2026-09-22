@@ -137,7 +137,7 @@ export default function UserMenu() {
   //  在 375px 视口下从 x=362 起被挤出屏幕 ⇒ 用户菜单（含邀请码管理入口）**不可达**。
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 520px)');
+    const mq = window.matchMedia('(max-width: 690px)');
     const onChange = () => setNarrow(mq.matches);
     onChange();
     mq.addEventListener('change', onChange);
@@ -180,7 +180,7 @@ export default function UserMenu() {
         >
           {username.slice(0, 1).toUpperCase()}
         </span>
-        {/* 窄屏（≤520px）只显示头像圆点 —— 完整胶囊实测宽 146px，
+        {/* 窄屏（≤690px）只显示头像圆点 —— 完整胶囊实测宽 146px，
             在 375px 视口下从 x=362 起被挤出屏幕，导致用户菜单不可达 */}
         {!narrow && (
           <>

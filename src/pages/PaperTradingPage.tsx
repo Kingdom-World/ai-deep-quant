@@ -27,7 +27,6 @@ import { setVisibilityInterval } from '../lib/polling';
 import { detectMarket, pctColor } from '../lib/stock';
 import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
 import { theme } from '../lib/theme';
-import TopNav from '../components/TopNav';
 import { fmtClock, fmtShort } from '../lib/time';
 
 const CARD = {
@@ -493,7 +492,6 @@ export default function PaperTradingPage() {
   return (
     <div style={{ ...theme.page }}>
       {/* 顶部导航（全站统一） */}
-      <TopNav />
 
       <div style={{ padding: '20px 24px' }}>
       {/* 页面标题行 */}

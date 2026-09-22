@@ -8,7 +8,6 @@
 //     结论卡底部明确提示"关键数值以工具原始数据为准"，让用户自己核对。
 // ─────────────────────────────────────────────────────────────
 import { useState } from 'react';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 import {
   agentApi,
@@ -91,7 +90,6 @@ export default function AgentResearchPage() {
   return (
     <div style={{ ...theme.page, position: 'relative' }}>
       <style>{theme.keyframes}</style>
-      <TopNav />
       <div style={theme.pageWrap}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: '#f1f5f9', margin: '0 0 8px' }}>Agent 研究</h1>
         <p style={{ fontSize: 13, color: theme.color.textMuted, margin: '0 0 18px', lineHeight: 1.85 }}>

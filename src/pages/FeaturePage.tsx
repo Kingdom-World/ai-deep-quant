@@ -7,7 +7,6 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 
 interface FeatureItem {
@@ -179,7 +178,6 @@ export default function FeaturePage() {
 
   return (
     <div style={{ ...theme.page, position: 'relative' }}>
-      <TopNav />
       <div style={isNarrow ? theme.pageWrapNarrow : theme.pageWrap}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 8px' }}>功能介绍</h1>
         <p style={{ fontSize: 13, color: theme.color.textMuted, margin: '0 0 6px', lineHeight: 1.85 }}>

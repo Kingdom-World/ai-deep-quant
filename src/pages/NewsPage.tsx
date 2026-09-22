@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import TopNav from '../components/TopNav';
 import { newsApi, newsHealthApi, type NewsItem, type NewsResponse, type NewsHealth } from '../api/dataService';
 import { theme } from '../lib/theme';
 
@@ -122,7 +121,6 @@ export default function NewsPage() {
 
   return (
     <div style={{ ...theme.page, minHeight: '100vh', paddingBottom: 48 }}>
-      <TopNav />
       <main style={{ padding: '24px 24px 0' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
           <div>

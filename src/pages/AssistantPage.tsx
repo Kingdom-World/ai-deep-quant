@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { askAssistant, aiApi, authApi } from '../api/dataService';
-import TopNav from '../components/TopNav';
 import { fmtDate } from '../lib/time';
 import { theme } from '../lib/theme';
 
@@ -214,7 +213,6 @@ export default function AssistantPage() {
     >
       <style>{`@keyframes pq-pulse { 0%,100% { opacity: .45 } 50% { opacity: 1 } }`}</style>
       {/* 顶部导航（全站统一） */}
-      <TopNav />
 
       {/* 聊天区（全站满宽统一；气泡自身有百分比宽度约束，不会被拉到不可读） */}
       <main

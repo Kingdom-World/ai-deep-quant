@@ -4,7 +4,6 @@
 import { useEffect, useState } from 'react';
 import { fmtDateTime } from '../lib/time';
 import { Link, useNavigate } from 'react-router-dom';
-import TopNav from '../components/TopNav';
 import AgentTeamPanel from '../components/AgentTeamPanel';
 import { theme } from '../lib/theme';
 import { agentsApi } from '../api/dataService';
@@ -58,7 +57,6 @@ export default function AgentTeamPage() {
 
   return (
     <div style={{ ...theme.page }}>
-      <TopNav />
       <div style={{ padding: '20px 24px 44px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '18px 0 4px', flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: '20px', margin: 0 }}>🤖 Agent 团队股票分析</h1>

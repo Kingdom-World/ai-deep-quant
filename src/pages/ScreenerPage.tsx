@@ -16,7 +16,6 @@ import {
 import { pctColor } from '../lib/stock';
 import { theme } from '../lib/theme';
 import { setVisibilityInterval } from '../lib/polling';
-import TopNav from '../components/TopNav';
 
 const CARD = {
   backgroundColor: 'rgba(17,24,39,0.6)',
@@ -102,7 +101,6 @@ export default function ScreenerPage() {
 
   return (
     <div style={{ ...theme.page }}>
-      <TopNav />
       <div style={{ padding: '20px 24px' }}>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '18px 0 14px' }}>

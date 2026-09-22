@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 import { runBacktest, type BacktestResult } from '../api/dataService';
 import { detectMarket, marketLabel, pctColor } from '../lib/stock';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 
 /** 实验对比页「带参数去回测」带入的预填参数（仅读取，不自动运行——非破坏性） */
@@ -230,7 +229,6 @@ export default function BacktestPage() {
       }}
     >
       {/* 顶部导航（全站统一） */}
-      <TopNav />
 
       <main style={{ padding: '28px 20px 48px' }}>
         {/* 参数面板 */}

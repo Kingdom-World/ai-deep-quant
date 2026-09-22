@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import TopNav from '../components/TopNav';
 import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
 import { setVisibilityInterval } from '../lib/polling';
 import SectorMarketPanel from '../components/SectorMarketPanel';
@@ -550,8 +549,7 @@ export default function HomePage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* ── 顶部导航栏（全站统一；顶部声明条由 TopNav 内置，全站每页可见） ── */}
-      <TopNav />
+      {/* 顶部导航栏已提升为 App 内全局单例（见 App.tsx）——每页不再各自渲染，避免路由切换重挂载 */}
 
       {/* 全站动画关键帧 + 网格纹理 */}
       <style>{`

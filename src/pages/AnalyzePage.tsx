@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { getHistory, getQuote } from '../api/dataService';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 import AgentTeamPanel from '../components/AgentTeamPanel';
 import {
@@ -167,7 +166,6 @@ export default function AnalyzePage() {
       }}
     >
       {/* 顶部导航（全站统一） */}
-      <TopNav />
 
       {/* 页面工具条：输入代码立即分析 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 32px 0', flexWrap: 'wrap' }}>

@@ -18,7 +18,6 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 import CrossSectionTab from './research/CrossSectionTab';
 import ConsistencyTab from './research/ConsistencyTab';
@@ -49,7 +48,6 @@ export default function ResearchCenterPage({ tab = '' }: { tab?: string }) {
 
   return (
     <div style={{ minHeight: '100vh', color: '#e2e8f0' }}>
-      <TopNav />
       <div style={isNarrow ? theme.pageWrapNarrow : theme.pageWrap}>
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9' }}>研究中心</div>

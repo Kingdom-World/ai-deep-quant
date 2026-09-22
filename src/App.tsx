@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import TopNav from './components/TopNav';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Backdrop from './components/Backdrop';
 import BrandMark from './components/BrandMark';
@@ -92,6 +93,10 @@ function App() {
       <BrowserRouter>
         <ScrollToTop />
         <ErrorBoundary>
+          {/* 🔴 顶部导航全局单例：此前 TopNav 在每个页面组件内各自渲染（pages/* 13 处），
+              路由切换 = 卸载重挂载 ⇒ 页签可见集重置重算 ⇒ 切页时菜单项整体位移（用户实测）。
+              提升到 Routes 之外后全站共享同一实例，状态跨路由保持，切换零位移。 */}
+          <TopNav />
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/stock/:symbol" element={<StockDetailPage />} />

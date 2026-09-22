@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import * as echarts from 'echarts';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 import { useIsNarrow } from '../lib/useIsNarrow';
 import { setVisibilityInterval } from '../lib/polling';
@@ -1386,11 +1385,10 @@ export default function StockDetailPage() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* ── 顶部导航（全站统一；顶部声明条由 TopNav 内置） ── */}
+      {/* 顶部导航已提升为 App 内全局单例（见 App.tsx） */}
 
       {/* ── 顶部：导航栏 + 搜索框 ── */}
       {/* 顶部导航（全站统一） */}
-      <TopNav />
 
       {/* 页面标题行 + 工具条（搜索 / 收藏） */}
       <div

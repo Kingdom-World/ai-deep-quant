@@ -6,7 +6,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fmtDateTime } from '../lib/time';
-import TopNav from '../components/TopNav';
 import { theme } from '../lib/theme';
 import { agentsApi, type AgentTrace } from '../api/dataService';
 
@@ -92,7 +91,6 @@ export default function AgentReportPage() {
   if (error) {
     return (
       <div style={{ ...theme.page }}>
-        <TopNav />
         <div style={{ padding: 24 }}>
         <div style={{ ...CARD, marginTop: 24, color: '#f87171' }}>✗ {error}</div>
         </div>
@@ -102,7 +100,6 @@ export default function AgentReportPage() {
   if (!trace) {
     return (
       <div style={{ ...theme.page, color: '#64748b' }}>
-        <TopNav />
         <div style={{ padding: 24 }}>加载报告中…</div>
       </div>
     );
@@ -115,7 +112,6 @@ export default function AgentReportPage() {
 
   return (
     <div style={{ ...theme.page }}>
-      <TopNav />
       <div style={{ padding: '20px 24px 44px' }}>
       <div>
         {/* 文档头 */}

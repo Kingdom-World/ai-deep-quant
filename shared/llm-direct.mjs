@@ -120,7 +120,19 @@ export async function callDirect(cfg, userContent, opts = {}) {
       return { ok: false, status: res.status, ...cls };
     }
 
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      // 200 但响应体不是 JSON（网关 502 页 / HTML 报错页）——
+      // ⚠️ 不可落入外层 catch 被误报为「CORS/网络不可达」：那会把排查方向
+      //    带到浏览器插件与本机代理上，而真因是**端点地址不对**。
+      return {
+        ok: false,
+        code: 'BAD_RESPONSE',
+        message: '响应不是 JSON：该地址可能不是 OpenAI 兼容接口，请检查接口地址的路径是否正确。',
+      };
+    }
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       return { ok: false, code: 'BAD_RESPONSE', message: DIRECT_ERRORS.BAD_RESPONSE };

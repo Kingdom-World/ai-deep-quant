@@ -427,7 +427,7 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
         </div>
         <div style={{ marginTop: 8, fontSize: '11px', color: '#64748b' }}>
           {tier === 'byok'
-            ? '自配 API 档为单角色直连模式，请使用上方面板；下方的流水线模式不适用于该档位。'
+            ? '自配 API 档按设计只提供「单角色直连分析」：你的 Key 由浏览器直连供应商，一次请求即完成；不做多角色流水线（那属于平台算力档的能力）。这不是故障——请直接用上方的「⚡ 直连分析（单角色）」按钮。'
             : curModeBlocked
               ? (modeCheck(mode) as any).reason
               : `${MODES.find((m) => m.key === mode)?.desc} · 多视角交叉验证 · 研究主管强制给出 BUY / SELL / HOLD 结论`}
@@ -702,12 +702,18 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
   };
 
   const save = () => {
-    const r = store.save({ provider, base, model, key });
+    // 「留空则保留原值」：已保存过配置、且本次未重新输入 Key 时，沿用旧 Key。
+    //  ⚠️ 该承诺此前**未实现** —— 输入框留空会让 normalizeConfig 报「缺少 API Key」，
+    //     配置**根本没保存**，用户却以为已更新 ⇒ 再点直连用的还是旧模型，
+    //     表现为「完成配置后点击调用报错」（2026-09-22 排查该问题的主因候选）。
+    const prev = store.load();
+    const effKey = key.trim() || (prev && prev.key ? prev.key : '');
+    const r = store.save({ provider, base, model, key: effKey });
     if (!r.ok) {
       setMsg({ kind: 'err', text: r.errors.join('；') });
       return;
     }
-    setSaved({ provider, model, masked: maskKey(key) });
+    setSaved({ provider, model, masked: maskKey(effKey) });
     setKey(''); // 保存后即清空输入框，减少 key 在 DOM 中的驻留
     setMsg({ kind: 'ok', text: '已保存到本机浏览器。Key 未上传，本站服务器不持有你的 Key。' });
   };
@@ -826,9 +832,13 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
         )}
       </div>
 
-      {sugg.length > 0 && (
+      {sugg.length > 0 ? (
         <div style={{ fontSize: 11, color: '#475569', marginBottom: 8, lineHeight: 1.6 }}>
           推荐模型（仅提示，可用任意兼容 OpenAI 格式的模型）：{sugg.join(' / ')}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: '#475569', marginBottom: 8, lineHeight: 1.6 }}>
+          该供应商没有推荐模型列表，请在「模型名」框中手动输入（OpenAI 兼容格式）——模型名写错会报 404。
         </div>
       )}
 

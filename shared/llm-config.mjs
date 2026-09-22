@@ -26,8 +26,9 @@ export const SUGGESTED_MODELS = {
     'Qwen/Qwen3.5-4B',
     'Qwen/Qwen3-8B',
   ],
-  dashscope: [],
-  custom: [],
+  // 阿里百炼 compatible-mode 的常用模型（此前为空数组 ⇒ 模型名只能手打，极易写错成 404）
+  dashscope: ['qwen-plus', 'qwen-turbo', 'qwen-max'],
+  custom: [], // 自定义端点的模型名只有使用者自己知道，保持为空
 };
 
 export const STORAGE_KEY = 'aiq.llm.byok.v1';

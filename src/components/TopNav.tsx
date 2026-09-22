@@ -133,15 +133,29 @@ export default function TopNav() {
   const [morePos, setMorePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
   const moreRef = useRef<HTMLDivElement>(null);
 
-  // 收起（防溢出）：每渲染守卫，只减不增 —— 宽度不变时不会触发，路由切换零影响
+  // 可见集跨重挂载缓存回写
+  useEffect(() => {
+    vcCache = visibleCount;
+  }, [visibleCount]);
+
+  // 收起（防溢出）：仅挂载与跨断点（narrow 变化）时评估 —— 与放回对称。
+  //  🔴 不随路由切换每渲染评估：任何亚像素级 sw 波动都会随机收走一个页签
+  //  （实测：切到「因子分析」时「选股」被收进更多(10)，数字变宽推挤邻项）。
+  //  档位内若真溢出，页签区可横向滚动（clampScroll 守护），可用性不受影响。
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
-    vcCache = visibleCount; // 跨重挂载保持可见集（模块级缓存，见 NAV_ITEMS 下方说明）
-    if (box.scrollWidth > box.clientWidth + 1 && visibleCount > 1) {
-      setVisibleCount(visibleCount - 1);
-    }
-  });
+    let guard = 0;
+    const shrink = () => {
+      if (guard >= 12) return; // 防失控上限
+      guard += 1;
+      if (box.scrollWidth > box.clientWidth + 1) {
+        setVisibleCount((v) => Math.max(1, v - 1));
+        setTimeout(shrink, 80); // 等重渲染后复查
+      }
+    };
+    shrink();
+  }, [narrow]);
 
   // 放回（恢复被收纳项）：只在挂载与跨断点（narrow 变化，即转屏/改窗）时重平衡。
   // 🔴 切换路由绝不放回 —— 否则激活项会从「更多」插进可见集把后面的项推走

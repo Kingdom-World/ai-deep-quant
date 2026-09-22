@@ -30,6 +30,17 @@ export default function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const [kw, setKw] = useState('');
+  // 窄屏（≤520px）：收紧导航内边距与间距。
+  //  为什么：375px 视口实测导航内容 408px（溢出 33px），把用户菜单挤出屏幕 ⇒ 不可点。
+  //  导航项本身已有"收进更多▾"的自适应，缺的是**容器级**的收缩。
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 520px)');
+    const onChange = () => setNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
   const [sug, setSug] = useState<{ name: string; code: string; market: string }[]>([]);
   const [sugOpen, setSugOpen] = useState(false);
   const suggestTimer = useRef<number | undefined>(undefined);
@@ -192,8 +203,8 @@ export default function TopNav() {
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '20px',
-          padding: '0 28px',
+          gap: narrow ? '10px' : '20px',
+          padding: narrow ? '0 12px' : '0 28px',
           height: '58px',
           backgroundColor: 'rgba(10,14,23,0.88)',
           borderBottom: '1px solid rgba(96,165,250,0.14)',

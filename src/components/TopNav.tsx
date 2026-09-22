@@ -125,20 +125,27 @@ export default function TopNav() {
   const [morePos, setMorePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
   const moreRef = useRef<HTMLDivElement>(null);
 
+  // 收起（防溢出）：每渲染守卫，只减不增 —— 宽度不变时不会触发，路由切换零影响
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
-    const visibleItems = NAV_ITEMS.slice(0, visibleCount);
-    const overflow = box.scrollWidth > box.clientWidth + 1;
-    if (overflow && visibleCount > 1) {
+    if (box.scrollWidth > box.clientWidth + 1 && visibleCount > 1) {
       setVisibleCount(visibleCount - 1);
-      return;
-    }
-    if (!overflow && visibleCount < NAV_ITEMS.length) {
-      const avg = visibleItems.length ? box.scrollWidth / visibleItems.length : 100;
-      if (box.clientWidth - box.scrollWidth > avg * 0.6) setVisibleCount(visibleCount + 1);
     }
   });
+
+  // 放回（恢复被收纳项）：只在挂载与跨断点（narrow 变化，即转屏/改窗）时重平衡。
+  // 🔴 切换路由绝不放回 —— 否则激活项会从「更多」插进可见集把后面的项推走
+  // （用户实测：切页时菜单项整体偏移）。位置稳定优先：激活项在「更多」里时
+  // 「更多」自身有激活高亮，位置提示已足够。
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    if (box.scrollWidth > box.clientWidth + 1) return;
+    if (visibleCount >= NAV_ITEMS.length) return;
+    const avg = visibleCount ? box.scrollWidth / visibleCount : 100;
+    if (box.clientWidth - box.scrollWidth > avg * 0.6) setVisibleCount(visibleCount + 1);
+  }, [narrow]);
 
   // 🔴 滚动收敛守卫（手机"切换页面后导航失效"的核心修复）：
   //  路由切换会把页签平滑滚动到激活项；紧随其后的溢出收纳卸载页签 ⇒ 内容变窄。

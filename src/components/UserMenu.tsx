@@ -132,6 +132,18 @@ export default function UserMenu() {
     };
   }, [menuOpen]);
 
+  // 窄屏检测：手机上把用户胶囊收缩为「头像圆点」。
+  //  为什么：完整胶囊（头像+用户名+管理员徽章+▼）实测宽 146px，
+  //  在 375px 视口下从 x=362 起被挤出屏幕 ⇒ 用户菜单（含邀请码管理入口）**不可达**。
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 520px)');
+    const onChange = () => setNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   if (!username) return null;
 
   return (
@@ -168,13 +180,19 @@ export default function UserMenu() {
         >
           {username.slice(0, 1).toUpperCase()}
         </span>
-        {username}
-        {isAdmin && (
-          <span style={{ fontSize: 9, color: '#fbbf24', backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 4, padding: '0 5px' }}>
-            管理员
-          </span>
+        {/* 窄屏（≤520px）只显示头像圆点 —— 完整胶囊实测宽 146px，
+            在 375px 视口下从 x=362 起被挤出屏幕，导致用户菜单不可达 */}
+        {!narrow && (
+          <>
+            {username}
+            {isAdmin && (
+              <span style={{ fontSize: 9, color: '#fbbf24', backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 4, padding: '0 5px' }}>
+                管理员
+              </span>
+            )}
+            <span style={{ fontSize: 9, color: '#64748b', transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▼</span>
+          </>
         )}
-        <span style={{ fontSize: 9, color: '#64748b', transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▼</span>
       </span>
 
       {/* 下拉菜单 */}

@@ -5,7 +5,14 @@
 // ─────────────────────────────────────────────────────────────
 const { test } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const { stabilityOf, evaluate, ALL_FACTORS } = require('../server/factoreval.cjs');
+
+// evaluate() 走真实本地归档（data/history/kline，已被 gitignore）——
+// CI / 全新 clone 没有这些数据，必须显式跳过而不是红掉（与 factorexpr.test.cjs 同一模式）
+const REAL_DIR = path.join(__dirname, '..', 'data', 'history', 'kline');
+const hasRealArchive = fs.existsSync(REAL_DIR);
 
 const mk = (arr) => arr.map((e) => ({ year: 2000, excess: e }));
 
@@ -51,6 +58,10 @@ test('evaluate 应过滤非法因子并如实回报', () => {
 });
 
 test('evaluate 输出的因子应落在可用清单内，且逐年含策略/基准/超额', () => {
+  if (!hasRealArchive) {
+    console.log('  [skip] evaluate 全链路：真实归档不存在（data/history/kline，CI 无本地数据）');
+    return;
+  }
   const r = evaluate({ factors: ['mom20', 'rev20'], topN: 5, rebalanceEvery: 60, yearFrom: 2025 });
   assert.equal(r.factors.length, 2);
   for (const f of r.factors) {

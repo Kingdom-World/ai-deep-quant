@@ -142,6 +142,9 @@ test('方向推断：单一算子族可判，混合/非线性一律 null', () =>
 // ── 4. 等价性锁（核心）───────────────────────────────────────
 
 test('等价性锁：mom20 表达式与预置 mom20 的截面值逐位一致', () => {
+  // 与下方"全链路等价性"同一前提：等价性锁比对的是**本地归档**的真实截面，
+  // CI/全新 clone 没有 data/history/kline ⇒ 显式跳过（否则 ENOENT 直接红）
+  if (!hasRealArchive) return skipReal('等价性锁（mom20 截面逐位一致）');
   const r = fe.parseExpression('mom20');
   assert.ok(r.ok);
   let checked = 0;
@@ -244,6 +247,9 @@ test('守卫：分层链路同样拒绝恒除零表达式', () => {
 });
 
 test('守卫：非法表达式回显解析原因，不静默回退到默认因子', () => {
+  // 该守卫验证的是"归档已加载后，解析错误先于回测发生"的报错文案；
+  // 无归档时 runCrossBacktest 在解析前就因缺数据报错，文案必然不同 ⇒ 显式跳过
+  if (!hasRealArchive) return skipReal('非法表达式守卫（报错文案依赖归档先行加载）');
   const r = crosssect.runCrossBacktest({ factor: 'eval(1)', topN: 10, rebalanceEvery: 20 });
   assert.ok(r.error, '非法表达式应报错');
   assert.match(r.error, /表达式解析失败/, '应说明是解析问题');

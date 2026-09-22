@@ -17,14 +17,33 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 必须与 package.json engines（24.x）及 Vercel 构建版对齐。
+          # 曾用 20：test runner 不识别带引号的 glob（"test/*.test.cjs"），CI 连续 40+ 次红。
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Unit tests (node --test)
-        run: npm test
+        # 失败时把「not ok 清单 + 末 120 行输出」写进 job summary——
+        # summary 走公开 API 可读，不受 admin 日志权限限制
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test-out.txt || {
+            {
+              echo "## Unit test failure（node $(node -v)）"
+              echo '```'
+              grep -E "^not ok" /tmp/test-out.txt | head -20
+              echo '```'
+              echo '<details><summary>最后 120 行原始输出</summary>'
+              echo '```'
+              tail -120 /tmp/test-out.txt
+              echo '```'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
 
       - name: TypeScript check
         run: npx tsc -p tsconfig.app.json --noEmit

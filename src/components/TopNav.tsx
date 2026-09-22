@@ -111,22 +111,10 @@ export default function TopNav() {
     return () => window.removeEventListener('resize', onResize);
   }, [measure, clampScroll]);
 
-  // 移动端：激活页签横向滚入可视区中央（桌面容器无滚动时等效于无操作）。
-  //  若激活页签已完整可见则不滚 —— 否则路由切换会无谓地把其余页签滚出可视区。
-  useEffect(() => {
-    const box = scrollRef.current;
-    const el = tabRefs.current.get(activeKey);
-    if (box && el) {
-      const fullyVisible =
-        el.offsetLeft >= box.scrollLeft &&
-        el.offsetLeft + el.offsetWidth <= box.scrollLeft + box.clientWidth;
-      if (fullyVisible) return;
-      box.scrollTo({
-        left: el.offsetLeft - box.clientWidth / 2 + el.offsetWidth / 2,
-        behavior: 'smooth',
-      });
-    }
-  }, [activeKey]);
+  // 🔴 不做"激活页签滚动居中"（2026-09-22 移除）：
+  //  路由切换时若激活项刚被放回/不完整可见，自动滚动会让其余菜单项整体平移
+  //  （用户实测：切页时首页/更多整体偏移）。位置稳定优先——激活项在「更多」里时
+  //  「更多」自身有激活高亮，位置提示已足够；残留的越界滚动仍由 clampScroll 兜底。
 
   // ── 自适应溢出收纳（用户截图反馈：11 项时「功能介绍」被截断）──
   //   每次渲染后检查页签区是否溢出：溢出则把末尾项收进「更多 ▾」下拉，逐格收敛；
@@ -175,6 +163,7 @@ export default function TopNav() {
   const activeHidden = hiddenItems.some((it) =>
     it.match ? location.pathname.startsWith(it.match) : location.pathname === it.path,
   );
+  const moreLabel = `更多${hiddenItems.length > 0 ? `(${hiddenItems.length})` : ''} ▾`;
 
   // 全局搜索联想（300ms 防抖）
   useEffect(() => {
@@ -344,9 +333,22 @@ export default function TopNav() {
         .pq-topnav-scroll::-webkit-scrollbar { display: none; }
         .pq-tab {
           padding: 7px 13px; font-size: 13px; border-radius: 8px; cursor: pointer;
-          white-space: nowrap; flex-shrink: 0;
+          white-space: nowrap; flex-shrink: 0; position: relative;
           color: #94a3b8; border: 1px solid transparent;
           transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+        }
+        /* 🔴 激活态加粗的宽度预留：每个页签内嵌一份隐形加粗文本（0 高、不可见），
+           使布局宽度恒等于"加粗宽度"——激活切换时宽度零变化，
+           不会撑宽/收窄而触发收纳算法重排（用户实测：切页时其他菜单项整体位移）。 */
+        .pq-tab::after {
+          content: attr(data-label);
+          display: block;
+          height: 0;
+          overflow: hidden;
+          visibility: hidden;
+          font-weight: 700;
+          white-space: nowrap;
+          pointer-events: none;
         }
         .pq-tab:hover { color: #e2e8f0; background-color: rgba(96,165,250,0.08); }
         .pq-tab-active { color: #60a5fa; font-weight: 700; background-color: rgba(96,165,250,0.1); border-color: rgba(96,165,250,0.3); }
@@ -406,6 +408,7 @@ export default function TopNav() {
               }}
               onClick={() => navigate(item.path)}
               className={`pq-tab${active ? ' pq-tab-active' : ''}`}
+              data-label={item.label}
             >
               {item.label}
             </span>
@@ -421,9 +424,10 @@ export default function TopNav() {
                 setMoreOpen((o) => !o);
               }}
               className={`pq-tab${activeHidden ? ' pq-tab-active' : ''}`}
+              data-label={moreLabel}
             >
               {/* 显示收起的数量：让用户知道"还有 N 个选项"在折叠里，而不是以为选项丢了 */}
-              更多{hiddenItems.length > 0 ? `(${hiddenItems.length})` : ''} ▾
+              {moreLabel}
             </span>
             {moreOpen && (
               <div

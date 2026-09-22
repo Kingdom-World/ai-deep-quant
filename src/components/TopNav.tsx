@@ -358,7 +358,7 @@ export default function TopNav() {
            不会撑宽/收窄而触发收纳算法重排（用户实测：切页时其他菜单项整体位移）。 */
         .pq-tab::after {
           content: attr(data-label);
-          display: block;
+          display: inline-block; /* inline-block 才会把内容宽度贡献给行盒（block 会填满容器、等于没预留） */
           height: 0;
           overflow: hidden;
           visibility: hidden;

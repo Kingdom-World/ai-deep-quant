@@ -306,15 +306,23 @@ export default function TopNav() {
         .pq-tab-active { color: #60a5fa; font-weight: 700; background-color: rgba(96,165,250,0.1); border-color: rgba(96,165,250,0.3); }
       `}</style>
 
-      {/* 品牌 */}
+      {/* 品牌（手机端只留 logo，把宽度让给页签区；搜索模式下整块暂隐） */}
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flexShrink: 0 }}
+        style={{
+          display: narrow && searchOpen ? 'none' : 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
         onClick={() => navigate('/')}
       >
         <BrandMark size={32} radius={9} shadow="0 4px 14px rgba(37,99,235,0.45)" />
-        <span style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', letterSpacing: 1, whiteSpace: 'nowrap' }}>
-          AI深度量化
-        </span>
+        {!narrow && (
+          <span style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', letterSpacing: 1, whiteSpace: 'nowrap' }}>
+            AI深度量化
+          </span>
+        )}
       </div>
 
       {/* 页签（窄屏横向滚动，永不换行；底部滑动指示器跟随激活项） */}

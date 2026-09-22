@@ -7,7 +7,7 @@ export const API_BASE_PATH: string = (import.meta.env.VITE_API_BASE_PATH as stri
 
 /**
  * 后端模式（数据源架构）：
- *   · node   —— Node/Express 后端（本地自托管 / Vercel 公网演示版）
+ *   · node   —— 服务端一体化后端（自托管 / 公网演示版）
  *   · python —— Python+Flask 后端（历史=Baostock 主源，实时=Ashare 辅助源，
  *               SQLite 24h 缓存 + 单用户限流 + 定时更新；本地/服务器部署推荐）
  * 前端不感知具体数据源，仅按模式选择聚合接口。

@@ -196,7 +196,7 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
     return caps.tiers.filter((t) => t.available).map((t) => t.key);
   }, [caps]);
 
-  /** 当前档位下该模式是否可跑（Vercel 上 platform 档只放行 single） */
+  /** 当前档位下该模式是否可跑（公网演示版对 platform 档只放行 single） */
   const modeCheck = (m: string) => {
     if (tier !== 'platform') return { available: true as const };
     return caps?.modes?.[m] ?? { available: true as const };
@@ -356,7 +356,7 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
           })}
           {caps && (
             <span style={{ fontSize: 11, color: '#475569', marginLeft: 'auto' }}>
-              运行环境：{caps.runtime === 'serverless' ? '云端 Serverless（函数 30 秒上限）' : '本机自托管（无时限）'}
+              运行环境：{caps.runtime === 'public' ? '公网演示版' : '完整版'}
             </span>
           )}
         </div>

@@ -2076,17 +2076,21 @@ app.get('/api/ai/stats', (req, res) => {
 });
 
 /**
- * GET /api/agents/capabilities —— Agent 能力档位（L1.3，方案书「十一」T1/T2/T3）
+ * GET /api/agents/capabilities —— Agent 能力档位（规则引擎 / 自配 API / 平台 LLM）
  *
- *   前端据此渲染档位选择器：T1/T2 对所有登录用户开放；T3 仅管理员可见。
- *   同时透出 runtime，使 Vercel(serverless) 上不可用的模式能被前端明确置灰
+ *   前端据此渲染档位选择器：前两档对所有登录用户开放；平台 LLM 仅管理员可见。
+ *   同时透出 runtime，使**公网演示版上不可用的模式能被前端明确置灰**
  *   （而非等用户点了才报 503）——符合项目「降级必须可见」铁律。
  *   本端点为**纯声明**，不消耗任何 LLM 配额、不触发外部请求。
+ *
+ * ⚠️ 对外文案纪律（2026-09-22 自查）：`runtime` 取值与置灰 `reason` **都会原样到达客户端**，
+ *   故此处不得出现部署平台、运行环境、函数时限、步数、本地版等实现细节。
+ *   取值改用 'public' / 'full'，不带任何平台含义。
  */
 app.get('/api/agents/capabilities', (req, res) => {
   const admin = isAdminReq(req);
-  const runtime = IS_VERCEL ? 'serverless' : 'node';
-  // 各模式在 serverless 下是否可跑：依据方案书 11.4（30s 函数上限 vs 步骤数）
+  const runtime = IS_VERCEL ? 'public' : 'full';
+  // 各模式在公网演示版下是否可跑：按"单步能否在受限时间内完成"判定
   const modeSteps = AGENT_JOB_MODE_STEPS;
   const modeSafe = IS_VERCEL ? 1 : Number.POSITIVE_INFINITY;
   res.json({
@@ -2097,7 +2101,7 @@ app.get('/api/agents/capabilities', (req, res) => {
       { key: 'byok', available: true, platformLLM: false, label: '自配 API' },
       { key: 'platform', available: admin, platformLLM: true, label: '平台 LLM', adminOnly: true },
     ],
-    /** 按档位给出各模式可用性：仅 platform 档受 serverless 约束 */
+    /** 按档位给出各模式可用性：仅平台 LLM 档受长任务限制 */
     modes: Object.fromEntries(
       Object.entries(modeSteps).map(([m, steps]) => [
         m,
@@ -2105,7 +2109,7 @@ app.get('/api/agents/capabilities', (req, res) => {
           ? { available: true }
           : {
             available: false,
-            reason: `该模式需 ${steps} 步 LLM 调用，Serverless 函数上限 30 秒；请使用本机版`,
+            reason: `该模式需 ${steps} 步分析，耗时长于公网演示版的处理上限；请改用「规则引擎」档获得完整的确定性分析`,
           },
       ]),
     ),

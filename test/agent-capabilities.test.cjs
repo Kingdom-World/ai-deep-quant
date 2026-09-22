@@ -148,7 +148,7 @@ test('普通用户：capabilities 中 platform 档不可用，rule/byok 可用',
 
 test('普通用户：capabilities 透出 runtime 与 byok 提示（不得泄露 key 相关敏感信息）', async () => {
   const r = await req('GET', '/api/agents/capabilities', { cookie: userCookie });
-  assert.ok(['node', 'serverless'].includes(r.json.runtime), `runtime 取值异常：${r.json.runtime}`);
+  assert.ok(['public', 'full'].includes(r.json.runtime), `runtime 取值异常：${r.json.runtime}`);
   assert.ok(String(r.json.hints.byok).includes('不保存'), '应说明本站不保存用户 Key');
   assert.equal(JSON.stringify(r.json).includes('AI_CLOUD_API_KEY'), false, '不得透出服务端密钥名');
 });

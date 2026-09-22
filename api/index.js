@@ -126,17 +126,27 @@ export default function handler(req, res) {
     console.log('[vercel-entry] req.url =', urlSeen, '| method =', req.method);
   }
   if (urlSeen.includes('__ping')) {
+    // ⚠️ 对外只暴露"活着 / 是否就绪"这类最小信息。
+    //    运行环境内情（Node 版本、部署区域、只读守卫计数、初始化错误原文）
+    //    属于实现细节，且 initError **可能含绝对部署路径** ——
+    //    这是本端点在 2026-09-22 自查中发现的信息外露，故默认收进
+    //    `DEBUG_ERRORS=1` 后面，仅内网排查时临时打开。
+    const detail = exposeErrors();
     return sendJson(res, 200, {
       ok: true,
       probe: 'entry-alive',
       appReady: !initError,
-      initError: initError ? initError.message.slice(0, 300) : null,
       initMs,
-      node: process.version,
-      urlSeenByFunction: urlSeen,
-      fsGuardCount: require_('node:fs').__roGuardCount || 0,
-      vercel: process.env.VERCEL || null,
-      region: process.env.VERCEL_REGION || null,
+      ...(detail
+        ? {
+            initError: initError ? initError.message.slice(0, 300) : null,
+            node: process.version,
+            urlSeenByFunction: urlSeen,
+            fsGuardCount: require_('node:fs').__roGuardCount || 0,
+            runtime: process.env.VERCEL ? 'managed' : 'self-hosted',
+            region: process.env.VERCEL_REGION || null,
+          }
+        : {}),
     });
   }
 

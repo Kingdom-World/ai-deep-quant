@@ -6,7 +6,7 @@
 //     历史K线 5 分钟 · 实时报价 10 秒 · 大盘指数 15 秒 · 搜索 60 秒
 //   注意：本层不直连第三方行情库（stock-sdk 等）——
 //         浏览器端 CORS 限制与东财源不可达问题导致直连不可行，
-//         统一经轻量后端（Vercel Serverless / Node）获取，保证可靠性与限流合规。
+//         统一经服务端获取，保证可靠性与限流合规。
 // ─────────────────────────────────────────────────────────────
 import {
   getHistory as apiGetHistory,
@@ -70,7 +70,7 @@ export interface SearchResult {
 
 // ── 可选：Render-Baostock 后端地址（环境变量 VITE_HISTORY_API） ──
 // 如 https://xxx.onrender.com，历史K线将优先从 Baostock 获取；
-// 未设置时使用轻量后端（Vercel Serverless / Node，腾讯+新浪双源）。
+// 未设置时使用服务端接口（腾讯+新浪双源）。
 const HISTORY_API = (import.meta.env.VITE_HISTORY_API as string) || '';
 
 /**
@@ -136,7 +136,7 @@ export const getHistory = async (
       volume: Number(r.volume),
     }));
   } else {
-    // 轻量后端（Vercel Serverless / Node）：day/3day/quarter/year 由前端聚合日线
+    // 服务端接口：day/3day/quarter/year 由前端聚合日线
     const rows: UnifiedKline[] = await apiGetHistory(
       symbol,
       toInternalMarket(market),

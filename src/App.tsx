@@ -75,7 +75,7 @@ function App() {
     authApi
       .me()
       // ⚠️ 必须同时看 authEnabled（2026-09-21 线上死锁修复）：
-      //    Vercel 上未配置 SITE_PASSWORD ⇒ 后端 AUTH_ENABLED=false，
+      //    公网部署未配置 SITE_PASSWORD ⇒ 后端 AUTH_ENABLED=false，
       //    /api/* 全开、也**不会创建任何账号**；若这里只用 `ok` 判定，
       //    前端会把整站挡在登录页后，而登录永远不可能成功 —— 站点彻底不可用。
       //    判据改为「有会话」或「后端根本没开鉴权」。

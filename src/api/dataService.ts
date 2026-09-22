@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// 统一数据服务层（直连独立后端 / Vercel Serverless）
+// 统一数据服务层（直连服务端 API）
 //   前端 → /api/*（vite proxy 或同源）→ server/index.cjs（Express）
 //   → 新浪/腾讯公开财经接口（无需 API Key，双源自动切换）
 //   前端缓存: 分级 TTL（报价10s / 指数15s / 历史5min），命中输出 [Cache] 日志；
@@ -24,7 +24,7 @@ import {
 
 // ============ 配置 ============
 const CONFIG = {
-  /** 后端 API 基础路径（同源 /api：生产由 Vercel Function 提供，开发经 vite proxy） */
+  /** 后端 API 基础路径（同源 /api：生产由服务端提供，开发经 vite proxy） */
   basePath: '/api',
   /** 请求超时 */
   timeout: REQUEST_TIMEOUT,
@@ -1087,8 +1087,8 @@ export interface TierDeclaration {
 
 export interface AgentCapabilities {
   ok: boolean;
-  /** serverless = Vercel（函数 30s 上限生效）；node = 本机自托管 */
-  runtime: 'serverless' | 'node';
+  /** public = 公网演示版（长任务受限）；full = 完整版（无时限）。取值不带任何平台含义 */
+  runtime: 'public' | 'full';
   tiers: TierDeclaration[];
   /** 各模式在当前 runtime + 档位下是否可跑 */
   modes: Record<string, { available: boolean; reason?: string }>;

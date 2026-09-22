@@ -2401,6 +2401,16 @@ if (!IS_VERCEL && !MAINTAIN_ONCE) {
 app.use('/api/paper', async (req, res, next) => {
   try {
     await broker.store.whenReady();
+    // 跨实例新鲜度检查（2026-09-22 用户拍板实施方案②）：其他实例写过该 uid ⇒
+    // 持账户锁把本实例内存刷新到 DB 最新版 —— 修掉"热实例陈旧读"
+    // （撤单后刷新仍显示 resting 的实测现象），并压缩跨实例覆盖窗口。
+    // 失败不阻断主流程（显式记录；仅可能读到上一刻的数据，下一请求会再试）。
+    try {
+      const uid = broker.uidOf(req);
+      if (uid) await broker.withAccountLock(uid, () => broker.store.refreshIfStale(uid));
+    } catch (e) {
+      console.warn('[paper] 新鲜度检查失败（不阻断）:', e.message?.slice(0, 120));
+    }
     next();
   } catch (e) {
     res.status(503).json({ ok: false, error: `交易存储初始化失败: ${e.message?.slice(0, 80)}` });

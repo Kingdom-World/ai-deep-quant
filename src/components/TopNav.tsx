@@ -3,7 +3,7 @@
 //   · 品牌 + 功能页签（当前页高亮）+ 全局股票搜索（联想）+ 用户菜单
 //   · 统一所有页面的导航与搜索入口，保证全站导航一致
 // ─────────────────────────────────────────────────────────────
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { searchSymbol } from '../api/dataService';
 import { theme } from '../lib/theme';
@@ -41,6 +41,10 @@ export default function TopNav() {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
+  // 手机端搜索折叠：默认只显示搜索图标，点开进入「搜索模式」——输入框独占一整行，页签暂隐。
+  //  为什么：搜索框原为 clamp(150px,…)+flexShrink:0 永不收缩 —— 360px 视口下页签区仅剩
+  //  ~14px，「首页」「更多(N)」全部被挤出可视区（用户 2026-09-22 实测反馈）。
+  const [searchOpen, setSearchOpen] = useState(false);
   const [sug, setSug] = useState<{ name: string; code: string; market: string }[]>([]);
   const [sugOpen, setSugOpen] = useState(false);
   const suggestTimer = useRef<number | undefined>(undefined);
@@ -71,7 +75,7 @@ export default function TopNav() {
     if (typeof document !== 'undefined' && document.fonts?.ready) {
       document.fonts.ready.then(measure).catch(() => {});
     }
-  }, [measure]);
+  }, [measure, searchOpen]); // searchOpen：手机搜索模式收起/恢复页签后重测指示器
 
   useEffect(() => {
     window.addEventListener('resize', measure, { passive: true });
@@ -169,6 +173,83 @@ export default function TopNav() {
     go(sug.length > 0 ? sug[0].code : k);
   };
 
+  // 路由变化即退出搜索模式（跳转/选联想词后自动收起，页签区恢复）
+  useEffect(() => {
+    setSearchOpen(false);
+  }, [location.pathname]);
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setKw('');
+    setSugOpen(false);
+  };
+
+  // 搜索框渲染器：宽屏常驻与手机「搜索模式」共用同一份输入+联想结构
+  const searchBox = (style: CSSProperties) => (
+    <div ref={boxRef} style={style}>
+      <input
+        value={kw}
+        autoFocus={narrow && searchOpen ? true : undefined}
+        onChange={(e) => setKw(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') goBest();
+          if (e.key === 'Escape') closeSearch();
+        }}
+        placeholder="搜索股票（AAPL / 600519 / 茅台）"
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '8px 12px',
+          fontSize: 12,
+          color: theme.color.text,
+          backgroundColor: 'rgba(13,19,34,0.8)',
+          border: '1px solid rgba(51,65,85,0.8)',
+          borderRadius: 8,
+          outline: 'none',
+        }}
+      />
+      {sugOpen && sug.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 40,
+            left: 0,
+            right: 0,
+            backgroundColor: '#111827',
+            border: '1px solid #334155',
+            borderRadius: 10,
+            overflow: 'hidden',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
+            zIndex: 20,
+          }}
+        >
+          {sug.map((s) => (
+            <div
+              key={`${s.market}-${s.code}`}
+              style={{
+                padding: '8px 12px',
+                fontSize: 13,
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'space-between',
+              }}
+              onClick={() => go(s.code)}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.backgroundColor = '#1e293b';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent';
+              }}
+            >
+              <span>{s.name}</span>
+              <span style={{ color: theme.color.textFaint }}>{s.code}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <>
       {/* 顶部分层（用户 2026-09-19 反馈：不应整块固定）：
@@ -240,7 +321,7 @@ export default function TopNav() {
       <div
         ref={scrollRef}
         className="pq-topnav-scroll"
-        style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}
+        style={{ position: 'relative', display: narrow && searchOpen ? 'none' : 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}
       >
         <span
           aria-hidden
@@ -336,67 +417,44 @@ export default function TopNav() {
         )}
       </div>
 
-      {/* 全局搜索（窄屏收窄但不换行） */}
-      <div ref={boxRef} style={{ position: 'relative', width: 'clamp(150px, 16vw, 230px)', flexShrink: 0 }}>
-        <input
-          value={kw}
-          onChange={(e) => setKw(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') goBest();
-          }}
-          placeholder="搜索股票（AAPL / 600519 / 茅台）"
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '8px 12px',
-            fontSize: 12,
-            color: theme.color.text,
-            backgroundColor: 'rgba(13,19,34,0.8)',
-            border: '1px solid rgba(51,65,85,0.8)',
-            borderRadius: 8,
-            outline: 'none',
-          }}
-        />
-        {sugOpen && sug.length > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 40,
-              left: 0,
-              right: 0,
-              backgroundColor: '#111827',
-              border: '1px solid #334155',
-              borderRadius: 10,
-              overflow: 'hidden',
-              boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
-              zIndex: 20,
-            }}
+      {/* 全局搜索：宽屏常驻输入框；手机端折叠成图标，点开后输入区独占一整行（页签暂隐） */}
+      {narrow && searchOpen ? (
+        <>
+          {searchBox({ position: 'relative', flex: 1, minWidth: 0 })}
+          <span
+            onClick={closeSearch}
+            style={{ fontSize: 13, color: '#94a3b8', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}
           >
-            {sug.map((s) => (
-              <div
-                key={`${s.market}-${s.code}`}
-                style={{
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                }}
-                onClick={() => go(s.code)}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.backgroundColor = '#1e293b';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent';
-                }}
-              >
-                <span>{s.name}</span>
-                <span style={{ color: theme.color.textFaint }}>{s.code}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+            取消
+          </span>
+        </>
+      ) : narrow ? (
+        <span
+          onClick={() => setSearchOpen(true)}
+          aria-label="搜索股票"
+          title="搜索股票"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            flexShrink: 0,
+            cursor: 'pointer',
+            color: '#94a3b8',
+            border: '1px solid rgba(51,65,85,0.8)',
+            backgroundColor: 'rgba(13,19,34,0.8)',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.8-3.8" />
+          </svg>
+        </span>
+      ) : (
+        searchBox({ position: 'relative', width: 'clamp(150px, 16vw, 230px)', flexShrink: 0 })
+      )}
 
       {/* 用户菜单 */}
       <UserMenu />

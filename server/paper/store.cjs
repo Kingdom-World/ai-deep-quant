@@ -68,9 +68,10 @@ class PaperStore {
 
   /** 冷启动载入：以数据库为准填充内存（此时内存应为空）。 */
   async hydrateFromDb() {
-    const r = await db.query(`SELECT uid, data FROM paper_state`);
+    const r = await db.query(`SELECT uid, data, updated_at FROM paper_state`);
     let n = 0;
     for (const row of r.rows) {
+      this.dirtyAt[row.uid] = new Date(row.updated_at).getTime();
       const d = row.data || {};
       if (d.accounts && !this.state.accounts[row.uid]) this.state.accounts[row.uid] = d.accounts;
       if (d.positions && !this.state.positions[row.uid]) this.state.positions[row.uid] = d.positions;

@@ -7,6 +7,9 @@
 //   · 策略全部基于实时快照字段（无需历史 K 线，规避批量拉历史的限流问题）
 // ─────────────────────────────────────────────────────────────
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const iconv = require('iconv-lite');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 const FIELDS = 'f12,f14,f2,f3,f5,f6,f8,f10,f15,f16,f18,f20,f100';
@@ -40,8 +43,122 @@ async function fetchPage(pn) {
   throw lastErr;
 }
 
+// ═══════════════ 腾讯批量行情（首选源，2026-09-22 新增）═══════════════
+//
+//  为什么加它：东财对**境外 IP 不响应**。实测（同一 Vercel 函数、同一时刻）：
+//    腾讯源 0.159s 回 200 ／ 东财源 8s 超时（改 hkg1 前是 502）
+//  选股与市场温度计都依赖"全市场快照"，故改为「腾讯批量行情 + 本地全A清单」。
+//  腾讯没有"列出全部股票"的接口 ⇒ 清单随代码部署（server/a-share-list.json）。
+//
+//  🔴 字段下标（0-based）**已用不变量验证**，不是肉眼核对的：
+//     · 现价必须落在 [最低, 最高] 之间
+//     · 涨跌% 必须与 price/prevClose-1 自洽（容差 0.02）
+//     · 市值量级必须对得上（茅台≈1.57万亿、工行总市值≈2.89万亿）
+//     映射错一位就会产出「看起来完全正常、其实完全错误」的数字，
+//     —— 本项目最忌讳这个（数值可信是根基），故必须靠不变量而非肉眼。
+//     验证脚本：.tmpdir/tencent-probe.cjs（36 项断言全过）
+const T = {
+  name: 1, price: 3, prevClose: 4, open: 5, volume: 6,
+  pct: 32, high: 33, low: 34,
+  amountWan: 37, turnover: 38,   // 成交额（万元）· 换手率 %
+  floatCapYi: 44, totalCapYi: 45, // 流通/总市值（亿元）
+  volRatio: 49,                   // 量比
+};
+
+const LIST_FILE = path.join(__dirname, 'a-share-list.json');
+let listCache = null;
+/** 全A清单（代码 + 行业）。行业腾讯不给，只能来自这里；名称腾讯随行情带回，故不存。 */
+function readAStockList() {
+  if (listCache) return listCache;
+  try {
+    listCache = JSON.parse(fs.readFileSync(LIST_FILE, 'utf8'));
+  } catch (e) {
+    listCache = [];
+    console.warn('[Screener] 全A清单读取失败（选股将无数据）:', e.message);
+  }
+  return listCache;
+}
+
+/**
+ * 纯解析：把腾讯返回的 GBK 文本解析成行情行（**不碰网络，可单测**）。
+ *   抽出来单独测试的原因：这套 0-based 下标一旦错位，产出的数字
+ *   「看起来完全正常、其实完全错误」—— 靠肉眼 review 抓不住，只能靠不变量断言锁住。
+ * @param text  腾讯响应文本（已由 GBK 解码）
+ * @param indMap 代码 → 行业（腾讯不给行业，只能外部注入）
+ */
+function parseTencent(text, indMap = new Map()) {
+  const out = [];
+  for (const line of String(text || '').split(';')) {
+    const m = line.match(/v_([a-z]{2})(\d{6})="([^"]*)"/);
+    if (!m) continue;
+    const f = m[3].split('~');
+    const num = (i) => {
+      const v = Number(f[i]);
+      return Number.isFinite(v) ? v : null;
+    };
+    const price = num(T.price);
+    if (price == null || price <= 0) continue; // 停牌 / 无效行
+    out.push({
+      // code 用**纯 6 位数字**，与东财口径一致 —— 下游 limitPctOf(code) 与
+      // 前端 /stock/:code 导航都依赖这个格式，换了就会静默出错。
+      code: m[2],
+      name: f[T.name] || '',
+      price,
+      pct: num(T.pct) ?? 0,
+      volume: num(T.volume) ?? 0,
+      amount: (num(T.amountWan) ?? 0) * 1e4, // 万元 → 元
+      turnover: num(T.turnover) ?? 0, // %
+      volRatio: num(T.volRatio) ?? 0,
+      high: num(T.high) ?? price,
+      low: num(T.low) ?? price,
+      open: num(T.open) ?? num(T.prevClose) ?? price,
+      mktCap: (num(T.totalCapYi) ?? 0) * 1e8, // 亿元 → 元（与东财 f20 同口径）
+      industry: indMap.get(m[1] + m[2]) || '—',
+    });
+  }
+  return out;
+}
+
+/** 单批拉取（腾讯允许一次查多只；返回 GBK，须按 GBK 解码） */
+async function fetchTencentBatch(codes, indMap) {
+  const res = await axios.get(`https://qt.gtimg.cn/q=${codes.join(',')}`, {
+    headers: { 'User-Agent': UA, Referer: 'https://gu.qq.com/' },
+    timeout: 12000,
+    responseType: 'arraybuffer',
+  });
+  return parseTencent(iconv.decode(Buffer.from(res.data), 'gbk'), indMap);
+}
+
+/** 并发拉全市场：80 只/批 + 4 并发 + 40ms 间隔（58 批约 5 秒，可塞进 30s 上限） */
+async function fetchAllSnapshotTencent() {
+  const list = readAStockList();
+  if (list.length < 1000) throw new Error(`全A清单过小（${list.length} 条）—— 检查 server/a-share-list.json`);
+  const indMap = new Map(list.map((x) => [x.code, x.industry]));
+  const codes = list.map((x) => x.code);
+  const BATCH = 80;
+  const batches = [];
+  for (let i = 0; i < codes.length; i += BATCH) batches.push(codes.slice(i, i + BATCH));
+
+  const rows = [];
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < batches.length) {
+      const b = batches[cursor++];
+      try {
+        rows.push(...(await fetchTencentBatch(b, indMap)));
+      } catch {
+        /* 单批失败跳过，不阻塞整体（与东财路径同一策略） */
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  return rows;
+}
+
+// ═══════════════ 东财（备用源，保留：本机/局域网仍可用）═══════════════
 /** 并发分页拉全市场（concurrency 4 + 120ms 限速，避免触发东财封禁） */
-async function fetchAllSnapshot() {
+async function fetchAllSnapshotEastmoney() {
   const first = await fetchPage(1);
   const pages = Math.ceil(first.total / 100);
   const rows = [...first.rows];
@@ -78,6 +195,30 @@ async function fetchAllSnapshot() {
     }));
 }
 
+/** 数据源调度：**腾讯优先**，行数不足或抛错时回落东财（本机/局域网仍走东财可用） */
+let lastSource = 'tencent';
+async function fetchAllSnapshot() {
+  const attempts = [
+    { name: 'tencent', fn: fetchAllSnapshotTencent },
+    { name: 'eastmoney', fn: fetchAllSnapshotEastmoney },
+  ];
+  const errs = [];
+  for (const a of attempts) {
+    try {
+      const rows = await a.fn();
+      if (rows.length >= 1000) {
+        lastSource = a.name;
+        return rows;
+      }
+      errs.push(`${a.name}: 行数过少(${rows.length})`);
+    } catch (e) {
+      errs.push(`${a.name}: ${e.message}`);
+    }
+  }
+  // 全部失败时**显式报错**（不静默返回空数组 —— 那会被前端读成"没有命中"）
+  throw new Error('所有数据源均失败 → ' + errs.join(' | '));
+}
+
 /** 带缓存的全市场快照（60s TTL + 10min stale 兜底） */
 async function snapshot() {
   const c = cache.get('all');
@@ -85,7 +226,7 @@ async function snapshot() {
   try {
     const rows = await fetchAllSnapshot();
     if (rows.length < 1000) throw new Error('快照行数异常: ' + rows.length);
-    const data = { rows, ts: Date.now(), via: hostAffinity };
+    const data = { rows, ts: Date.now(), via: lastSource };
     cache.set('all', { ts: Date.now(), data });
     lastGood.set('all', { ts: Date.now(), data });
     return data;
@@ -170,4 +311,4 @@ async function runScreener(strategy = 'volumeSurge', sort = 'pct', limit = 50) {
   };
 }
 
-module.exports = { getMood, runScreener, STRATEGIES, snapshot };
+module.exports = { getMood, runScreener, STRATEGIES, snapshot, parseTencent };

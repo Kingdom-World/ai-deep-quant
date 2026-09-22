@@ -74,15 +74,89 @@ function cached(key, ttl, loader) {
   })();
 }
 
+// ═══════════ 板块数据源：新浪（主）→ 腾讯（备）（2026-09-22 换源）═══════════
+//
+//  为什么换：**东财从当前运行环境不可达**（实测：选股 502/超时；板块接口挂满 30 秒）。
+//
+//  两个替代源已实测可用：
+//    · **新浪** `MoneyFlow.ssl_bkzj_bk` —— 一个接口同时给「板块涨跌幅 + 主力净流入 + 领涨股」，
+//      200ms 级响应，正好覆盖面板所需的全部字段。
+//    · **腾讯** `mktHs/rank` —— 给「板块涨跌幅 + 领涨股」，**腾讯已验证从线上可达**（优势），
+//      但**没有资金流数据** ⇒ 作备用，此时资金流字段回落为 null。
+//
+//  ⚠️ 两家板块分类口径不同（腾讯是申万式"电视广播Ⅱ"，新浪含"融资融券"等），
+//     故**绝不逐条拼接**：只在主源整体失败时**整体切换**到备用源，避免出现两套命名混排。
+let lastBoardSource = 'sina';
+
+/**
+ * 板块类型 → 新浪 fenlei。**取值经实测确认（2026-09-22），不可想当然**：
+ *     fenlei=1 → `gn_*`     概念板块（融资融券 / 参股金融 / 创新药 …）
+ *     fenlei=2 → `hangye_*` 行业板块（医药制造业 / 计算机应用服务业 …）
+ *     fenlei=3 → `hs300` 等**指数**，**不是地域板块**
+ * ⇒ **地域暂无新浪映射**：宁可不给，也不能把"指数"当"地域"显示
+ *   （口径标错比缺数据更糟 —— 数字看着正常、含义却是错的，没人会去怀疑它）。
+ */
+const SINA_FENLEI = { concept: 1, industry: 2 };
+
+/**
+ * 取板块行，**归一化成东财形状**：
+ *   f12 代码 · f14 名称 · f3 涨跌幅 · f62 主力净流入 · f128 领涨股 · f136 领涨股涨幅
+ * 这样 getFlow/getCards 里的映射代码**一行都不用改** —— 换源风险最小化。
+ * （数值口径也一并对齐：新浪的 changeratio 是小数，须 ×100 才是百分点。）
+ */
+async function fetchBoardRows(type, limit) {
+  // ① 新浪（主）—— **仅当该类型有实测确认过的 fenlei 映射**时才用
+  try {
+    const fenlei = SINA_FENLEI[type];
+    if (!fenlei) throw new Error(`新浪无「${type}」类型的确认映射，跳过`);
+    const res = await axios.get(
+      `https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_bkzj_bk?page=1&num=${limit}&sort=netamount&asc=0&fenlei=${fenlei}`,
+      { headers: { 'User-Agent': UA, Referer: 'https://finance.sina.com.cn/' }, timeout: UPSTREAM_TIMEOUT_MS },
+    );
+    const arr = Array.isArray(res.data) ? res.data : [];
+    const rows = arr.map((d) => ({
+      f12: d.category ?? '',
+      f14: d.name ?? '',
+      f3: Number.isFinite(Number(d.avg_changeratio)) ? Number(d.avg_changeratio) * 100 : null,
+      f62: Number.isFinite(Number(d.netamount)) ? Number(d.netamount) : null, // 主力净流入（元）
+      f128: d.ts_name ?? '',
+      f136: Number.isFinite(Number(d.ts_changeratio)) ? Number(d.ts_changeratio) * 100 : null,
+    }));
+    if (rows.length) {
+      lastBoardSource = 'sina';
+      return rows;
+    }
+  } catch (e) {
+    console.warn('[Sectors] 新浪板块源失败，回落腾讯:', e.message);
+  }
+  // ② 腾讯（备；无资金流 ⇒ f62 置 null，前端会显式标注"资金流暂不可用"）
+  //    ⚠️ 腾讯该接口给出的是**行业口径**的板块（申万式"电视广播Ⅱ/教育"），
+  //    故**不能**用它兜底「地域板块」—— 那会把行业数据标成地域（静默口径错）。
+  if (type === 'region') {
+    throw new Error('地域板块：现有两个数据源均无确认映射，宁缺毋滥（不拿行业数据冒充）');
+  }
+  const res2 = await axios.get(
+    `https://proxy.finance.qq.com/ifzqgtimg/appstock/app/mktHs/rank?l=${Math.max(limit, 20)}&p=1&t=01/averatio&o=0`,
+    { headers: { 'User-Agent': UA, Referer: 'https://gu.qq.com/' }, timeout: UPSTREAM_TIMEOUT_MS },
+  );
+  const list = res2.data?.data ?? [];
+  const rows2 = list.map((d) => ({
+    f12: d.bd_code ?? '',
+    f14: d.bd_name ?? '',
+    f3: Number.isFinite(Number(d.bd_zdf)) ? Number(d.bd_zdf) : null,
+    f62: null,
+    f128: d.nzg_name ?? '',
+    f136: Number.isFinite(Number(d.nzg_zdf)) ? Number(d.nzg_zdf) : null,
+  }));
+  if (rows2.length) lastBoardSource = 'tencent';
+  return rows2;
+}
+
 /** 板块主力净流入排行（按主力净流入降序） */
 function getFlow(type = 'industry') {
   const fs_ = TYPE_MAP[type] ?? TYPE_MAP.industry;
   return cached(`flow:${fs_}`, 30_000, async () => {
-    const url =
-      `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&fltt=2&invt=2&fid=f62` +
-      `&fs=${fs_}&fields=f12,f14,f2,f3,f62,f128,f136`;
-    const j = await getJSON(url);
-    const diff = j?.data?.diff ?? [];
+    const diff = await fetchBoardRows(type, 100);
     const rows = diff
       .map((d) => ({
         code: d.f12,
@@ -111,11 +185,7 @@ function getFlow(type = 'industry') {
 function getCards(type = 'industry', limit = 8) {
   const fs_ = TYPE_MAP[type] ?? TYPE_MAP.industry;
   return cached(`cards:${fs_}`, 30_000, async () => {
-    const url =
-      `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=${limit}&po=1&np=1&fltt=2&invt=2&fid=f3` +
-      `&fs=${fs_}&fields=f12,f14,f3,f62,f128,f136`;
-    const j = await getJSON(url);
-    const diff = j?.data?.diff ?? [];
+    const diff = await fetchBoardRows(type, limit);
     const rows = diff
       .map((d) => ({
         code: d.f12,
@@ -129,6 +199,10 @@ function getCards(type = 'industry', limit = 8) {
       .filter((r) => r.changePct != null);
 
     // 并行拉取每张卡的板块分时（sparkline）
+    // 分时 sparkline 只有东财提供；换源后不再发起（省掉一次必然失败的上游调用，spark 置 null）
+    if (lastBoardSource !== 'eastmoney') {
+      return { typeName: TYPE_NAME[type] ?? type, updatedAt: new Date().toISOString(), cards: rows };
+    }
     await Promise.all(
       rows.map(async (r) => {
         try {

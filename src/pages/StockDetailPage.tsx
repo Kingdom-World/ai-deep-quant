@@ -152,6 +152,7 @@ export default function StockDetailPage() {
   const [updateTime, setUpdateTime] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const narrow = useIsNarrow(); // 手机上把摘要栅格换成 2 列并允许收缩，避免右侧数值被裁掉
+  const stacked = useIsNarrow(980); // 看板两栏布局的堆叠断点：≤980px 时图表区与数据区改纵向单列
   const [error, setError] = useState<string | null>(null);
 
   // 状态管理（多维度变化）
@@ -1574,16 +1575,17 @@ export default function StockDetailPage() {
           })}
         </div>
 
-        {/* ── 两栏信息面板：CSS 多列按内容高度自动均衡，
-             避免某一栏明显偏短导致页面下方出现大块空白 ── */}
+        {/* ── 两栏信息面板（宽屏）：左栏=图表区（实时走势+K线，加宽至约 65%），
+             右栏=数据区（评分/基本面/五档/分笔等，收窄）；≤980px 回退纵向单列 ── */}
         <div
-          style={{
-            columnCount: 2,
-            columnWidth: '340px',
-            columnGap: '16px',
-            marginBottom: '16px',
-          }}
+          style={
+            stacked
+              ? { display: 'flex', flexDirection: 'column', gap: 0, marginBottom: '16px' }
+              : { display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '16px' }
+          }
         >
+        {/* 左栏：图表区 */}
+        <div style={stacked ? { width: '100%', minWidth: 0 } : { flex: '1 1 0', minWidth: 0 }}>
           <div
             style={{
               position: 'relative',
@@ -1679,7 +1681,7 @@ export default function StockDetailPage() {
             ref={realtimeChartRef}
             style={{
               width: '100%',
-              height: '160px',
+              height: '240px',
               padding: '4px',
             }}
           />
@@ -1891,8 +1893,10 @@ export default function StockDetailPage() {
           />
         </div>
 
-          {/* 五因子评分（移入左栏，平衡双栏高度） */}
-            {/* 五因子评分 */}
+        {/* 左栏结束 / 右栏开始：数据区（评分、基本面、资讯、五档、分笔、均线、模拟直达） */}
+        </div>
+        <div style={stacked ? { width: '100%', minWidth: 0 } : { flex: '0 0 clamp(300px, 30%, 380px)', minWidth: 0 }}>
+          {/* 五因子评分 */}
             <div style={{ ...panelCardStyle, padding: '14px 16px' }}>
               <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '10px' }}>🧮 五因子评分</div>
               {factorScore ? (
@@ -2187,6 +2191,9 @@ export default function StockDetailPage() {
                 跳转模拟盘并自动填入 {displaySymbol}
               </div>
             </div>
+        {/* 右栏（数据区）结束 */}
+        </div>
+        {/* 两栏面板容器结束 */}
         </div>
 
         {/* ── 技术指标面板 ── */}

@@ -236,6 +236,34 @@ async function fetchSinaRoll(num = 50) {
     .filter(Boolean);
 }
 
+// ───────── 源 4b：新浪财经直播滚动（备用补充源） ─────────
+//   为什么有它：主滚动源 feed.mix.sina.com.cn 在部分运行环境（如 Vercel 出口）被拒，
+//   而 zhibo.sina.com.cn 是独立集群，实测可达。7x24 财经直播（zhibo_id=152）内容与
+//   滚动新闻高度重合，作为市场要闻的第三路输入，避免单一集群故障导致公网无资讯。
+async function fetchSinaZhiboRoll(num = 50) {
+  const n = Math.min(Math.max(Number(num) || 50, 1), 100);
+  const url = `https://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=${n}&zhibo_id=152&tag_id=0&dire=f&dpc=1`;
+  const j = await getJSON(url, 'https://finance.sina.com.cn/');
+  const rows = j?.result?.data?.feed?.list ?? [];
+  return rows
+    .map((row) => {
+      const text = String(row?.rich_text || '').replace(/\s+/g, ' ').trim();
+      const ms = parseCnTime(row?.create_time);
+      if (!text || !ms) return null;
+      return {
+        title: text.slice(0, 120),
+        snippet: text.length > 120 ? text.slice(120, 300) : '',
+        url: `https://finance.sina.com.cn/7x24/?id=${encodeURIComponent(String(row?.id || ''))}`,
+        media: '新浪财经7x24',
+        publishedAt: new Date(ms).toISOString(),
+        source: 'sina-zhibo',
+        secids: [],
+        symbols: [],
+      };
+    })
+    .filter(Boolean);
+}
+
 // ───────── 源 5：证券简称解析 ─────────
 // 交易所会在除权除息日把简称标成「XD中国平」这类形式（且截断末字），
 // 直接拿去匹配会漏掉正文中写的「中国平安」，因此统一清洗标记前缀。
@@ -357,6 +385,7 @@ module.exports = {
   fetchEmStockNews,
   fetchEmSearch,
   fetchSinaRoll,
+  fetchSinaZhiboRoll,
   fetchEmSuggestName,
   fetchEmName,
   fetchTencentName,

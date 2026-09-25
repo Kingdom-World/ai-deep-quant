@@ -198,6 +198,18 @@ export default function TopNav() {
       timer = window.setTimeout(rebalance, 90);
     };
     schedule(); // 挂载首轮
+    // 🔴 resize 必须重排页签（此前 resize 只重测指示器+收敛滚动，**不重排收纳**）：
+    //   实测 1024→768 后 4 个页签溢出视口且「更多」按钮不出现；反向放大也不放回
+    //   （2026-09-25 公网 11 档宽度扫描实证）。收窄要继续收纳、放大要放回，都必须重排。
+    //   软导航（路由切换）不放回的既有决策不受影响——那只与 effect 依赖 [narrow] 有关。
+    const onWinResize = () => schedule();
+    window.addEventListener('resize', onWinResize, { passive: true });
+    // 🟡 挂载期自愈：初始测量可能落在字体/图标资源就绪前的错误布局上，过度收纳
+    //   会持续数秒（实测打开首页 3.5s 后仍只有 2 个页签+更多，9s 才自行恢复）。
+    //   前 12s 内周期性重排兜底：已收敛时 rebalance 走"已收敛"分支零副作用；
+    //   12s 后停止，稳态零开销。
+    const heal = window.setInterval(schedule, 1200);
+    const stopHeal = window.setTimeout(() => window.clearInterval(heal), 12000);
     // 二级防御：仅当挂载时字体仍在加载才注册就绪重排（冷启动文本宽度会变；
     // 热缓存 fonts.ready≈22ms 即就绪，此时不注册）
     if (typeof document !== 'undefined' && document.fonts && document.fonts.status === 'loading') {
@@ -206,6 +218,9 @@ export default function TopNav() {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      window.removeEventListener('resize', onWinResize);
+      window.clearInterval(heal);
+      window.clearTimeout(stopHeal);
     };
   }, [narrow]);
 

@@ -649,6 +649,32 @@ app.get('/api/history/:symbol', async (req, res) => {
           return res.json(result);
         }
       }
+      // 美股指数专属兜底：腾讯对指数不支持复权历史（fqkline/kline 均只返回最新 1 根），
+      // 新浪 CN 接口不覆盖美股 ⇒ 无本地归档时上游"全败"其实是数据源固有缺失，不是瞬时故障。
+      // 降级为"最新交易日快照 K 线"（1 根）并显式标注 degraded，而不是 500 ——
+      // 前端 sparkline/卡片对 1 根数据的处理已兼容，500 反而会让首页持续刷错误请求。
+      if (unit === 'day' && /^us(INX|IXIC|DJI)$/i.test(code)) {
+        try {
+          const cand = `${code}.OQ`;
+          const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${cand},day,,,5,qfq`;
+          const text = await fetchText(url, { 'User-Agent': UA, Referer: 'https://finance.qq.com' });
+          const json = JSON.parse(text);
+          const rows = parseTencentKlines(json, cand, 'day', adjust);
+          if (rows.length) {
+            const result = {
+              symbol: code,
+              frequency,
+              adjust: 'none(指数快照)',
+              source: 'tencent-index-snapshot',
+              stale: true,
+              degraded: '美股指数暂无免费历史K线数据源（腾讯指数仅提供最新交易日），已降级为快照数据',
+              klines: rows,
+            };
+            setCache(cacheKey, result);
+            return res.json(result);
+          }
+        } catch { /* 快照也失败则走下方 500 */ }
+      }
       res.status(500).json({ error: `获取历史数据失败: ${e2.message?.slice(0, 80)}` });
     }
   }
@@ -2034,8 +2060,11 @@ app.get('/api/news', async (req, res) => {
       sourceNote,
     });
   } catch (e) {
+    // 上游全失败：有本地快照则 200+stale 返回快照；连快照都没有（如 Vercel 冷实例首次失败）
+    // 也返回 200 + ok:false 的**显式降级载荷**，而不是 502 —— 502 会触发前端错误重试链路、
+    // 让页面长时间停留在加载态；ok:false 才能让 UI 立即渲染"暂不可用"空态并保留错误文案。
     const result = newsStore.list({ category: type, symbol: type === 'market' ? '' : symbol, limit });
-    res.status(result.length ? 200 : 502).json({
+    res.status(200).json({
       ok: result.length > 0,
       type,
       symbol: symbol || null,
@@ -2043,7 +2072,7 @@ app.get('/api/news', async (req, res) => {
       fetchedAt: new Date().toISOString(),
       stale: true,
       retentionHours: 72,
-      error: '上游资讯暂不可用，当前展示近三天本地快照',
+      error: result.length ? '上游资讯暂不可用，当前展示近三天本地快照' : '上游资讯源全部不可用且暂无本地快照，请稍后刷新重试',
     });
   }
 });

@@ -55,16 +55,17 @@ function dedupe(items) {
   return [...seen.values()].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
 }
 
-/** 市场要闻：东财 7x24 分页快讯（主力，单页 100 条）+ 新浪财经滚动（补充媒体覆盖） */
+/** 市场要闻：东财 7x24 分页快讯（主力，单页 100 条）+ 新浪财经滚动 + 新浪 7x24 直播（备用集群，互为兜底） */
 async function getMarketNews({ pages = 3, force = false } = {}) {
   if (!force && marketCache.items.length && Date.now() - marketCache.ts < MARKET_TTL) {
     return marketCache.items;
   }
-  const [flash, sina] = await Promise.all([
+  const [flash, sina, zhibo] = await Promise.all([
     sources.fetchMarketFlash(pages, 100),
     sources.fetchSinaRoll(50),
+    sources.fetchSinaZhiboRoll(50),
   ]);
-  const merged = dedupe([...flash, ...sina]);
+  const merged = dedupe([...flash, ...sina, ...zhibo]);
   if (merged.length) {
     marketCache.ts = Date.now();
     marketCache.items = merged;

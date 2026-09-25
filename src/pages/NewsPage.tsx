@@ -163,7 +163,15 @@ export default function NewsPage() {
           </div>
           {data?.stale && <div style={{ marginTop: 12, padding: '8px 10px', color: '#fbbf24', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.22)', borderRadius: 8, fontSize: 12 }}>{data.error || '上游暂不可用，当前展示本地近三天快照'}</div>}
           {data?.sourceNote && <div style={{ marginTop: 10, color: theme.color.textFaint, fontSize: 12 }}>{data.sourceNote}</div>}
-          {loading ? <div style={{ padding: '44px 0', textAlign: 'center', color: theme.color.textMuted }}>正在获取近三天资讯…</div> : !data?.items.length ? <div style={{ padding: '44px 0', textAlign: 'center', color: theme.color.textMuted }}>{tab === 'market' ? '暂无市场资讯' : '请输入有效股票代码，或当前暂无相关内容'}</div> : (
+          {loading ? (
+            <div style={{ padding: '44px 0', textAlign: 'center', color: theme.color.textMuted }}>正在获取近三天资讯…</div>
+          ) : !data?.items.length ? (
+            <div style={{ padding: '44px 0', textAlign: 'center', color: theme.color.textMuted }}>
+              {tab === 'market' ? '暂无市场资讯' : '请输入有效股票代码，或当前暂无相关内容'}
+              {data?.error && <div style={{ marginTop: 6, fontSize: 12, color: '#fbbf24' }}>{data.error}</div>}
+              {data?.error && <button type="button" data-marker="news-empty-retry" onClick={() => void load(true)} style={{ ...theme.input, marginTop: 10, color: '#93c5fd', cursor: 'pointer' }}>重试</button>}
+            </div>
+          ) : (
             <>
               {strong.map((item) => <NewsRow key={item.id} item={item} />)}
               {weak.length > 0 && (

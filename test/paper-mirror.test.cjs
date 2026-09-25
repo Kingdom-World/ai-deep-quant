@@ -83,17 +83,56 @@ test('refreshIfStale：DB 更新 ⇒ 用 DB 版本覆盖内存并推进 dirtyAt�
   }
 });
 
-test('syncToDb：UPSERT 后从 RETURNING 回写 dirtyAt（时钟统一取数据库）', async () => {
+test('persistUid：单 uid UPSERT 带 RETURNING updated_at，dirtyAt 取数据库时钟（syncToDb 全量回写已删除，P1）', async () => {
   const store = new PaperStore();
   try {
     await store.whenReady();
-    await store.syncToDb();
+    const r = await store.persistUid('zhengwj');
+    assert.equal(r.ok, true);
+    assert.equal(r.persisted, true, 'mock DB 下必须报 persisted:true');
     assert.ok(
-      seen.some((s) => s.includes('RETURNING updated_at')),
-      'UPSERT 必须带 RETURNING updated_at',
+      seen.some((s) => s.includes('INSERT INTO paper_state') && s.includes('RETURNING updated_at')),
+      'UPSERT 必须带 RETURNING updated_at（响应返回前落库的关键）',
     );
-    assert.ok(typeof store.dirtyAt.zhengwj === 'number', 'syncToDb 后 dirtyAt 应为 DB 时钟');
+    assert.ok(typeof store.dirtyAt.zhengwj === 'number', 'persistUid 后 dirtyAt 应为 DB 时钟');
   } finally {
+    clearInterval(store.timer);
+  }
+});
+
+test('persistUid：DB 故障 ⇒ 显式降级 persisted:false 并进入重试队列；恢复后 retryDbFlush 出队（不抛 500、不静默）', async () => {
+  const store = new PaperStore();
+  const realQuery = db.query;
+  try {
+    await store.whenReady();
+    db.query = async () => { throw new Error('mock: DB 不可用'); };
+    const r = await store.persistUid('zhengwj');
+    assert.equal(r.ok, false);
+    assert.equal(r.persisted, false, '失败必须显式报 persisted:false');
+    assert.ok(store.dbRetry.has('zhengwj'), '失败 uid 应进入 60s 重试队列');
+    // 恢复 DB ⇒ retryDbFlush 重试成功出队
+    db.query = realQuery;
+    store.retryDbFlush();
+    await new Promise((r2) => setTimeout(r2, 10));
+    assert.ok(!store.dbRetry.has('zhengwj'), '重试成功后应出队');
+  } finally {
+    db.query = realQuery;
+    clearInterval(store.timer);
+  }
+});
+
+test('persistUid：无 DB ⇒ ok:true + persisted:false（本地 JSON 已落盘，行为兼容旧版；文件后端无需 DB）', async () => {
+  const store = new PaperStore();
+  const realHasDb = db.hasDb;
+  try {
+    await store.whenReady();
+    db.hasDb = () => false;
+    const r = await store.persistUid('zhengwj');
+    assert.equal(r.ok, true);
+    assert.equal(r.persisted, false, '无 DB 时显式报 persisted:false（不假装已落库）');
+    assert.ok(!store.dbRetry.size, '无 DB 是正常路径，不得进重试队列');
+  } finally {
+    db.hasDb = realHasDb;
     clearInterval(store.timer);
   }
 });

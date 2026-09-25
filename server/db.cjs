@@ -75,6 +75,20 @@ async function migrate() {
       data       jsonb NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     )`);
+  // Agent 报告存储（P3，2026-09-25）：Vercel 只读 FS 上 data/agents/*.json 写不进去，
+  // 报告保存曾静默失败（L2.1）。一行 = 一份完整 trace；索引列冗余自 trace 供列表查询免解 jsonb。
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_reports (
+      id         text PRIMARY KEY,
+      uid        text NOT NULL,
+      symbol     text NOT NULL DEFAULT '',
+      name       text NOT NULL DEFAULT '',
+      mode       text NOT NULL DEFAULT '',
+      decision   text NOT NULL DEFAULT '',
+      ran_at     timestamptz,
+      trace      jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`);
 }
 
 /**

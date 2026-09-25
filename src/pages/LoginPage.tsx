@@ -188,7 +188,7 @@ export default function LoginPage({ onLogin }: { onLogin: (username: string) => 
           <br />
           本平台为学术研究演示项目，不构成任何投资建议
           <br />
-          内部测试环境 · 请勿使用常用密码注册 · 提问内容可能发送至第三方 AI 服务处理
+          提问内容可能由 AI 服务处理，请勿输入个人敏感信息
         </div>
       </div>
 

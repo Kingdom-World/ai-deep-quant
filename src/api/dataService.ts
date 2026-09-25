@@ -744,6 +744,13 @@ export interface PaperOrder {
   qty: number;
   limitPrice: number | null;
   status: 'pending' | 'resting' | 'filled' | 'canceled' | 'rejected';
+  /** GFD 当日有效：YYYY-MM-DD（限价挂单挂出时设置，到期由撮合自动撤销） */
+  validUntil?: string;
+  /** 委托估算价（下单瞬间的行情价） */
+  estimatePrice?: number | null;
+  /** 策略归因标记（策略引擎下单时传入，人工下单为空串） */
+  src?: string;
+  filledAt?: string;
   reason?: string;
   avgFillPrice?: number;
   fees?: { total: number };
@@ -1187,7 +1194,7 @@ export const feedApi = {
     }>(`/feed/${encodeURIComponent(symbol)}`),
 };
 
-/** 14. AI 助手学习系统（知识库 / 反馈 / 教学 / 自训练状态） */
+/** 14. AI 助手学习系统（知识库 / 反馈 / 教学 / 训练状态） */
 export const aiApi = {
   stats: () => apiGet<{ ok: boolean; knowledge: number; trainCount: number; lastNightly: any; pendingQuestions: number }>('/ai/stats'),
   feedback: (body: { question: string; answer: string; rating: 'up' | 'down'; comment?: string }) =>

@@ -213,7 +213,7 @@ export default function AgentResearchPage() {
               }}
             >
               <strong style={{ color: theme.color.textMuted }}>免责声明：</strong>
-              本页为学术研究演示。Agent 的结论由云端免费模型生成，仅基于工具返回的数据做解读，
+              本页为学术研究演示。Agent 的结论由云端大模型生成，仅基于工具返回的数据做解读，
               关键数值以工具原始数据（规则引擎直出）为准；严禁荐股，不构成任何投资建议。
             </div>
           </>

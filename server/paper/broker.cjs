@@ -198,7 +198,7 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
   const positions = store.state.positions[uid];
   const market = marketOf(symbol);
 
-  const reject = (reason) => {
+  const reject = async (reason) => {
     const order = {
       id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       uid, symbol, name: name || quote?.name || symbol, side, type, qty,
@@ -208,9 +208,9 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
     };
     store.state.orders[uid].unshift(order);
     if (store.state.orders[uid].length > 300) store.state.orders[uid].length = 300;
-    store.save();
+    const persist = await store.persistUid(uid);
     logEvent(uid, `拒单 ${side} ${symbol} ×${qty}: ${reason}`);
-    return { ok: false, error: reason, order };
+    return { ok: false, error: reason, order, persisted: persist.persisted };
   };
 
   // ── 交易时段约束（与真实股市一致）──
@@ -313,9 +313,9 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
     order.status = 'rejected';
     order.reason = risk.reason;
     store.state.orders[uid].unshift(order);
-    store.save();
+    const persist = await store.persistUid(uid);
     logEvent(uid, `拒单 ${side} ${symbol} ×${qty}: ${risk.reason}`);
-    return { ok: false, error: risk.reason, order };
+    return { ok: false, error: risk.reason, order, persisted: persist.persisted };
   }
 
   // 立即撮合
@@ -361,18 +361,18 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
 
   store.state.orders[uid].unshift(order);
   if (store.state.orders[uid].length > 300) store.state.orders[uid].length = 300;
-  store.save();
+  const persist = await store.persistUid(uid); // 响应返回前已落库（Vercel 冻结不再丢挂单）
   if (order.status === 'filled') {
     logEvent(uid, `成交 ${side} ${symbol} ×${qty} @ ${order.avgFillPrice}（费 ${order.fees.total}）`);
   } else if (order.status === 'rejected') {
     logEvent(uid, `拒单 ${side} ${symbol} ×${qty}: ${order.reason}`);
   }
-  return { ok: order.status !== 'rejected', order };
+  return { ok: order.status !== 'rejected', order, persisted: persist.persisted };
 }
 
 /** 取消挂单（走账户队列，避免与撮合循环的 await 窗口交错 → 撤单后仍被成交） */
 function cancelOrder(uid, orderId) {
-  return withAccountLock(uid, () => {
+  return withAccountLock(uid, async () => {
     const order = store.state.orders[uid].find((o) => o.id === orderId);
     if (!order) return { ok: false, error: '订单不存在' };
     if (order.status !== 'resting' && order.status !== 'pending') {
@@ -381,16 +381,17 @@ function cancelOrder(uid, orderId) {
     releaseOrderReservation(uid, order); // 撤单即释放冻结的资金/持仓
     order.status = 'canceled';
     order.filledAt = nowISO();
-    store.save();
+    const persist = await store.persistUid(uid);
     logEvent(uid, `撤单 ${order.side} ${order.symbol} ×${order.qty}`);
-    return { ok: true };
+    return { ok: true, persisted: persist.persisted };
   });
 }
 
 /** 重置模拟账户（走账户队列，避免与在途撮合交错） */
 function resetAccount(uid) {
-  return withAccountLock(uid, () => {
+  return withAccountLock(uid, async () => {
     store.reset(uid);
+    await store.persistUid(uid); // reset 内部已 save 本地文件；此处再同步落库（并清 DB 旧镜像语义见 store.reset）
     logEvent(uid, '模拟账户已重置');
     return { ok: true, message: '模拟账户已重置为初始资金' };
   });
@@ -410,8 +411,9 @@ function unlockAccount(uid) {
     acc.peakAssets = total;
     acc.riskLocked = false;
     acc.ddLevel = 0;
+    const persist = await store.persistUid(uid); // 风控状态变更必须落盘（旧实现漏落，重启回滚）
     logEvent(uid, `手动解锁：回撤基准重置为当前净值 ${total}`);
-    return { ok: true, message: `已解锁，回撤基准重置为当前净值 ${total}`, peakAssets: total };
+    return { ok: true, message: `已解锁，回撤基准重置为当前净值 ${total}`, peakAssets: total, persisted: persist.persisted };
   });
 }
 
@@ -420,15 +422,21 @@ function unlockAccount(uid) {
  *  同一 resting 订单会被两个循环同时撮合 → 重复成交/重复扣款。此处直接丢弃重叠的那一轮。 */
 let tickCount = 0;
 let matcherRunning = false;
-async function runMatcher() {
+/** 撮合：不传 targetUid 跑全部账户（本地 5s 循环）；传 targetUid 只跑该账户
+ *  （Vercel 惰性撮合：请求驱动 + per-uid 节流，见 index.cjs maybeRunMatcher）。
+ *  变更（成交/到期撤销/净值快照）在锁内同步落库（persistUid），响应前持久化。 */
+async function runMatcher(targetUid) {
   if (matcherRunning) return { skipped: true, reason: '上一轮撮合尚未结束' };
   matcherRunning = true;
   tickCount += 1;
   const tick = tickCount;
   try {
-    for (const uid of Object.keys(store.state.accounts)) {
+    const uids = targetUid ? [targetUid] : Object.keys(store.state.accounts);
+    for (const uid of uids) {
+      if (!store.state.accounts[uid]) continue; // 账户不存在（未开户）→ 跳过
       // 每个账户内部串行：撮合与用户下单/撤单不会交错
       await withAccountLock(uid, async () => {
+        let changed = false;
         const resting = store.state.orders[uid].filter((o) => o.status === 'resting');
         for (const order of resting) {
           if (order.status !== 'resting') continue; // 快照后已被撤单/成交
@@ -439,6 +447,7 @@ async function runMatcher() {
             order.reason = 'GFD：当日有效委托到期，自动撤销';
             order.filledAt = nowISO();
             logEvent(uid, `挂单过期撤销 ${order.side} ${order.symbol} ×${order.qty}（${order.validUntil} 到期）`);
+            changed = true;
             continue;
           }
           // 时段门禁：挂单只在对应市场的连续竞价时段撮合（与真实交易所一致）
@@ -451,6 +460,7 @@ async function runMatcher() {
           if (order.status === 'filled' && before !== 'filled') {
             if (applyFill(uid, order, order.avgFillPrice)) {
               logEvent(uid, `挂单成交 ${order.side} ${order.symbol} ×${order.qty} @ ${order.avgFillPrice}`);
+              changed = true;
             }
           }
         }
@@ -472,16 +482,46 @@ async function runMatcher() {
           if (!last || last.total !== total || stale) {
             eq.push({ t: nowISO(), total, cash: +acc.cash.toFixed(2), marketValue: +marketValue.toFixed(2) });
             if (eq.length > 5000) eq.splice(0, eq.length - 5000);
+            changed = true;
           }
         }
+        // 🔴 锁内同步落库（仅变更时写）：写点在锁内 ⇒ refreshIfStale 语义成立；
+        //    无变更零写放大。失败时 persistUid 内部显式降级（重试队列），不中断撮合。
+        if (changed) await store.persistUid(uid);
       });
     }
     store.save();
+    return { ok: true }; // 供 maybeRunMatcher 区分"真正跑过"与"被重入守卫跳过"
   } catch (e) {
     console.error('[PaperBroker] 撮合循环异常:', e.message);
+    return { ok: false, error: e.message };
   } finally {
     matcherRunning = false;
   }
+}
+
+/** 惰性撮合节流（per-uid）：Vercel 无常驻撮合循环，靠请求驱动补跑 */
+const lazyMatcherLastRun = new Map();
+const LAZY_MATCHER_MIN_INTERVAL_MS = 60_000;
+
+/** 惰性撮合入口（仅 Vercel 门禁调用，见 index.cjs /api/paper）：
+ *  距上次真正运行 >60s 且本实例内存存在 resting 挂单才跑 runMatcher(uid)；无挂单零成本跳过。
+ *  ⚠️ 前提：调用方必须先完成 store.refreshIfStale(uid)（门禁统一做）——
+ *  存在性判断依据的是刷新后的内存，否则会误判"无挂单"而跳过。
+ *  runMatcher 内部自带 matcherRunning 重入守卫 + per-uid 账户锁，此处无需再加锁。 */
+async function maybeRunMatcher(uid) {
+  const now = Date.now();
+  const last = lazyMatcherLastRun.get(uid) || 0;
+  if (now - last < LAZY_MATCHER_MIN_INTERVAL_MS) {
+    return { skipped: true, reason: '节流窗口内（60s）' };
+  }
+  const orders = store.state.orders[uid];
+  if (!orders || !orders.some((o) => o.status === 'resting')) {
+    return { skipped: true, reason: '无 resting 挂单' };
+  }
+  const r = await runMatcher(uid);
+  if (!r.skipped) lazyMatcherLastRun.set(uid, now); // 真正跑过才计入节流；被重入守卫挡下时下个请求立刻再试
+  return { ok: true, ...r };
 }
 
 /** 账户快照（前端展示） */
@@ -532,4 +572,4 @@ async function accountSnapshot(uid) {
   };
 }
 
-module.exports = { init, placeOrder, cancelOrder, resetAccount, unlockAccount, withAccountLock, runMatcher, accountSnapshot, logEvent, store, uidOf };
+module.exports = { init, placeOrder, cancelOrder, resetAccount, unlockAccount, withAccountLock, runMatcher, maybeRunMatcher, accountSnapshot, logEvent, store, uidOf };

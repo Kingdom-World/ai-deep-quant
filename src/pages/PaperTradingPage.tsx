@@ -1041,7 +1041,12 @@ export default function PaperTradingPage() {
                       <span style={{ color: o.side === 'buy' ? '#4ade80' : '#f87171', fontWeight: 700, width: 32 }}>{o.side === 'buy' ? '买' : '卖'}</span>
                       <span style={{ width: 110 }}><CodeTag code={o.symbol} /></span>
                       <span style={{ width: 70 }}>{o.qty} 股</span>
-                      <span style={{ width: 90 }}>{o.type === 'limit' ? `限价 ${o.limitPrice}` : '市价'}</span>
+                      <span style={{ width: 130 }}>
+                        {o.type === 'limit' ? `限价 ${o.limitPrice}` : '市价'}
+                        {o.status === 'resting' && o.validUntil && (
+                          <span style={{ color: '#64748b', fontSize: 10 }}> · GFD 至 {o.validUntil.slice(5)}</span>
+                        )}
+                      </span>
                       <span style={{ width: 80 }}>{o.avgFillPrice != null ? `@ ${o.avgFillPrice}` : ''}</span>
                       <span style={{ color: st.color, width: 60 }}>{st.text}</span>
                       {o.reason && <span style={{ color: '#f87171', flex: 1 }}>{o.reason}</span>}

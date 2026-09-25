@@ -30,10 +30,15 @@ class PaperStore {
     //  跨实例新鲜度判断用：DB 行的 updated_at 比它新 ⇒ 有别的实例写过 ⇒ 读前刷新。
     //  时钟统一取数据库时间（UPSERT RETURNING updated_at），规避应用服务器之间的时钟偏差。
     this.dirtyAt = Object.create(null);
+    // 同步落库失败的 uid 重试集合（persistUid 失败时进入；60s 快照 tick 重试）
+    this.dbRetry = new Set();
     this.load();
     this.acquireLock(); // 双实例会在此处报错退出（防止内存态互相覆盖回滚交易）
-    // 定时快照任务：每 60s 强制落盘一次（要求 #2：严防重启丢数据）
-    this.timer = setInterval(() => this.save(), 60_000);
+    // 定时快照任务：每 60s 强制落盘一次（要求 #2：严防重启丢数据）+ 重试同步落库失败的 uid
+    this.timer = setInterval(() => {
+      this.save();
+      this.retryDbFlush();
+    }, 60_000);
     this.timer.unref();
     // 退出兜底：正常退出（Ctrl+C/SIGTERM/exit）时最终落盘 + 释放锁（强杀进程无钩子，靠 write-through 保数据）
     let exiting = false;
@@ -88,44 +93,64 @@ class PaperStore {
   }
 
   /**
-   * 落盘后调度一次数据库同步（800ms 去抖：把同一瞬间的多次写合并成一轮 UPSERT）。
-   * 同步失败**显式打日志**（数据仍在内存，下一轮落盘会再试）—— 不静默。
+   * 把单个 uid 的五段数据 UPSERT 回数据库。**只写"本实例刚刚改过的 uid"**——
+   * 🔴 绝不做周期性全量回写：全量盲 UPSERT 会用本实例 hydrate 的陈旧内存
+   * 覆盖其他实例的新写（多实例互相滚回，2026-09-25 评审阻塞项）。
+   * @returns {boolean} 是否成功
    */
-  scheduleDbSync() {
-    if (!db.hasDb()) return;
-    if (this.dbSyncTimer) return; // 已排程，去重
-    this.dbSyncTimer = setTimeout(() => {
-      this.dbSyncTimer = null;
-      this.syncToDb().catch((e) =>
-        console.error('[PaperStore] 数据库同步失败（数据仍在内存，下轮落盘会再试）:', e.message),
-      );
-    }, 800);
-    if (this.dbSyncTimer.unref) this.dbSyncTimer.unref();
+  async flushToDb(uid) {
+    if (!db.hasDb() || !uid) return false;
+    await this.whenReady();
+    const data = {
+      accounts: this.state.accounts[uid] ?? null,
+      positions: this.state.positions[uid] ?? [],
+      orders: this.state.orders[uid] ?? [],
+      equity: this.state.equity[uid] ?? [],
+      dailyPnl: this.state.dailyPnl[uid] ?? {},
+    };
+    const w = await db.query(
+      `INSERT INTO paper_state (uid, data, updated_at) VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+       RETURNING updated_at`,
+      [uid, JSON.stringify(data)],
+    );
+    if (w.rows[0]) this.dirtyAt[uid] = new Date(w.rows[0].updated_at).getTime();
+    return true;
   }
 
-  /** 把内存中每个 uid 的五段数据 UPSERT 回数据库（个位数用户，量级极小） */
-  async syncToDb() {
-    await this.whenReady();
-    const uids = new Set([
-      ...Object.keys(this.state.accounts),
-      ...Object.keys(this.state.positions),
-      ...Object.keys(this.state.orders),
-    ]);
-    for (const uid of uids) {
-      const data = {
-        accounts: this.state.accounts[uid] ?? null,
-        positions: this.state.positions[uid] ?? [],
-        orders: this.state.orders[uid] ?? [],
-        equity: this.state.equity[uid] ?? [],
-        dailyPnl: this.state.dailyPnl[uid] ?? {},
-      };
-      const w = await db.query(
-        `INSERT INTO paper_state (uid, data, updated_at) VALUES ($1, $2::jsonb, now())
-         ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
-         RETURNING updated_at`,
-        [uid, JSON.stringify(data)],
-      );
-      if (w.rows[0]) this.dirtyAt[uid] = new Date(w.rows[0].updated_at).getTime();
+  /**
+   * 🔴 关键写路径统一出口（2026-09-25）：本地 JSON 落盘 + **Postgres 同步落库**，
+   * 响应返回前完成——Vercel Serverless 响应后随时冻结，旧的"800ms 去抖后台写"
+   * 会被冻结杀掉 ⇒ 下单/挂单从未落库 ⇒ 其他实例读到旧数据（挂单"消失"的根因）。
+   * 失败语义（显式降级，不抛 500）：数据仍在内存与本地文件，进入 60s 重试队列，
+   * 响应带 persisted:false 由前端提示——绝不静默（铁律 #4）。
+   * 调用方必须持有该 uid 的账户锁（内部 refreshIfStale 的锁内刷新语义依赖它）。
+   */
+  async persistUid(uid) {
+    this.save(); // 本地 JSON write-through（无 DB 环境的最终通道）
+    if (!db.hasDb()) return { ok: true, persisted: false };
+    try {
+      await this.refreshIfStale(uid); // 写前刷新：压缩"陈旧实例覆盖新写"窗口
+      const ok = await this.flushToDb(uid);
+      if (!ok) throw new Error('flushToDb 返回 false');
+      this.dbRetry.delete(uid);
+      return { ok: true, persisted: true };
+    } catch (e) {
+      this.dbRetry.add(uid);
+      console.error('[PaperStore] 同步落库失败（数据在内存/本地文件不丢，60s 后重试）:', e.message);
+      return { ok: false, persisted: false, error: String(e.message || e).slice(0, 120) };
+    }
+  }
+
+  /** 60s 兜底：重试同步落库失败的 uid（纯 flush，无 refreshIfStale——本实例刚写失败的数据即最新） */
+  retryDbFlush() {
+    if (!db.hasDb() || !this.dbRetry.size) return;
+    for (const uid of [...this.dbRetry]) {
+      this.flushToDb(uid)
+        .then((ok) => {
+          if (ok) this.dbRetry.delete(uid);
+        })
+        .catch(() => { /* 仍失败则留在集合，下一轮再试 */ });
     }
   }
 
@@ -223,8 +248,8 @@ class PaperStore {
    * @returns {boolean} 是否成功落盘
    */
   save() {
-    // 写文件之外，调度一次数据库镜像（托管环境的持久化通道；内部有去抖与显式失败日志）
-    this.scheduleDbSync();
+    // 🔴 DB 同步不在这里排程（旧实现 800ms 去抖发生在响应后，Vercel 冻结即丢）——
+    //    关键写路径一律走 persistUid()（响应前同步落库）；save() 只管本地 JSON。
     const payload = JSON.stringify(this.state);
     const tmp = `${STATE_FILE}.${process.pid}.tmp`;
     try {

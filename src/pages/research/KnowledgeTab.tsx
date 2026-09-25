@@ -105,10 +105,14 @@ export default function KnowledgeTab() {
     [related],
   );
 
-  const statLine = useMemo(
-    () => (stats ? `共 ${stats.total} 条 · 全部带出处（${stats.withSource}/${stats.total}）` : ''),
-    [stats],
-  );
+  // 条数动态化（BUG#3）：有搜索词/分类过滤时显示当前命中数（total = 本次查询结果总数），
+  // 无过滤时显示全库条数；出处统计恒为全库口径，不随过滤缩水。过滤为空时命中 0 条照实显示。
+  const isFiltered = q.trim() !== '' || category !== '';
+  const statLine = useMemo(() => {
+    if (!stats) return '';
+    const src = `全部带出处（${stats.withSource}/${stats.total}）`;
+    return isFiltered ? `命中 ${total} 条 · ${src}` : `共 ${stats.total} 条 · ${src}`;
+  }, [stats, total, isFiltered]);
 
   return (
     <div>

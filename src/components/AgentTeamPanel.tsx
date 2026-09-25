@@ -5,7 +5,7 @@
 //   · 能力三档（L1.5，方案书「十一」）：
 //       T1 规则引擎 —— 无需任何 Key，全部用户可用（确定性计算，LLM 不参与）
 //       T2 自配 API —— 用户自己的 Key，浏览器直连供应商，不经过本站服务器
-//       T3 平台 LLM —— 平台预置免费模型，仅管理员；且受运行时限约束
+//       T3 平台 LLM —— 平台预置模型，仅管理员；且受运行时限约束
 //   · 合规声明：LLM + 规则引擎协作的学术研究演示，非投资建议
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -525,7 +525,7 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
               {degraded.total ? ` ${degraded.rule ?? 0}/${degraded.total} 个角色` : ' 部分角色'}由本地规则引擎产出（未走云端大模型）。
               {degraded.seats?.length ? ` 降级角色：${degraded.seats.join('、')}。` : ''}
               {degraded.reason ? ` ${degraded.reason}。` : ''}
-              降级多因免费模型额度限流触发，结论请谨慎参考。
+              降级多因平台模型限流触发，结论请谨慎参考。
             </div>
           )}
 

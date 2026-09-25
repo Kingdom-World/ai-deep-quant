@@ -1785,7 +1785,7 @@ app.post('/api/agents/analyze', async (req, res) => {
     //   · platform —— 走 LLM 流水线（下方管理员闸门 + runtime 校验）
     const reqTier = ['rule', 'platform'].includes(String(body.tier)) ? String(body.tier) : null;
     if (reqTier === 'rule' || !cloudAI.configured()) {
-      const trace = agentTeam.run(ctx);
+      const trace = await agentTeam.run(ctx); // P3: agents.run async 化（报告保存走 DB 后端）
       return res.json({ ok: true, name: quote?.name, tier: 'rule', ...trace });
     }
     // ── T3 平台 LLM 档：仅管理员（L1.4）──
@@ -1800,12 +1800,21 @@ app.post('/api/agents/analyze', async (req, res) => {
         availableTiers: ['rule', 'byok'],
       });
     }
-    if (IS_VERCEL) {
+    if (IS_VERCEL && mode !== 'single') {
       return res.status(503).json({
         ok: false,
-        error: 'Vercel Serverless 暂不支持长时间 Agent 流水线（本模式需多步 LLM 调用，超出函数 30 秒上限）；请使用本机版，或改用 single 模式。',
+        error: 'Vercel Serverless 暂不支持多步 Agent 流水线（full/debate/risk/quick 需多步 LLM 调用，超出函数 30 秒上限）；请使用本机版，或改用 single 模式（单次调用，线上可运行）。',
         availableTiers: ['rule', 'byok'],
       });
+    }
+    // Vercel + single 放行（P2，2026-09-25）：single 仅 1 次 LLM 调用（llm_pipeline
+    // TOTAL_STEPS.single=1），vercel.json functions maxDuration=30 内可同步完成。
+    // 响应直接带 trace（含 stages 字段 → 前端识别为同步路径，协议兼容，无需 jobId 轮询）。
+    if (IS_VERCEL && mode === 'single') {
+      const trace = await llmPipeline.runLLM({ ...ctx, onProgress: () => {} });
+      // 报告归档必须在响应返回前 await 完成（Serverless 冻结丢写，P1 同款教训）
+      const reportId = await agentReportStore.saveReport(trace, uid);
+      return res.json({ ok: true, name: quote?.name, tier: 'platform', mode, reportId, ...trace });
     }
     // 自托管 Node：异步任务留在长生命周期进程内，前端轮询 jobId
     const id = `job-${Date.now().toString(36)}-${++agentJobSeq}`;
@@ -1818,9 +1827,9 @@ app.post('/api/agents/analyze', async (req, res) => {
         job.total = p.total || job.total;
         if (p.stage) job.stage = p.stage;
       } })
-      .then((trace) => {
+      .then(async (trace) => {
         if (!trace) throw new Error('LLM 流水线不可用');
-        const reportId = agentReportStore.saveReport(trace, uid);
+        const reportId = await agentReportStore.saveReport(trace, uid); // P3: async 化，await 确保落库后再标记完成
         // 档位回显：前端据此标注「本次实际由平台 LLM 产出」（L1.5）
         job.trace = { ...trace, reportId, uid, tier: 'platform' };
         job.reportId = reportId;
@@ -1853,20 +1862,25 @@ app.get('/api/agents/job/:id', (req, res) => {
 });
 
 /** GET /api/agents/report/:id —— 完整报告（含全部 Agent 全文） */
-app.get('/api/agents/report/:id', (req, res) => {
-  const r = agentReportStore.getReport(req.params.id);
+app.get('/api/agents/report/:id', async (req, res) => {
+  const r = await agentReportStore.getReport(req.params.id); // P3: async（DB 优先/文件兜底）
   if (!r || r.uid !== broker.uidOf(req)) return res.status(404).json({ ok: false, error: '报告不存在或已过期' });
   res.json({ ok: true, report: r });
 });
 
 /** GET /api/agents/reports —— 历史报告列表 */
-app.get('/api/agents/reports', (req, res) => {
-  res.json({ ok: true, list: agentReportStore.listReports({ symbol: req.query.symbol, limit: Number(req.query.limit) || 20, uid: broker.uidOf(req) }) });
+app.get('/api/agents/reports', async (req, res) => {
+  try {
+    const list = await agentReportStore.listReports({ symbol: req.query.symbol, limit: Number(req.query.limit) || 20, uid: broker.uidOf(req) });
+    res.json({ ok: true, list });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: `报告列表查询失败: ${e.message?.slice(0, 80)}` });
+  }
 });
 
 /** DELETE /api/agents/reports/:id —— 删除自己的历史报告 */
-app.delete('/api/agents/reports/:id', (req, res) => {
-  const r = agentReportStore.deleteReport(String(req.params.id), broker.uidOf(req));
+app.delete('/api/agents/reports/:id', async (req, res) => {
+  const r = await agentReportStore.deleteReport(String(req.params.id), broker.uidOf(req));
   res.status(r.ok ? 200 : r.error?.includes('无权') ? 403 : 404).json(r);
 });
 
@@ -2401,15 +2415,26 @@ if (!IS_VERCEL && !MAINTAIN_ONCE) {
 app.use('/api/paper', async (req, res, next) => {
   try {
     await broker.store.whenReady();
+    const uid = broker.uidOf(req);
     // 跨实例新鲜度检查（2026-09-22 用户拍板实施方案②）：其他实例写过该 uid ⇒
     // 持账户锁把本实例内存刷新到 DB 最新版 —— 修掉"热实例陈旧读"
     // （撤单后刷新仍显示 resting 的实测现象），并压缩跨实例覆盖窗口。
     // 失败不阻断主流程（显式记录；仅可能读到上一刻的数据，下一请求会再试）。
     try {
-      const uid = broker.uidOf(req);
       if (uid) await broker.withAccountLock(uid, () => broker.store.refreshIfStale(uid));
     } catch (e) {
       console.warn('[paper] 新鲜度检查失败（不阻断）:', e.message?.slice(0, 120));
+    }
+    // Vercel 无常驻撮合循环（下方 IS_VERCEL 跳过 setInterval）→ 惰性撮合：
+    // 请求驱动补跑 GFD 到期撤销/限价单成交，per-uid 60s 节流 + 仅存在 resting 挂单才执行。
+    // 必须在 refreshIfStale 之后：存在性判断依据刷新后的内存，否则会误判"无挂单"而漏跑。
+    // 失败不阻断主流程（铁律 #4：降级 = 挂单晚一点撮合，与改造前行为一致；下次请求再试）。
+    if (IS_VERCEL && uid) {
+      try {
+        await broker.maybeRunMatcher(uid);
+      } catch (e) {
+        console.error('[lazyMatcher] 惰性撮合失败（不阻断）:', e.message?.slice(0, 120));
+      }
     }
     next();
   } catch (e) {

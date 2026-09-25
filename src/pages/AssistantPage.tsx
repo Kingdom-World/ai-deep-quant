@@ -382,8 +382,8 @@ export default function AssistantPage() {
         <div style={{ marginTop: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: '#475569' }}>
-            🧠 已学习 {aiStats?.knowledge ?? 0} 条知识 · 自训练 {aiStats?.trainCount ?? 0} 轮
-            {aiStats?.lastNightly ? ` · 上次训练 ${fmtDate(aiStats.lastNightly.at)}` : ''}
+            🧠 已学习 {aiStats?.knowledge ?? 0} 条知识 · 优化 {aiStats?.trainCount ?? 0} 轮
+            {aiStats?.lastNightly ? ` · 上次优化 ${fmtDate(aiStats.lastNightly.at)}` : ''}
             {aiStats?.pendingQuestions ? ` · 待学习 ${aiStats.pendingQuestions} 问` : ''}
           </span>
           <button
@@ -488,7 +488,7 @@ export default function AssistantPage() {
       </main>
 
       <p style={{ textAlign: 'center', color: '#475569', fontSize: '12px', paddingBottom: '16px' }}>
-        AI 助手由本地规则引擎与云端大模型（智谱 GLM 等）协同驱动，提问内容可能发送至第三方 AI 服务处理，请勿输入个人敏感信息；解读基于真实行情量化指标，仅供参考，不构成投资建议
+        AI 助手由本地规则引擎与云端大模型协同驱动，提问内容可能发送至第三方 AI 服务处理，请勿输入个人敏感信息；解读基于真实行情量化指标，仅供参考，不构成投资建议
       </p>
     </div>
   );

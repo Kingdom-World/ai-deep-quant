@@ -753,7 +753,9 @@ function riskChief(trade, trio, debate, verdict, digest) {
 
 // ═══════════ 主理人编排器 ═══════════
 
-function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed, uid = 'default' }) {
+/** async（P3）：finish 内报告保存 reportstore.saveReport 已 async 化（DB 后端），
+ *  调用方（index.cjs /api/agents/analyze）必须 await。 */
+async function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed, uid = 'default' }) {
   const price = quote?.price ?? klines[klines.length - 1]?.close ?? null;
   const stages = {};
   let final = null;
@@ -765,7 +767,7 @@ function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, fe
     sentimentAnalyst(symbol, klines, quote, feed),
   ];
 
-  const finish = (stages_, final_) => {
+  const finish = async (stages_, final_) => {
     const trace = {
       ok: true,
       symbol,
@@ -788,7 +790,7 @@ function run({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, fe
         reason: '云端大模型未配置：本次全部角色由本地规则引擎产出',
       },
     };
-    const reportId = reportstore.saveReport(trace, uid);
+    const reportId = await reportstore.saveReport(trace, uid);
     return { ...trace, reportId, uid };
   };
 

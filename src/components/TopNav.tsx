@@ -88,7 +88,11 @@ export default function TopNav() {
   const measure = useCallback(() => {
     const el = tabRefs.current.get(activeKey);
     if (el) setInd({ x: el.offsetLeft, w: el.offsetWidth, on: true });
-    else setInd((s) => ({ ...s, on: false })); // 激活项被收进「更多」→ 指示器隐藏
+    // 🔴 激活项被收进「更多」→ 必须整体归零（不能只置 on:false 保留旧 x/w）：
+    //  指示器是 absolute 定位，opacity:0 但 translateX(旧x)+width(旧w) 仍占滚动宽
+    //  （实测 /agents 残留 536+96=632 > 盒宽 488）→ 重平衡的溢出判定永远为真，
+    //  页签被过度收进「更多」且试探放回全部回退（2026-09-22 实测根因）。
+    else setInd({ x: 0, w: 0, on: false });
   }, [activeKey]);
 
   useEffect(() => {
@@ -132,44 +136,77 @@ export default function TopNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePos, setMorePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
   const moreRef = useRef<HTMLDivElement>(null);
+  // visibleCount 的 ref 镜像：重平衡循环的 setTimeout 链里读"最新值"用
+  //（state 闭包会拿到旧值，原放回 effect 因此每次只能放回一项）
+  const vcRef = useRef(visibleCount);
+  useEffect(() => {
+    vcRef.current = visibleCount;
+  }, [visibleCount]);
 
   // 可见集跨重挂载缓存回写
   useEffect(() => {
     vcCache = visibleCount;
   }, [visibleCount]);
 
-  // 收起（防溢出）：仅挂载与跨断点（narrow 变化）时评估 —— 与放回对称。
-  //  🔴 不随路由切换每渲染评估：任何亚像素级 sw 波动都会随机收走一个页签
-  //  （实测：切到「因子分析」时「选股」被收进更多(10)，数字变宽推挤邻项）。
-  //  档位内若真溢出，页签区可横向滚动（clampScroll 守护），可用性不受影响。
+  // 🔴 重平衡（收起+放回合一）：挂载与跨断点（narrow 变化）时运行。
+  //  演进史（2026-09-22 三轮实测，教训见 git log）：
+  //  ① 挂载瞬间测量偏大 → 逐格误收到「首页+更多(10)」固化 → 改试探-回退
+  //     （放回一项 80ms 后实测溢出则收回停，不靠估算、不震荡）。
+  //  ② 真正根因：滑动指示器残留几何。激活项（如 /agents「Agent 团队」）被收进
+  //     「更多」后 measure() 只置 on:false 保留旧 x/w，透明指示器（absolute 定位）
+  //     仍把 scrollWidth 撑到 632 > 盒宽 488 → 溢出判定恒真。修复：激活项隐藏时
+  //     指示器整体归零（见 measure 注释）。
+  //  ③ 非确定性早停（同一构建 1~5 可见随机）：fonts.ready 与挂载各自起链，
+  //     双链交错共享 vcRef/guard。现改**单飞调度**：所有触发源经 schedule()
+  //     （清在途定时器 + 90ms 去抖）重排同一条链，任一时刻最多一条链在跑；
+  //     单链收起至 vc=1 / 放回溢出即回退 / 全可见——三条路径都必然终止，
+  //     无需 guard。软导航不触发本 effect（依赖仅 [narrow]），「切换路由绝不
+  //     放回」的既有决策保持不变。档位内真溢出可横向滚动（clampScroll 守护）。
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
-    let guard = 0;
-    const shrink = () => {
-      if (guard >= 12) return; // 防失控上限
-      guard += 1;
-      if (box.scrollWidth > box.clientWidth + 1) {
-        setVisibleCount((v) => Math.max(1, v - 1));
-        setTimeout(shrink, 80); // 等重渲染后复查
+    let timer: number | undefined;
+    let cancelled = false;
+    const rebalance = () => {
+      if (cancelled) return;
+      const over = box.scrollWidth > box.clientWidth + 1;
+      const vc = vcRef.current;
+      if (over && vc > 1) {
+        setVisibleCount(vc - 1);
+        timer = window.setTimeout(rebalance, 80); // 等重渲染后复查
+        return;
       }
+      if (!over && vc < NAV_ITEMS.length) {
+        // 试探放回：放回下一项，实测溢出则收回并停止（不靠估算，不震荡）
+        setVisibleCount(vc + 1);
+        timer = window.setTimeout(() => {
+          if (cancelled) return;
+          if (box.scrollWidth > box.clientWidth + 1) {
+            setVisibleCount(vcRef.current - 1);
+            return; // 空间不足，停止放回
+          }
+          rebalance();
+        }, 80);
+        return;
+      }
+      // 已收敛：vc=1 仍溢出（无空间）或全部可见不溢出
     };
-    shrink();
-  }, [narrow]);
-
-  // 放回（恢复被收纳项）：只在挂载与跨断点（narrow 变化，即转屏/改窗）时重平衡。
-  // 🔴 切换路由绝不放回 —— 否则激活项会从「更多」插进可见集把后面的项推走
-  // （用户实测：切页时菜单项整体偏移）。位置稳定优先：激活项在「更多」里时
-  // 「更多」自身有激活高亮，位置提示已足够。
-  useEffect(() => {
-    const box = scrollRef.current;
-    if (!box) return;
-    if (box.scrollWidth > box.clientWidth + 1) return;
-    if (visibleCount >= NAV_ITEMS.length) return;
-    const avg = visibleCount ? box.scrollWidth / visibleCount : 100;
-    // 🔴 滞后阈值必须 > 1×avg：放回会消耗约 1×avg 空间，若只在富余 0.6×avg 时放回，
-    //    放回后立即溢出（挂载曾落在"4 页签+溢出"的稳态）。1.05 保证放回后仍有余量。
-    if (box.clientWidth - box.scrollWidth > avg * 1.05) setVisibleCount(visibleCount + 1);
+    // 单飞调度：任何触发源都只重排同一条链，绝不并行第二链
+    const schedule = () => {
+      if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = window.setTimeout(rebalance, 90);
+    };
+    schedule(); // 挂载首轮
+    // 二级防御：仅当挂载时字体仍在加载才注册就绪重排（冷启动文本宽度会变；
+    // 热缓存 fonts.ready≈22ms 即就绪，此时不注册）
+    if (typeof document !== 'undefined' && document.fonts && document.fonts.status === 'loading') {
+      document.fonts.ready.then(schedule).catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [narrow]);
 
   // 🔴 滚动收敛守卫（手机"切换页面后导航失效"的核心修复）：
@@ -415,8 +452,13 @@ export default function TopNav() {
             opacity: ind.on ? 1 : 0,
             pointerEvents: 'none',
             willChange: 'transform',
-            transition:
-              'transform .3s cubic-bezier(.22,.61,.36,1), width .3s cubic-bezier(.22,.61,.36,1), opacity .2s ease',
+            // 🔴 隐藏态必须 transition:none：后台标签页里 CSS transition 冻结在起点
+            //  （computed 停留旧 x/w），归零迟迟不生效 → scrollWidth 虚高 → 重平衡
+            //  误判溢出锁死在「首页+更多(10)」（2026-09-22 diag9 取证：inline 已 0
+            //  而 computed 仍 536/96）。不可见指示器本就不需要滑动动画。
+            transition: ind.on
+              ? 'transform .3s cubic-bezier(.22,.61,.36,1), width .3s cubic-bezier(.22,.61,.36,1), opacity .2s ease'
+              : 'none',
           }}
         />
         {NAV_ITEMS.slice(0, visibleCount).map((item) => {

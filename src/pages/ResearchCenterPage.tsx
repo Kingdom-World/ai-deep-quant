@@ -36,6 +36,11 @@ const TABS = [
 ];
 
 export default function ResearchCenterPage({ tab = '' }: { tab?: string }) {
+  // 🔴 归一化：App.tsx 的 /research 路由传 tab="cross"，而本页 TABS 里横截面的 key 是
+  //   ''（对应 to="/research"）。若不归一化，tab="cross" 既不命中任何 active 高亮、
+  //   也不命中 tab==='' 的内容分支 → 直接访问/刷新 /research 时 Tab 内容区整块空白
+  //   （2026-09-25 实测发现的真 bug，曾以"页面正常"误判漏检）。
+  const normTab = tab === 'cross' ? '' : tab;
   // 统一窄屏断点（与 ExperimentsTab 原 720px 阈值一致）
   const [isNarrow, setIsNarrow] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 720 : false,
@@ -71,7 +76,7 @@ export default function ResearchCenterPage({ tab = '' }: { tab?: string }) {
           }}
         >
           {TABS.map((t) => {
-            const active = t.key === tab;
+            const active = t.key === normTab;
             const to = t.key ? `/research/${t.key}` : '/research';
             return (
               <Link
@@ -94,11 +99,11 @@ export default function ResearchCenterPage({ tab = '' }: { tab?: string }) {
         </div>
 
         {/* 条件渲染：只挂载激活 Tab（红队 R-A） */}
-        {tab === '' && <CrossSectionTab />}
-        {tab === 'consistency' && <ConsistencyTab />}
-        {tab === 'experiments' && <ExperimentsTab />}
-        {tab === 'factors' && <FactorEvalTab />}
-        {tab === 'knowledge' && <KnowledgeTab />}
+        {normTab === '' && <CrossSectionTab />}
+        {normTab === 'consistency' && <ConsistencyTab />}
+        {normTab === 'experiments' && <ExperimentsTab />}
+        {normTab === 'factors' && <FactorEvalTab />}
+        {normTab === 'knowledge' && <KnowledgeTab />}
 
         {/* 方法论：可折叠、默认收起（红队 R-C） */}
         <MethodCards />

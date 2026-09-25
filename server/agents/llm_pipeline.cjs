@@ -384,12 +384,38 @@ async function runLLM({ symbol, klines, quote, name, mode = 'full', agent, entry
       .map((n) => `- [${n.date}] ${n.title}（${n.media}）`)
       .join('\n');
     const rule = ruleMap[key]();
-    const one = await analystStep(key, rule, {
-      symbol,
-      name: name ?? quote?.name ?? '',
-      price,
-      metricsText: metricsTextOf(key, rule, klines, feed, marketNewsText),
-    }, onStep);
+    // Vercel 硬截止（2026-09-25 实测教训）：免费模型单轮常超 30s，曾撞死
+    // FUNCTION_INVOCATION_TIMEOUT（504 纯文本，前端拿不到任何报告）。改为：
+    // Vercel 上 50s 内 LLM 未返回 ⇒ 该 seat 显式降级为规则引擎结果（engine:'rule'，
+    // 与 analystStep 自身的失败降级同形）——响应永不 504，降级可观测（铁律 #4）。
+    // 本地无常驻限制，不启用截止。
+    let one;
+    if (process.env.VERCEL === '1') {
+      const VERCEL_SEAT_DEADLINE_MS = 50_000; // maxDuration=60 内留响应余量
+      let timer;
+      one = await Promise.race([
+        analystStep(key, rule, {
+          symbol,
+          name: name ?? quote?.name ?? '',
+          price,
+          metricsText: metricsTextOf(key, rule, klines, feed, marketNewsText),
+        }, onStep),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve({
+            ...rule, engine: 'rule', model: ROLES[key].model, ms: null,
+            timeout: 'LLM 超过 50s 未返回，Vercel 环境下降级为规则引擎结论',
+          }), VERCEL_SEAT_DEADLINE_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    } else {
+      one = await analystStep(key, rule, {
+        symbol,
+        name: name ?? quote?.name ?? '',
+        price,
+        metricsText: metricsTextOf(key, rule, klines, feed, marketNewsText),
+      }, onStep);
+    }
     roster.push({ seat: ROLES[key].seat, model: one.model, engine: one.engine, ms: one.ms ?? null });
     return finish(
       { collect: { title: '单点调用 · ' + rule.name, agents: [one] } },

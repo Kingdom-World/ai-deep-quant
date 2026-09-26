@@ -1572,19 +1572,38 @@ app.get('/api/qa', async (req, res) => {
   const reply = (obj) => {
     const answer = typeof obj.answer === 'string' ? obj.answer.slice(0, 12_000) : obj.answer;
     try { brain.recordQA(q, answer, { type: obj.type }); } catch { /* 语料记录失败不阻塞 */ }
-    const degraded = cloudDegraded && obj.engine !== 'cloud' ? cloudDegraded : undefined;
+    const degraded = obj.degraded || (cloudDegraded && obj.engine !== 'cloud' ? cloudDegraded : undefined);
     return res.json({ ...obj, ...(degraded ? { degraded } : {}), answer });
   };
   if (!q) return reply({ question: q, type: 'empty', answer: '请告诉我你的问题，例如「分析 AAPL」或「平台怎么用？」' });
 
   // ReAct 工具集（推理引擎按意图调用，避免循环依赖由宿主注入）
+  //   knowledgeSearch：结构化知识库（knowledge.cjs，整型分）；入参截断 200 字符防超长查询
+  //   marketMood：市场温度计（/api/mood 同源，60s 缓存 + lastGood 兜底，问答路径纯内存读取）
   const tools = {
     analyzeStock: (sym) => analyzeForQA(sym),
     sectorFlow: (t) => sectors.getFlow(t),
+    knowledgeSearch: (query) => knowledgeBase.search(String(query || '').slice(0, 200), { limit: 3 }),
+    marketMood: () => screener.getMood(),
   };
 
-  // 自学习知识库（用户教学 / 高赞问答，高置信直接命中）
+  // 自学习知识库命中记录（hit 用于：云端上下文注入 / 高置信直答 / 兜底前中置信降级）
+  //   🔴 直答已移到本地技能路由之后（见下）——brain 的 2-gram 模糊匹配会把
+  //   「什么是夏普比率」错答成「最大回撤」这类相近词目（实测 34ms 错答），
+  //   结构化技能（真实数据 / 带出处知识库）必须优先于模糊匹配。
   const hit = brain.lookup(q);
+
+  // 本地 ReAct 推理引擎（确定性技能优先：个股/板块/情绪/名词解释/大盘）
+  //   技能失败时 route 返回 {type:'skill-error', answer:null, degraded}——answer 为 null 不返回，
+  //   degraded 记下透传给最终兜底回答（子代理评审 Blocking#4：降级必须用户可见）
+  let skillDegraded = null;
+  if (typeof reasoning.route === 'function') {
+    const routed = await reasoning.route(q, tools);
+    if (routed?.answer) return reply({ question: q, type: routed.type, engine: 'reasoner', answer: routed.answer, reasoning: routed.reasoning });
+    if (routed?.degraded) skillDegraded = routed.degraded;
+  }
+
+  // 高置信学习条目直答（技能未命中时）
   if (hit && hit.score >= 0.7) {
     return reply({
       question: q, type: 'learned', engine: 'knowledge',
@@ -1619,22 +1638,8 @@ ${hit.entry.a}` });
       cloudDegraded = '云端大模型调用失败，本次回答已回退本地规则引擎';
     }
   }
-  // 本地 ReAct 推理引擎（无云端时的思考链回答）
-  if (typeof reasoning.route === 'function') {
-    const routed = await reasoning.route(q, tools);
-    if (routed) return reply({ question: q, type: routed.type, engine: 'reasoner', answer: routed.answer, reasoning: routed.reasoning });
-  }
-  if (hit) {
-    return reply({
-      question: q, type: 'learned', engine: 'knowledge',
-      answer: `${hit.entry.a}
-
-（🧠 来自学习知识库 · 匹配置信 ${Math.round(hit.score * 100)}%）`,
-    });
-  }
-
   try {
-    // 回测指引（优先级高于通用指南：避免「回测怎么用」被使用指南截胡）
+  // 回测指引（优先级高于通用指南：避免「回测怎么用」被使用指南截胡）
     if (/回测|backtest/i.test(q)) {
       return reply({
         question: q,
@@ -1685,6 +1690,18 @@ ${hit.entry.a}` });
       const answer = await analyzeForQA(symbol);
       return reply({ question: q, type: 'analysis', symbol, answer });
     }
+    // 中置信知识库条目（brain.lookup 内部阈值 0.45-0.7）：
+    // 让位于 guide/推荐/个股等具体技能分支，兜底前才输出，且强制带"中置信"标注——
+    // （子代理评审 Blocking#2：不得让低分学习条目截胡「回测怎么用」这类精心维护的指引）
+    if (hit) {
+      return reply({
+        question: q, type: 'learned', engine: 'knowledge',
+        answer: `${hit.entry.a}
+
+（🧠 来自学习知识库 · 匹配置信 ${Math.round(hit.score * 100)}% · 中置信，仅供参考）`,
+        ...(skillDegraded ? { degraded: skillDegraded } : {}),
+      });
+    }
     // 兜底
     return reply({
       question: q,
@@ -1693,10 +1710,13 @@ ${hit.entry.a}` });
         '🤖 我是 AI深度量化 的站内智能助手，可以：',
         '· 「分析 AAPL」—— 个股五因子解读（任何美股/A股/港股代码）',
         '· 「今天观察什么」—— 股票池因子评分排名',
+        '· 「市场情绪怎么样」—— 温度计与涨跌结构解读',
+        '· 「什么是夏普比率」—— 量化名词解释（带出处）',
         '· 「平台怎么用」—— 使用指南',
         '· 「回测怎么用」—— 策略回测指引',
         '试试输入上面任意一句吧！',
       ].join('\n'),
+      ...(skillDegraded ? { degraded: skillDegraded } : {}),
     });
   } catch (e) {
     res.status(500).json({ error: `AI 问答失败: ${e.message?.slice(0, 80)}` });
@@ -2615,7 +2635,8 @@ app.post('/api/paper/alerts/clear-triggered', (req, res) => {
 //   返回 stats/categories 随结果一并给出，供 UI 渲染过滤器与页头统计，避免二次请求。
 app.get('/api/knowledge/search', (req, res) => {
   try {
-    const q = String(req.query.q || '');
+    // 长度上限：超长 query 会让 n-gram 切词做平方级 slice（子代理评审 non-blocking）
+    const q = String(req.query.q || '').slice(0, 200);
     const category = req.query.category ? String(req.query.category) : undefined;
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const r = knowledgeBase.search(q, { category, limit });

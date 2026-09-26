@@ -1,8 +1,18 @@
 // ─────────────────────────────────────────────────────────────
-// AI 助手推理引擎 v2（ReAct 模式：推理 → 行动（调数据工具）→ 观察 → 综合）
+// AI 助手推理引擎 v3（ReAct 模式：推理 → 行动（调数据工具）→ 观察 → 综合）
 //   · 不再套模板：先识别意图，实际调用平台数据工具取证，再组织带思考链的回答
 //   · 工具由宿主（index.cjs）注入，避免循环依赖
 //   · 云端大模型可用时，工具观察结果会作为上下文交给大模型综合（真·思考链）
+//
+//   v3（2026-09-26，子代理评审后修订）：
+//   · 新增 skillExplain（名词解释，吃透知识库 48 条）与 skillMood（市场情绪）
+//   · 🔴 双知识库口径分离：knowledge.cjs 的 score 是**整型加权**（title 10/tags 6/body 3/source 2），
+//     不能套 brain.cjs 的 0-1 阈值 —— 标题命中（score≥10）才可作答，其余只做"相关条目"提示；
+//     空查询返回 browse 模式（全量条目 score=0），**必须拒绝**，否则空问题会得到任意答案。
+//   · 🔴 显式降级：技能失败返回 {type:'skill-error', answer:null, degraded}（用户可见），
+//     不再静默 return null —— 静默降级违反铁律 #1。
+//   · 意图优先级：sector → mood → stock（代码是最强信号）→ explain → market。
+//     stock 的英文 ticker 分支收紧为词边界（此前 [A-Za-z]{1,6} 会把"what is p/e"这类句子误入 stock）。
 // ─────────────────────────────────────────────────────────────
 const axios = require('axios');
 
@@ -56,11 +66,16 @@ async function toolSectorFlow(type = 'industry') {
 }
 
 // ── 意图识别 ──
+//   优先级即判断顺序：代码信号最强（stock 次序靠前），情绪先于大盘（"市场情绪怎么样"不该走 market）。
 
 function detectIntent(q) {
   if (/板块|资金流|净流入|净流出|热点|异动|哪个行业|行业.*好/.test(q)) return 'sector';
-  if (/大盘|市场(怎么样|如何|状态)|今天行情|行情总结|大盘.*如何/.test(q)) return 'market';
-  if (/分析|解读|怎么样|健康值|五因子|评估/.test(q) && /(sh|sz|bj)?\d{5,6}|[A-Za-z]{1,6}/.test(q)) return 'stock';
+  if (/情绪|赚钱效应|涨跌家数|市场温度/.test(q)) return 'mood';
+  // 个股：6 位代码是最强信号；英文 ticker 必须词边界 + 动词语境（防"what is p/e"误入）
+  if (/(sh|sz|bj)?\d{5,6}/.test(q)) return 'stock';
+  if (/\b[A-Za-z]{1,6}\b/.test(q) && /分析|解读|怎么样|评估|健康/.test(q)) return 'stock';
+  if (/什么是|什么意思|啥意思|解释一下|为什么.*会/.test(q)) return 'explain';
+  if (/大盘|市场(怎么样|如何|状态)|今天行情|行情总结/.test(q)) return 'market';
   return null;
 }
 
@@ -118,20 +133,98 @@ async function skillStock(q, tools) {
   return { type: 'stock-analysis', reasoning, answer };
 }
 
+/**
+ * 名词解释（v3 新增）：吃透知识库（knowledge.cjs，48 条带真实出处）。
+ * 🔴 口径（子代理评审 Blocking#1/#3）：
+ *   · score 是整型加权分（title 命中 10 分），score≥10 才视为"标题相关"，可作答；
+ *   · mode==='browse'（空查询/停用词吃光）必须拒绝，否则空问题得到任意条目；
+ *   · 输出强制带出处；score<10 只做"相关条目"提示（不冒充答案），无命中返回 null 落兜底。
+ */
+async function skillExplain(q, tools) {
+  if (typeof tools.knowledgeSearch !== 'function') return null;
+  const r = await tools.knowledgeSearch(q);
+  if (!r || r.mode === 'browse' || !Array.isArray(r.items) || !r.items.length) return null;
+  const top = r.items[0];
+  const titleHit = Number(top.score) >= 10; // 标题命中（title 权重 10）
+  const reasoning = [
+    '识别意图：名词/概念解释',
+    `检索结构化知识库（${r.total} 条，命中模式 ${r.mode}）`,
+    titleHit ? `命中条目「${top.title}」（标题相关，得分 ${top.score}）` : `无标题命中（最高分 ${r.items[0]?.score ?? 0} < 10），仅提示相关条目`,
+  ];
+  const answer = titleHit
+    ? [
+        `📖 ${top.title}`,
+        '',
+        String(top.body || '').trim(),
+        '',
+        `📚 出处：${top.source || '（条目未标注出处）'}`,
+        r.items[1] ? `相关条目：${r.items.slice(1, 3).map((x) => x.title).join('、')}` : '',
+        '⚠️ 研究演示，不构成投资建议。',
+      ].filter(Boolean).join('\n')
+    : [
+        '没有找到标题完全匹配的词条，以下是知识库中的相关条目：',
+        ...r.items.slice(0, 3).map((x) => `· 《${x.title}》（得分 ${x.score}）—— 详见研究中心「知识库」页`),
+        '',
+        '也可以换一种问法，例如「什么是夏普比率」「前复权是什么意思」。',
+      ].join('\n');
+  return { type: 'knowledge-explain', reasoning, answer: composeCoT(reasoning, answer) };
+}
+
+/**
+ * 市场情绪（v3 新增）：宿主注入 marketMood（与 /api/mood 同源，60s 缓存 + lastGood 兜底）。
+ * 问答路径预算 ≤500ms：情绪数据取的是缓存快照，不做实时全市场扫描。
+ */
+async function skillMood(q, tools) {
+  if (typeof tools.marketMood !== 'function') return null;
+  const m = await tools.marketMood();
+  if (!m) return null;
+  const reasoning = ['识别意图：市场情绪/赚钱效应', '读取市场温度计快照（60s 缓存，腾讯全A快照口径）'];
+  // 字段口径与 screener.getMood() 对齐：{up, down, flat, limitUp, limitDown, score(0-100), ...}
+  // 缺失判定不用 ?? 0 —— "字段缺失"与"真的是 0"是两回事，缺失即落兜底（不硬编）
+  const up = Number(m.up), down = Number(m.down);
+  const limitUp = Number(m.limitUp), limitDown = Number(m.limitDown);
+  const temp = Number(m.score);
+  if (!Number.isFinite(up) || !Number.isFinite(down) || !up && !down && !Number.isFinite(temp)) return null;
+  const lines = [];
+  lines.push(`· 上涨 ${up} 家 / 下跌 ${down} 家${Number.isFinite(Number(m.flat)) ? ` / 平盘 ${m.flat} 家` : ''}`);
+  if (Number.isFinite(limitUp)) lines.push(`· 涨停 ${limitUp} 家${Number.isFinite(limitDown) ? ` / 跌停 ${limitDown} 家` : ''}`);
+  if (Number.isFinite(temp)) lines.push(`· 市场温度：${temp}°（0=冰点，100=过热）`);
+  const hot = Number.isFinite(temp) ? temp : 50;
+  const judge = hot >= 75 ? '情绪偏热，注意追高风险' : hot >= 45 ? '情绪中性，结构性行情为主' : '情绪偏冷，观察企稳信号';
+  const answer = [
+    '🌡️ 市场情绪概览',
+    ...lines,
+    '',
+    `解读：${judge}。情绪指标反映的是全市场涨跌结构的即时状态，短线波动大，建议结合指数走势与板块资金流一起看。`,
+    '⚠️ 研究演示，不构成投资建议。',
+  ].join('\n');
+  return { type: 'market-mood', reasoning, answer: composeCoT(reasoning, answer) };
+}
+
 // ── 主路由 ──
 
 async function route(q, tools) {
   const intent = detectIntent(q);
   try {
     if (intent === 'sector') return await skillSector(q, tools);
-    if (intent === 'market') return await skillMarket(q, tools);
+    if (intent === 'mood') {
+      const r = await skillMood(q, tools);
+      if (r) return r;
+    }
     if (intent === 'stock') {
       const r = await skillStock(q, tools);
       if (r) return r;
     }
+    if (intent === 'explain') {
+      const r = await skillExplain(q, tools);
+      if (r) return r;
+    }
+    if (intent === 'market') return await skillMarket(q, tools);
   } catch (e) {
-    // 推理技能失败时静默回退到规则分支
+    // 🔴 显式降级（子代理评审 Blocking#4）：不再静默吞错落兜底——
+    // 返回带 degraded 标记的对象，由 qa 路由透传给用户（answer:null 不返回，走后续分支）。
     console.warn('[Reasoning] 技能执行失败:', e.message?.slice(0, 60));
+    return { type: 'skill-error', answer: null, degraded: '数据技能执行失败，本次回答由通用兜底生成' };
   }
   return null;
 }
@@ -144,6 +237,19 @@ async function buildCloudContext(q, tools = {}) {
     if (intent === 'sector') {
       const f = await toolSectorFlow(/概念/.test(q) ? 'concept' : 'industry');
       parts.push(`当前${/概念/.test(q) ? '概念' : '行业'}板块主力资金——净流入前列：${f.inflow.join('、')}；净流出前列：${f.outflow.join('、')}（单位：亿元）`);
+    } else if (intent === 'mood') {
+      if (typeof tools.marketMood === 'function') {
+        const m = await tools.marketMood();
+        if (m) parts.push(`市场情绪快照：${JSON.stringify(m).slice(0, 300)}`);
+      }
+    } else if (intent === 'explain') {
+      if (typeof tools.knowledgeSearch === 'function') {
+        const r = await tools.knowledgeSearch(q);
+        if (r && r.mode !== 'browse' && r.items?.length && Number(r.items[0].score) >= 10) {
+          const e = r.items[0];
+          parts.push(`知识库条目「${e.title}」（出处 ${e.source || '未标注'}）：\n${String(e.body || '').slice(0, 400)}`);
+        }
+      }
     } else {
       const idx = await toolIndices();
       parts.push(`当前大盘：${idx.map((x) => `${x.name} ${x.price}（${x.chg >= 0 ? '+' : ''}${x.chg}%）`).join('；')}`);
@@ -159,4 +265,4 @@ async function buildCloudContext(q, tools = {}) {
   return parts.length ? '【平台实时数据观察】\n' + parts.join('\n') : null;
 }
 
-module.exports = { route, buildCloudContext };
+module.exports = { route, buildCloudContext, detectIntent, skillExplain, skillMood };

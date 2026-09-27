@@ -81,3 +81,19 @@ test('skillMood：数据字段不齐 → null 落兜底，不硬编', async () =
   const r = await reasoning.route('市场情绪怎么样', tools({ marketMood: async () => ({}) }));
   assert.equal(r, null);
 });
+
+test('skillStock：tools 注入 extractSymbol 后个股意图走通（GUI 报告 Bug4 回归锁）', async () => {
+  const r = await reasoning.route('600519 怎么样', tools({
+    extractSymbol: async () => '600519', // 宿主注入（此前缺失 → TypeError → skill-error）
+    analyzeStock: async () => '600519（贵州茅台）快速解读：现价 1237.00（-1.14%）…',
+  }));
+  assert.equal(r.type, 'stock-analysis');
+  assert.ok(r.answer.includes('600519'));
+  assert.ok(!r.degraded, '不应带降级标记');
+});
+
+test('skillStock：extractSymbol 未注入（历史缺陷形态）→ skill-error 显式降级而非静默', async () => {
+  const r = await reasoning.route('分析 600519', tools({ extractSymbol: undefined }));
+  assert.equal(r.type, 'skill-error');
+  assert.ok(r.degraded);
+});

@@ -289,7 +289,9 @@ export default function HomePage() {
       /* 名称获取失败不影响收藏 */
     }
     addFavoriteEntry({ symbol: sym, market, name });
-    watchlistApi.add({ symbol: sym, name }).catch(() => {}); // 服务端同步（失败不影响本地收藏）
+    // 服务端为主：await 等待落库，随后 loadFavorites() 的 list() 才能读到新条目
+    //   （GUI 检查 Bug1：此前 fire-and-forget + 立即刷新 → 读到旧表 → 界面"暂无收藏"直到手动刷新）
+    await watchlistApi.add({ symbol: sym, name }).catch(() => {});
     setFavInput('');
     setFavMsg(`已收藏「${sym}」(${marketLabel(market)})`);
     await loadFavorites();

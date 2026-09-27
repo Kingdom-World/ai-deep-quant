@@ -303,6 +303,15 @@ function resolveFactor(spec) {
   };
 }
 
+/** 归档不足的错误文案：公网（Vercel）用户拿不到本地归档，给环境得体的提示而非开发者命令
+ *  （GUI 检查 P2#6：'python scripts/sync_baostock.py' 对公网用户是噪音且暴露内部流程） */
+function archiveError(universeSize) {
+  if (process.env.VERCEL) {
+    return '该功能依赖本地数据归档，公网演示版暂未内置——请在本地版本中使用，或查看「因子分析 / 策略回测」等在线功能';
+  }
+  return `本地归档不足（${universeSize} 只，至少 2 只）——先运行 Baostock 同步：python scripts/sync_baostock.py`;
+}
+
 /**
  * 横截面回测
  * @param opts { factor='mom20', topN=5, rebalanceEvery=20, capital=1000000, slippage=0.001 }
@@ -311,7 +320,7 @@ function runCrossBacktest(opts = {}) {
   const dirAbs = process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
   const universe = loadUniverseCached(dirAbs, 80);
   if (universe.size < 2) {
-    return { error: `本地归档不足（${universe.size} 只，至少 2 只）——先运行 Baostock 同步：python scripts/sync_baostock.py` };
+    return { error: archiveError(universe.size) };
   }
   // M3.2：预置因子与自定义表达式在此分派，之后全链路消费同一个 crossSection
   const resolved = resolveFactor(opts.factor ?? 'mom20');
@@ -567,7 +576,7 @@ function layerAnalysis(opts = {}) {
   const dirAbs = process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
   const universe = loadUniverseCached(dirAbs, 80);
   if (universe.size < 2) {
-    return { error: `本地归档不足（${universe.size} 只，至少 2 只）——先运行 Baostock 同步：python scripts/sync_baostock.py` };
+    return { error: archiveError(universe.size) };
   }
   // M3.2：与 runCrossBacktest 同一分派点（口径单一来源）
   const resolved = resolveFactor(opts.factor ?? 'mom20');

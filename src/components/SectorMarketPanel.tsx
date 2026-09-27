@@ -62,7 +62,9 @@ export default function SectorMarketPanel() {
       backgroundColor: 'transparent',
       grid: { left: 76, right: 60, top: 8, bottom: 22 },
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      xAxis: { type: 'value', axisLabel: { color: '#475569', fontSize: 10, formatter: (v: number) => (v / 1e8).toFixed(0) + '亿' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+      // 🔴 刻度值已是「亿」（series 里 mainNet/1e8 换算过）——旧 formatter 再除 1e8 把所有刻度算成 0
+      //    （GUI 检查 P3#7：X 轴六个刻度全显示「0亿」）
+      xAxis: { type: 'value', axisLabel: { color: '#475569', fontSize: 10, formatter: (v: number) => v + '亿' }, splitLine: { lineStyle: { color: '#1e293b' } } },
       yAxis: {
         type: 'category',
         data: rows.map((r) => r.name),

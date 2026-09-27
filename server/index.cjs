@@ -1583,6 +1583,7 @@ app.get('/api/qa', async (req, res) => {
   const tools = {
     analyzeStock: (sym) => analyzeForQA(sym),
     sectorFlow: (t) => sectors.getFlow(t),
+    extractSymbol: (s) => extractSymbol(s),
     knowledgeSearch: (query) => knowledgeBase.search(String(query || '').slice(0, 200), { limit: 3 }),
     marketMood: () => screener.getMood(),
   };
@@ -1652,6 +1653,16 @@ ${hit.entry.a}` });
           '回测基于真实历史日 K（新浪/腾讯），含 0.1% 双边手续费，仅供参考。',
         ].join('\n'),
       });
+    }
+    // 「XX怎么样 / XX如何 / 值得关注吗」句式：含标的信号 → 个股解读
+    //   （GUI 检查 Bug4：'600519 怎么样' 曾因 guide 正则 /怎么/ 过宽被使用指南截胡——
+    //    快捷问题按钮本身就是这句话，自证踩坑。回测指引已在其上先行，此处分流剩余句式。）
+    if (/(怎么样|如何|好不好|值不值得|值得买|值得关注|能买)/.test(q)) {
+      const symHow = extractSymbol(q);
+      if (symHow) {
+        const answer = await analyzeForQA(symHow);
+        return reply({ question: q, type: 'analysis', symbol: symHow, answer });
+      }
     }
     // 使用指南
     if (/怎么|如何|教程|帮助|使用|操作|入门|指南|help|guide|usage/i.test(q)) {

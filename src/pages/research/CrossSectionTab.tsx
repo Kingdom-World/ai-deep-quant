@@ -97,7 +97,7 @@ function CrossSectionLab() {
   return (
     <div style={card}>
       <div style={sectionTitle}>横截面回测 · 动量组合</div>
-      <div style={sectionSub}>消费本地 Baostock 归档（不复权+因子），T-1 收盘排名、T 开盘成交；分项费率 + 100 股整手 + 滑点。先运行 scripts/sync_baostock.py 建库。</div>
+      <div style={sectionSub}>消费本地 Baostock 归档（不复权+因子），T-1 收盘排名、T 开盘成交；分项费率 + 100 股整手 + 滑点。该功能依赖本地数据归档，公网演示版暂未内置（本地版可用）。</div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ width: 130 }}>
           <div style={label}>因子类型</div>

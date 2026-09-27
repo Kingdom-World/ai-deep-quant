@@ -690,10 +690,12 @@ async function apiDelete<T>(path: string): Promise<T> {
 
 // ───────────── 模拟交易（paper trading） ─────────────
 
-/** POST 请求（模拟盘下单/撤单/重置/策略启停） */
-async function apiPost<T>(path: string, body: unknown): Promise<T> {
+/** POST 请求（模拟盘下单/撤单/重置/策略启停）
+ *  opts.timeoutMs：个别慢端点（如 Agent 流水线）单独放宽——全局 30s 预算对它们是假性故障
+ *  （GUI 检查 Bug2：Agent 完整模式公网耗时 >30s，前端先断，报"请求超时（请确认已启动数据服务）"） */
+async function apiPost<T>(path: string, body: unknown, opts?: { timeoutMs?: number; timeoutMessage?: string }): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? CONFIG.timeout);
   try {
     const res = await fetch(`${CONFIG.basePath}${path}`, {
       method: 'POST',
@@ -711,7 +713,7 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
     return (await res.json()) as T;
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') {
-      throw new Error('请求超时（请确认已启动数据服务）');
+      throw new Error(opts?.timeoutMessage || '请求超时（请确认已启动数据服务）');
     }
     throw e;
   } finally {
@@ -1105,7 +1107,12 @@ export interface AgentCapabilities {
 /** 12. Agent 团队分析（主理人调度制五阶段流水线，程序化规则引擎） */
 export const agentsApi = {
   analyze: (body: { symbol: string; mode?: string; agent?: string; entryPrice?: number; tier?: AgentTier }) =>
-    apiPost<AgentTrace & { jobId?: string }>('/agents/analyze', body),
+    apiPost<AgentTrace & { jobId?: string }>('/agents/analyze', body, {
+      // Agent 流水线公网耗时 30-60s（13 角色多次数据调用），全局 30s 预算必现假性超时——
+      // 单独放宽到 58s（贴服务端 maxDuration=60 留余量）；超时文案引导查历史报告（后端会存档）
+      timeoutMs: 58_000,
+      timeoutMessage: '分析耗时超过公网处理上限（约 55 秒）。流水线可能已在后台完成——请稍后到「Agent 团队」页查看历史报告；或改用「快速分析」模式。',
+    }),
   /**
    * 能力档位声明（L1.3/L1.5）。纯声明接口：不消耗 LLM 配额、不触发外部请求。
    * 前端据此决定档位 Tab 的可见性与模式置灰，而不是等用户点了才撞 503/403。

@@ -9,8 +9,7 @@ export type Market = 'US' | 'CN' | 'HK';
 
 /** 技术指标/统计使用的最近交易日窗口 */
 export const HISTORY_COUNT = 30;
-/** 实时轮询间隔（毫秒） */
-export const POLL_INTERVAL = 10_000;
+/** 实时轮询间隔已迁移至 config.pollInterval()（本地 10s / 公网盘中 30s·休市 60s，按运行环境分级） */
 /** 实时小图最多保留点数（120 × 10s ≈ 20 分钟窗口） */
 export const REALTIME_MAX_POINTS = 120;
 

@@ -15,13 +15,29 @@ export const API_BASE_PATH: string = (import.meta.env.VITE_API_BASE_PATH as stri
 export const BACKEND_MODE: 'python' | 'node' =
   (import.meta.env.VITE_BACKEND as 'python' | 'node') === 'python' ? 'python' : 'node';
 
-/** 实时轮询间隔（毫秒）。20 人并发口径（2026-09-27）：
- *  10s 轮询 × 20 人 = 120 req/min，恰顶满 API_RATE_LIMIT=120/min/IP（共享出口时全站 429），
- *  且函数 CPU 用量线性放大；30s 下 20 人 ≈ 40 req/min，留足操作余量。行情本身 30s 级足够。 */
-export const POLL_INTERVAL: number = Number(import.meta.env.VITE_POLL_INTERVAL) || 30_000;
+/** 运行时环境：本地（自己的机器，无配额约束，满配轮询）vs 公网（Vercel，流体主动 CPU 4h/月 配额）。
+ *  同一份 dist 两处运行——按 hostname 运行时判断，而不是构建时变量。 */
+export const IS_LOCAL_RUNTIME =
+  typeof location !== 'undefined' &&
+  /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
 
-/** 大盘指数轮询间隔（毫秒）——与 POLL_INTERVAL 对齐（同一并发口径） */
-export const INDEX_REFRESH_MS: number = Number(import.meta.env.VITE_INDEX_REFRESH_MS) || 30_000;
+/** 实时轮询间隔（毫秒）。
+ *  本地与公网盘中均 10s（用户 2026-09-27 确认：朋友们基本不常用，实测月 CPU 仅 9分钟/4小时配额，
+ *  无需降配——30s 会拖累盯盘体验）。仅休市（周末/夜间）自适应拉长到 60s：
+ *  休市期间行情完全不变，轮询纯属浪费，拉长无任何体验损失。 */
+export function pollInterval(): number {
+  if (IS_LOCAL_RUNTIME) return Number(import.meta.env.VITE_POLL_INTERVAL) || 10_000;
+  const d = new Date();
+  const weekend = d.getDay() === 0 || d.getDay() === 6;
+  const h = d.getHours();
+  const tradingHours = !weekend && ((h >= 9 && h < 12) || (h >= 13 && h < 15));
+  return tradingHours ? 10_000 : 60_000;
+}
+
+/** 大盘指数轮询间隔（毫秒）——与 pollInterval 同一口径 */
+export function indexRefreshMs(): number {
+  return pollInterval();
+}
 
 /** 实时小图窗口点数 */
 export const REALTIME_MAX_POINTS: number = Number(import.meta.env.VITE_REALTIME_MAX_POINTS) || 120;

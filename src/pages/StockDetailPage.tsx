@@ -38,7 +38,6 @@ import {
   pctColor,
   PERIODS,
   periodTickLabel,
-  POLL_INTERVAL,
   REALTIME_MAX_POINTS,
   stripMarketPrefix,
   UP_COLOR,
@@ -48,6 +47,7 @@ import {
   type MinutePeriod,
   type Period,
 } from '../lib/stock';
+import { pollInterval } from '../config';
 import { isFavorite, toggleFavorite } from '../lib/favorites';
 import { getMarketStatus } from '../lib/marketHours';
 import { useQuantStore } from '../store/quantStore';
@@ -1209,7 +1209,7 @@ export default function StockDetailPage() {
 
     const stopPolling = setVisibilityInterval(() => {
       fetchRealtimeQuote(symbol, market);
-    }, POLL_INTERVAL);
+    }, pollInterval());
 
     return () => stopPolling();
   }, [symbol, market, adjustMode]);
@@ -1420,7 +1420,7 @@ export default function StockDetailPage() {
           )}
         </h1>
         <span style={{ color: '#64748b', fontSize: '12px' }}>
-          {marketLabel(market)} · 每 {POLL_INTERVAL / 1000} 秒自动更新 · 数据来源: 独立数据服务 (新浪/腾讯)
+          {marketLabel(market)} · 每 {pollInterval() / 1000} 秒自动更新 · 数据来源: 独立数据服务 (新浪/腾讯)
         </span>
         <span style={{ flex: 1 }} />
         <input
@@ -1674,7 +1674,7 @@ export default function StockDetailPage() {
                 : '正在获取分时数据...')}
             {traceMode === 'live' &&
               (liveTrace.length > 0
-                ? `每 ${POLL_INTERVAL / 1000} 秒实时跟踪 · 当前 ${liveTrace.length} 个点（约 ${Math.round((liveTrace.length * POLL_INTERVAL) / 60000)} 分钟滚动窗口）`
+                ? `每 ${pollInterval() / 1000} 秒实时跟踪 · 当前 ${liveTrace.length} 个点（约 ${Math.round((liveTrace.length * pollInterval()) / 60000)} 分钟滚动窗口）`
                 : '正在获取分时数据...')}
           </div>
           <div

@@ -227,10 +227,25 @@ app.use(express.json({ limit: '100kb' }));
 
 // API 鉴权（仅保护 /api/*；静态资源交由 SPA 路由守卫，深链接不碎）
 // 未登录返回纯 JSON 401（不带 WWW-Authenticate，根除浏览器原生弹窗，由前端登录页接管）
+//
+// 公开行情白名单（2026-09-27，20 人并发优化）：纯公开市场数据的只读 GET 免登录——
+//   数据本身是新浪/腾讯公开接口的再分发，无个体差异；配合 Cache-Control s-maxage，
+//   无 Cookie 请求可被 Vercel CDN 边缘缓存（20 人轮询在边缘合并，不触发函数调用、
+//   不烧 Active CPU）。爬虫风险由 API_RATE_LIMIT（按 IP）兜底。
+//   ⚠️ 白名单端点不得引用 req.user（当前均不引用），也不得返回任何个体数据。
+const PUBLIC_API_PREFIXES = [
+  '/api/indices', '/api/mood', '/api/quote/', '/api/minute/', '/api/sectors/', '/api/news',
+];
 app.use((req, res, next) => {
   if (!AUTH_ENABLED || req.method === 'OPTIONS') return next();
   if (!req.path.startsWith('/api')) return next();
   if (req.path.startsWith('/api/auth/') || req.path === '/api/health') return next();
+  const isPublicGet = req.method === 'GET' && PUBLIC_API_PREFIXES.some((p) => req.path.startsWith(p));
+  if (isPublicGet) {
+    // 边缘缓存 20s + 过期后 40s 内先回旧值再后台刷新（stale-while-revalidate）
+    res.setHeader('Cache-Control', 'public, s-maxage=20, stale-while-revalidate=40');
+    return next();
+  }
   const user = auth.getUserFromRequest(req);
   if (user) {
     req.user = user; // 模拟盘按用户名分账（uid 隔离）

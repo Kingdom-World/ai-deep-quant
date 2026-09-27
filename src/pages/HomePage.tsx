@@ -15,7 +15,7 @@ import {
   type MarketMood,
   type UnifiedQuote,
 } from '../api/dataService';
-import { BACKEND_MODE } from '../config';
+import { BACKEND_MODE, indexRefreshMs } from '../config';
 import {
   getFavorites,
   addFavorite as addFavoriteEntry,
@@ -76,7 +76,7 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
 }
 
 /** 大盘指数轮询间隔（与个股看板一致：每 10 秒） */
-const INDEX_REFRESH_MS = 10_000;
+const INDEX_REFRESH_MS = indexRefreshMs();
 
 /** 大盘指数初始占位（价格与涨跌幅加载后填充；代码带交易所前缀，点击可进详情） */
 const INITIAL_INDICES: IndexData[] = [

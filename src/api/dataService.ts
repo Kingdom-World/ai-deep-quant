@@ -58,12 +58,24 @@ export class ApiError extends Error {
 // ============ 请求去重（相同 in-flight 请求合并） ============
 const inFlight = new Map<string, Promise<unknown>>();
 
-/** 基础请求（相对路径 /api，经 vite proxy 或同源到后端） */
-export async function apiGet<T>(path: string): Promise<T> {
+/** 公共行情端点前缀（与后端 PUBLIC_API_PREFIXES 白名单一致）：不带 Cookie 发送，
+ *  无 Cookie 请求才能吃到 Vercel CDN 边缘缓存（s-maxage），20 人轮询在边缘合并、不烧函数 CPU。
+ *  这些端点返回公开市场数据、无个体差异，omit 凭证无任何功能影响。 */
+const PUBLIC_PATH_PREFIXES = ['/indices', '/mood', '/quote/', '/quotes?', '/minute/', '/sectors/', '/news?'];
+function isPublicPath(path: string): boolean {
+  return PUBLIC_PATH_PREFIXES.some((p) => path.startsWith(p));
+}
+
+/** 基础请求（相对路径 /api，经 vite proxy 或同源到后端）
+ *  opts.omitCredentials：强制不带凭证；公共行情路径（isPublicPath）自动 omit。 */
+export async function apiGet<T>(path: string, opts?: { omitCredentials?: boolean }): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
   try {
-    const res = await fetch(`${CONFIG.basePath}${path}`, { signal: controller.signal });
+    const res = await fetch(`${CONFIG.basePath}${path}`, {
+      signal: controller.signal,
+      credentials: opts?.omitCredentials || isPublicPath(path) ? 'omit' : 'same-origin',
+    });
     if (!res.ok) {
       const body = await res.json().catch(() => null);
       throw new Error(body?.error || `后端接口 HTTP ${res.status}`);
@@ -80,6 +92,9 @@ export async function apiGet<T>(path: string): Promise<T> {
     clearTimeout(timer);
   }
 }
+
+/** 公共行情请求：不带凭证（吃边缘缓存），仅用于后端公开行情白名单内的只读端点 */
+export const apiGetPublic = <T>(path: string): Promise<T> => apiGet<T>(path, { omitCredentials: true });
 
 /**
  * 带缓存 + 去重的请求（TTL 内命中直接返回缓存，不发起网络请求）

@@ -219,10 +219,13 @@ async function fetchAllSnapshot() {
   throw new Error('所有数据源均失败 → ' + errs.join(' | '));
 }
 
-/** 带缓存的全市场快照（60s TTL + 10min stale 兜底） */
+/** 带缓存的全市场快照（180s TTL + 10min stale 兜底）
+ *  20 人并发口径（2026-09-27）：全量拉取 4593 只约 3.4s CPU，60s TTL 下常态化使用
+ *  会逼近流体主动 CPU 4h/月配额；180s 将频率降为 1/3，20 人共享同一份快照，
+ *  对选股/温度计场景的时效影响可接受（个股实时价另有 quote 接口 10s 缓存）。 */
 async function snapshot() {
   const c = cache.get('all');
-  if (c && Date.now() - c.ts < 60_000) return c.data;
+  if (c && Date.now() - c.ts < 180_000) return c.data;
   try {
     const rows = await fetchAllSnapshot();
     if (rows.length < 1000) throw new Error('快照行数异常: ' + rows.length);

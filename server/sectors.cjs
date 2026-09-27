@@ -53,9 +53,14 @@ async function getJSON(url) {
   throw lastErr ?? new Error('上游不可达');
 }
 
+const failCache = new Map(); // 负缓存：上游失败后 60s 内直接快速失败，不再撞 9s 重试预算
+                              // （20 人并发口径：东财间歇拒绝时，无负缓存=每请求烧 9s CPU，配额杀手）
+
 function cached(key, ttl, loader) {
   const c = cache.get(key);
   if (c && Date.now() - c.ts < ttl) return Promise.resolve(c.data);
+  const f = failCache.get(key);
+  if (f && Date.now() - f.ts < 60_000) return Promise.resolve(null);
   return (async () => {
     let data = null;
     try {
@@ -64,10 +69,12 @@ function cached(key, ttl, loader) {
       data = null;
     }
     if (data != null) {
+      failCache.delete(key);
       cache.set(key, { ts: Date.now(), data });
       lastGood.set(key, { ts: Date.now(), data });
       return data;
     }
+    failCache.set(key, { ts: Date.now() });
     const g = lastGood.get(key);
     if (g && Date.now() - g.ts < 10 * 60_000) return { ...g.data, __stale: true };
     return null;

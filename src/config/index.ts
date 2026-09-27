@@ -15,11 +15,13 @@ export const API_BASE_PATH: string = (import.meta.env.VITE_API_BASE_PATH as stri
 export const BACKEND_MODE: 'python' | 'node' =
   (import.meta.env.VITE_BACKEND as 'python' | 'node') === 'python' ? 'python' : 'node';
 
-/** 实时轮询间隔（毫秒） */
-export const POLL_INTERVAL: number = Number(import.meta.env.VITE_POLL_INTERVAL) || 10_000;
+/** 实时轮询间隔（毫秒）。20 人并发口径（2026-09-27）：
+ *  10s 轮询 × 20 人 = 120 req/min，恰顶满 API_RATE_LIMIT=120/min/IP（共享出口时全站 429），
+ *  且函数 CPU 用量线性放大；30s 下 20 人 ≈ 40 req/min，留足操作余量。行情本身 30s 级足够。 */
+export const POLL_INTERVAL: number = Number(import.meta.env.VITE_POLL_INTERVAL) || 30_000;
 
-/** 大盘指数轮询间隔（毫秒） */
-export const INDEX_REFRESH_MS: number = Number(import.meta.env.VITE_INDEX_REFRESH_MS) || 10_000;
+/** 大盘指数轮询间隔（毫秒）——与 POLL_INTERVAL 对齐（同一并发口径） */
+export const INDEX_REFRESH_MS: number = Number(import.meta.env.VITE_INDEX_REFRESH_MS) || 30_000;
 
 /** 实时小图窗口点数 */
 export const REALTIME_MAX_POINTS: number = Number(import.meta.env.VITE_REALTIME_MAX_POINTS) || 120;

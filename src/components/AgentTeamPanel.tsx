@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import WorkflowDag from './WorkflowDag';
 import {
   agentsApi,
   authApi,
@@ -482,6 +483,9 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
               />
             </div>
           )}
+
+          {/* FF1：流水线 DAG 总览（工作流可视化，详情见下方逐阶段文本卡） */}
+          <WorkflowDag trace={trace} />
 
           {/* 最终决策横幅 */}
           <div

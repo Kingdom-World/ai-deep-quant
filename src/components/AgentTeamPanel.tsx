@@ -26,7 +26,7 @@ import {
   maskKey,
   TIER_NOTES,
 } from '../../shared/llm-config.mjs';
-import { buildUserMessage, callDirect, DIRECT_ERRORS } from '../../shared/llm-direct.mjs';
+import { buildUserMessage, callDirect, DIRECT_ERRORS, BYOK_ROLES, rolePromptFor } from '../../shared/llm-direct.mjs';
 
 const CARD = {
   backgroundColor: 'rgba(17,24,39,0.6)',
@@ -206,9 +206,16 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
 
   const run = async () => {
     if (loading) return;
+    // BYOK 档：从本机存储读取自配 Key，走同一条多角色流水线（2026-10-02 新增）。
+    // Key 仅随当次请求上送服务端、内存使用不落盘；报告以 tier:'byok' 回显。
+    let byokPayload: { provider: string; base: string; key: string; model: string } | null = null;
     if (tier === 'byok') {
-      setNotice(DIRECT_ERRORS.NO_CONFIG.replace('尚未配置 API Key，请', '请先'));
-      return;
+      const cfg = configStore.load();
+      if (!cfg || !cfg.ok || !cfg.key) {
+        setNotice('请先在「自配 API」面板保存配置（接口地址 / 模型名 / Key），再召集团队。');
+        return;
+      }
+      byokPayload = { provider: cfg.provider, base: cfg.base, key: cfg.key, model: cfg.model };
     }
     if (curModeBlocked) {
       setError(`「${MODES.find((m) => m.key === mode)?.name}」在当前运行环境不可用：${(modeCheck(mode) as any).reason || '超出运行时限'}`);
@@ -224,17 +231,18 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
       const r = await agentsApi.analyze({
         symbol: symbol.trim(),
         mode,
-        // 档位随请求下传：rule 走后端规则引擎短路，platform 走后端 LLM 流水线。
-        // T2(byok) 不在此路径——由下方 T2Panel 在浏览器内直连，请求不经本站。
-        tier,
+        // 档位随请求下传：rule 走后端规则引擎短路，platform 走后端 LLM 流水线，
+        // byok 用用户自带 Key 走同一条流水线（Key 不落盘，仅当次内存使用）。
+        tier: byokPayload ? 'byok' : tier,
+        ...(byokPayload ? { byok: byokPayload } : {}),
         ...(mode === 'single' ? { agent } : {}),
         ...(mode === 'risk' && entryPrice ? { entryPrice: Number(entryPrice) } : {}),
-      });
+      } as any);
       if (!r.ok) throw new Error(r.error || '分析失败');
-      // 同步返回（规则引擎路径；后端已在响应里打 tier:'rule'）
+      // 同步返回（规则引擎 / Vercel single 路径；后端已在响应里打 tier）
       if ((r as any).stages) {
         setTrace(r);
-        setUsedTier((r as any).tier ?? 'rule');
+        setUsedTier((r as any).tier ?? (byokPayload ? 'byok' : 'rule'));
         setProgress(null);
         setLoading(false);
         return;
@@ -262,7 +270,7 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
             if (j.status === 'error') throw new Error(j.error || '分析失败');
             if (j.trace) {
               setTrace(j.trace);
-              setUsedTier((j.trace as any).tier ?? 'platform');
+              setUsedTier((j.trace as any).tier ?? (byokPayload ? 'byok' : 'platform'));
               resolve();
               return;
             }
@@ -419,16 +427,16 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
           )}
           <button
             onClick={run}
-            disabled={loading || tier === 'byok' || curModeBlocked}
-            title={tier === 'byok' ? '自配 API 档请使用上方配置面板直连分析' : curModeBlocked ? '当前运行环境不支持该模式' : ''}
-            style={{ padding: '9px 20px', fontSize: '13px', fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#1d4ed8,#60a5fa)', border: 'none', borderRadius: 8, cursor: loading || tier === 'byok' || curModeBlocked ? 'not-allowed' : 'pointer', opacity: loading || tier === 'byok' || curModeBlocked ? 0.5 : 1 }}
+            disabled={loading || curModeBlocked}
+            title={curModeBlocked ? '当前运行环境不支持该模式' : tier === 'byok' ? '用你自配的 Key 召集完整多角色流水线（Key 仅当次请求使用）' : ''}
+            style={{ padding: '9px 20px', fontSize: '13px', fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#1d4ed8,#60a5fa)', border: 'none', borderRadius: 8, cursor: loading || curModeBlocked ? 'not-allowed' : 'pointer', opacity: loading || curModeBlocked ? 0.5 : 1 }}
           >
-            {loading ? '团队协作中…' : '🚀 召集团队'}
+            {loading ? '团队协作中…' : tier === 'byok' ? '🚀 召集团队（用自配 Key）' : '🚀 召集团队'}
           </button>
         </div>
         <div style={{ marginTop: 8, fontSize: '11px', color: '#64748b' }}>
           {tier === 'byok'
-            ? '自配 API 档按设计只提供「单角色直连分析」：你的 Key 由浏览器直连供应商，一次请求即完成；不做多角色流水线（那属于平台算力档的能力）。这不是故障——请直接用上方的「⚡ 直连分析（单角色）」按钮。'
+            ? '自配 API 档两种用法：①「⚡ 直连分析（单角色）」——浏览器直连供应商，Key 不经本站；②「🚀 召集团队」——用你的 Key 跑完整多角色流水线（13 角色 + 辩论 + 裁决），Key 随当次请求上送服务端、仅内存使用、不存储不记录。'
             : curModeBlocked
               ? (modeCheck(mode) as any).reason
               : `${MODES.find((m) => m.key === mode)?.desc} · 多视角交叉验证 · 研究主管强制给出 BUY / SELL / HOLD 结论`}
@@ -670,18 +678,21 @@ export default function AgentTeamPanel({ defaultSymbol = 'AAPL', compact = false
 }
 
 // ─────────────────────────────────────────────────────────────
-// T2：自配 API 面板（L1.5）
+// T2：自配 API 面板（L1.5；2026-10-02 扩展：角色选择 + 未保存值即用）
 //
 //   关键承诺（与 shared/llm-config.mjs / llm-direct.mjs 同口径）：
-//     · Key 只存本机浏览器 localStorage，**不上传本站服务器**；
-//     · 请求由浏览器**直接发往供应商**，本站不中转、不记录；
+//     · Key 只存本机浏览器 localStorage，单角色直连**不上传本站服务器**；
+//     · 直连请求由浏览器**直接发往供应商**，本站不中转、不记录；
 //     · 单角色单轮，不参与流水线、不做辩论、不调工具 —— 边界已写进系统提示并要求模型告知。
+//     · 完整多角色流水线走主面板「召集团队」按钮：Key 随当次请求上送服务端、
+//       仅内存使用（不落盘不进日志），与站点其它 Server API 同一信任面，显式 opt-in。
 // ─────────────────────────────────────────────────────────────
 function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; symbolName?: string }) {
   const [provider, setProvider] = useState('zhipu');
   const [base, setBase] = useState(PROVIDERS.zhipu.base);
   const [model, setModel] = useState(SUGGESTED_MODELS.zhipu[0] ?? '');
   const [key, setKey] = useState('');
+  const [role, setRole] = useState('analyst');
   const [saved, setSaved] = useState<{ provider: string; model: string; masked: string } | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err' | 'info'; text: string } | null>(null);
   const [running, setRunning] = useState(false);
@@ -732,14 +743,24 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
 
   const runDirect = async () => {
     if (running) return;
-    const cfg = store.load();
-    if (!cfg || !cfg.ok) {
-      setMsg({ kind: 'err', text: DIRECT_ERRORS.NO_CONFIG });
+    // 用**输入框当前值**直连（此前读的是已保存配置——用户改了模型名没点保存时，
+    // 跑的仍是旧模型，表现为「显示固化/改了不生效」）。Key 留空则回落已保存值。
+    const prev = store.load();
+    const effKey = key.trim() || (prev && prev.key ? prev.key : '');
+    if (!base || !model || !effKey) {
+      setMsg({ kind: 'err', text: '请填写接口地址、模型名与 API Key（Key 留空时使用已保存的值）。' });
       return;
     }
+    const effCfg = { provider, base, model, key: effKey };
+    const dirty = !prev || prev.provider !== provider || prev.base !== base || prev.model !== model || prev.key !== effKey;
     setRunning(true);
     setResult(null);
-    setMsg({ kind: 'info', text: '正在直连供应商…（请求由你的浏览器直接发出）' });
+    setMsg({
+      kind: 'info',
+      text: dirty
+        ? '正在直连供应商…（使用输入框当前值，尚未保存到本机）'
+        : '正在直连供应商…（请求由你的浏览器直接发出）',
+    });
     try {
       // digest 由**平台规则引擎**算好（数值不由 LLM 产出 —— 项目铁律）
       let digest = '';
@@ -756,14 +777,14 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
       } catch {
         digest = '';
       }
-      const { rolePrompt, user } = buildUserMessage({ symbol, name: symbolName, digest });
-      const r = await callDirect(cfg, user, { system: rolePrompt });
+      const { rolePrompt, user } = buildUserMessage({ role: rolePromptFor(role), symbol, name: symbolName, digest });
+      const r = await callDirect(effCfg, user, { system: rolePrompt });
       if (!r.ok) {
         setMsg({ kind: 'err', text: (DIRECT_ERRORS as any)[r.code] || r.message });
         return;
       }
       setResult(r.content);
-      setMsg({ kind: 'ok', text: `直连成功（模型 ${r.model}，耗时 ${r.elapsedMs} ms）。本次为单角色分析，未做回测与工具取证。` });
+      setMsg({ kind: 'ok', text: `直连成功（模型 ${r.model}，耗时 ${r.elapsedMs} ms${dirty ? '，使用未保存的临时配置' : ''}）。本次为单角色分析，未做回测与工具取证。` });
     } finally {
       setRunning(false);
     }
@@ -847,15 +868,25 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          title="单角色直连使用的分析视角"
+          style={{ padding: '8px 10px', fontSize: 12.5, color: '#e2e8f0', backgroundColor: '#0d1322', border: '1px solid #334155', borderRadius: 8, outline: 'none' }}
+        >
+          {BYOK_ROLES.map((r: any) => (
+            <option key={r.id} value={r.id}>{r.label}</option>
+          ))}
+        </select>
         <button
           onClick={runDirect}
-          disabled={running || !saved}
-          title={!saved ? '请先保存配置' : ''}
-          style={{ padding: '9px 20px', fontSize: 13, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', border: 'none', borderRadius: 8, cursor: running || !saved ? 'not-allowed' : 'pointer', opacity: running || !saved ? 0.5 : 1 }}
+          disabled={running || !base || !model || (!key.trim() && !saved)}
+          title={!base || !model || (!key.trim() && !saved) ? '请填写接口地址 / 模型名 / Key（Key 留空用已保存值）' : '浏览器直连供应商，Key 不经本站'}
+          style={{ padding: '9px 20px', fontSize: 13, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', border: 'none', borderRadius: 8, cursor: running || !base || !model || (!key.trim() && !saved) ? 'not-allowed' : 'pointer', opacity: running || !base || !model || (!key.trim() && !saved) ? 0.5 : 1 }}
         >
           {running ? '直连中…' : '⚡ 直连分析（单角色）'}
         </button>
-        <span style={{ fontSize: 11, color: '#475569' }}>标的：{symbol || '（未填）'}</span>
+        <span style={{ fontSize: 11, color: '#475569' }}>标的：{symbol || '（未填）'} · 完整流水线请用上方「召集团队」</span>
       </div>
 
       {msg && (

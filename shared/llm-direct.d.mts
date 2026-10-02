@@ -39,6 +39,16 @@ export declare function buildUserMessage(ctx: {
   digest?: string;
 }): { rolePrompt: string; user: string };
 
+/** 单角色直连的视角预设（focus 为空 = 综合视角，与默认行为一致） */
+export declare const BYOK_ROLES: ReadonlyArray<{
+  id: 'analyst' | 'tech' | 'fund' | 'flow' | 'risk';
+  label: string;
+  focus: string[];
+}>;
+
+/** 按角色 id 生成系统提示；未知名或综合视角返回默认提示（向后兼容） */
+export declare function rolePromptFor(id: string): string;
+
 /**
  * 发起一次直连请求。
  * cfg 来自 llm-config 的 normalizeConfig；fetchImpl 可注入（Node 侧测试用）。

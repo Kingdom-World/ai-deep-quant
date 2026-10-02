@@ -36,6 +36,21 @@ const MAX_MESSAGE_CHARS = 12_000;
 const MAX_CONTEXT_CHARS = 48_000;
 const MAX_OUTPUT_TOKENS = 4_000;
 
+// ── BYOK（自配 API）每请求覆盖通道 ──────────────────────────────
+//   用户自己的 Key 只在**当次请求内存**中存在：不读环境变量、不落盘、不进日志；
+//   不受 FREE_MODELS 白名单拦截（白名单防的是平台额度被付费模型无声扣费，
+//   BYOK 的费用由用户自己的账户承担——与 T2 浏览器直连通道同一口径）。
+//   冷却表/并发闸按 byok 前缀隔离，避免用户侧 429 污染平台档的模型健康状态。
+/** 把前端下传的 BYOK 配置解析为单次调用目标；字段缺失返回 null */
+function overrideTarget(cfgOverride, model) {
+  if (!cfgOverride || typeof cfgOverride !== 'object') return null;
+  const base = String(cfgOverride.base || '').trim().replace(/\/$/, '');
+  const key = String(cfgOverride.key || '');
+  const effModel = String(model || cfgOverride.model || '').trim();
+  if (!base || !key || !effModel) return null;
+  return { provider: cfgOverride.provider || 'custom', base, key, model: effModel, local: false, byok: true };
+}
+
 function boundedMessages(messages) {
   const list = Array.isArray(messages) ? messages : [];
   let total = 0;
@@ -169,7 +184,12 @@ function resolveLocalTarget() {
  *   本地目标：仅当 host 校验通过时加入；默认追加到链尾，云端全挂时兜底；
  *             AI_CLOUD_LOCAL_PREFER_LIGHT=1 且 opts.tier==='light' 时提到链首。
  */
-function candidateChain({ model, tier } = {}) {
+function candidateChain({ model, tier, cfgOverride } = {}) {
+  // BYOK 覆盖：单目标、跳过白名单（见 overrideTarget 注释）
+  if (cfgOverride) {
+    const t = overrideTarget(cfgOverride, model);
+    return t ? [t] : [];
+  }
   const cfg = resolve();
   const out = [];
   // 云端候选链（受免费白名单约束）
@@ -241,7 +261,7 @@ async function limited(provider, fn) {
 // 避免每次请求都先花时间去撞一个已知被限流的模型（这是此前整条流水线变慢的主因）。
 const COOLDOWN_MS = Math.max(Number(process.env.AI_CLOUD_COOLDOWN_MS) || 30_000, 1000);
 const cooldownUntil = new Map();
-const targetId = (t) => `${t.provider}:${t.model}`;
+const targetId = (t) => `${t.byok ? 'byok-' : ''}${t.provider}:${t.model}`;
 function isCoolingDown(t) {
   return (cooldownUntil.get(targetId(t)) || 0) > Date.now();
 }
@@ -275,8 +295,8 @@ function cooldownSnapshot() {
  *   timeoutMs  单次尝试上限（默认 20000）；budgetMs 总预算（默认 50000）——深推理模型可放宽
  * @returns { content, reasoning, model, provider } | null（未配置/全部失败返回 null，由调用方回退）
  */
-async function chat(messages, { maxTokens, temperature = 0.6, thinking, timeoutMs = 20000, budgetMs = 50000, model, tier } = {}) {
-  const cfg = resolve();
+async function chat(messages, { maxTokens, temperature = 0.6, thinking, timeoutMs = 20000, budgetMs = 50000, model, tier, cfgOverride } = {}) {
+  const cfg = cfgOverride || resolve();
   if (!cfg) return null;
 
   // 思考链会占用 max_tokens 预算：开启思考时自动抬高上限（实测 2000 会被长思考挤成"正文 0 字"）
@@ -289,7 +309,8 @@ async function chat(messages, { maxTokens, temperature = 0.6, thinking, timeoutM
 
   // 候选链：角色指定模型优先 → 主模型 → 环境备用链 → （可选）本地兜底
   // candidateChain 同步解析、不发起任何网络请求；本地目标受 host 校验与 tier 路由约束。
-  const targets = candidateChain({ model, tier });
+  // BYOK 覆盖时走单目标链（用户自己的端点 + 主模型，忽略平台角色分摊策略）。
+  const targets = candidateChain({ model: cfgOverride ? undefined : model, tier, cfgOverride });
   if (!targets.length) {
     console.warn('[AI云端] 候选链为空：无可用模型');
     return null;
@@ -373,6 +394,7 @@ module.exports = {
   resolve,
   cooldownSnapshot,
   candidateChain,
+  overrideTarget,
   // 预设与白名单导出供**口径一致性校验**（T2 自配 API 的前端预设须与此同源，
   // 见 shared/llm-config.mjs 与 test/llm-config.test.cjs）。改动这两个常量即视为口径变更。
   PROVIDERS,

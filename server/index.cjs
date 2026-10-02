@@ -26,6 +26,7 @@ const reviewMod = require('./agents/review.cjs');
 const review = require('./agents/review.cjs');
 const cloudAI = require('./ai/cloud.cjs');
 const llmPipeline = require('./agents/llm_pipeline.cjs');
+const { normalizeByokOverride } = require('./agents/byok.cjs');
 const reasoning = require('./ai/reasoning.cjs');
 
 // 崩溃兜底：未捕获异常/Promise 拒绝只记录不退出，避免整站静默消失
@@ -1855,16 +1856,43 @@ app.post('/api/agents/analyze', async (req, res) => {
     // 档位（L1.5）：前端显式下传时按其选择执行；未传则沿用既有行为（向后兼容）。
     //   · rule     —— 直接走规则引擎，不碰云端配额（用户主动选择，不是降级）
     //   · platform —— 走 LLM 流水线（下方管理员闸门 + runtime 校验）
-    const reqTier = ['rule', 'platform'].includes(String(body.tier)) ? String(body.tier) : null;
-    if (reqTier === 'rule' || !cloudAI.configured()) {
+    //   · byok     —— 用户自带 Key 走同一条流水线（2026-10-02 新增）：Key 仅当次请求内存
+    //     使用（AsyncLocalStorage 贯通 → cloudAI.chat），不落盘不进日志不进报告；
+    //     不消耗平台算力，故不经管理员闸；限流与单任务门与 platform 档一致。
+    const reqTier = ['rule', 'platform', 'byok'].includes(String(body.tier)) ? String(body.tier) : null;
+    const llmOverride = reqTier === 'byok' ? normalizeByokOverride(body.byok) : null;
+    if (reqTier === 'byok' && !llmOverride) {
+      return res.status(400).json({
+        ok: false,
+        tier: 'byok',
+        error: 'BYOK 流水线缺少有效的自配信息（需要 base/key/model）。请在「自配 API」面板保存配置后重试。',
+        availableTiers: ['rule', 'byok'],
+      });
+    }
+    if (reqTier === 'rule' || (!cloudAI.configured() && !llmOverride)) {
       const trace = await agentTeam.run(ctx); // P3: agents.run async 化（报告保存走 DB 后端）
       return res.json({ ok: true, name: quote?.name, tier: 'rule', ...trace });
     }
-    // ── T3 平台 LLM 档：仅管理员（L1.4）──
-    //   抽取前此处对所有登录用户开放，会消耗平台 API 额度；且非管理员在 Vercel 上
-    //   只会撞到 1703 的 503（原因不明）。现改为**明确的档位提示**，指向可用档位，
-    //   既不静默降级也不含糊报错。
-    if (!isAdminReq(req)) {
+    const effTier = llmOverride ? 'byok' : 'platform';
+    // ── BYOK 全流水线：不经管理员闸（算力由用户自担）；Vercel 上仅放行 single ──
+    if (effTier === 'byok') {
+      if (IS_VERCEL && mode !== 'single') {
+        return res.status(503).json({
+          ok: false,
+          tier: 'byok',
+          error: 'Vercel Serverless 暂不支持多步 Agent 流水线（full/debate/risk/quick 需多步 LLM 调用，超出函数 30 秒上限）；完整流水线请使用本机版，或改用 single 模式（线上可运行）。',
+          availableTiers: ['rule', 'byok'],
+        });
+      }
+      if (IS_VERCEL && mode === 'single') {
+        const trace = await llmPipeline.runLLM({ ...ctx, llmOverride, onProgress: () => {} });
+        if (!trace) return res.status(502).json({ ok: false, tier: 'byok', error: '流水线调用失败：请核对自配端点与模型名是否可用。' });
+        // 报告归档必须在响应返回前 await 完成（Serverless 冻结丢写）
+        const reportId = await agentReportStore.saveReport(trace, uid);
+        return res.json({ ok: true, name: quote?.name, tier: 'byok', mode, reportId, ...trace });
+      }
+      // 自托管：落到底部与 platform 档共用的异步任务路径
+    } else if (!isAdminReq(req)) {
       return res.status(403).json({
         ok: false,
         tier: 'platform',
@@ -1894,7 +1922,7 @@ app.post('/api/agents/analyze', async (req, res) => {
     agentJobs.set(id, job);
     res.json({ ok: true, jobId: id, name: quote?.name });
     llmPipeline
-      .runLLM({ ...ctx, onProgress: (p) => {
+      .runLLM({ ...ctx, llmOverride: llmOverride || undefined, onProgress: (p) => {
         job.step = p.step;
         job.total = p.total || job.total;
         if (p.stage) job.stage = p.stage;
@@ -1902,8 +1930,8 @@ app.post('/api/agents/analyze', async (req, res) => {
       .then(async (trace) => {
         if (!trace) throw new Error('LLM 流水线不可用');
         const reportId = await agentReportStore.saveReport(trace, uid); // P3: async 化，await 确保落库后再标记完成
-        // 档位回显：前端据此标注「本次实际由平台 LLM 产出」（L1.5）
-        job.trace = { ...trace, reportId, uid, tier: 'platform' };
+        // 档位回显：前端据此标注「本次实际由 platform/byok 档产出」（L1.5）
+        job.trace = { ...trace, reportId, uid, tier: effTier };
         job.reportId = reportId;
         job.status = 'done';
         job.stage = '报告已完成';

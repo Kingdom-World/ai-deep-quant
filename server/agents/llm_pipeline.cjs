@@ -8,7 +8,13 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 const cloudAI = require('../ai/cloud.cjs');
+
+// ── BYOK（自配 API）每请求上下文 ──
+// 用户的 base/key/model 仅存于本次 runLLM 调用的内存上下文（AsyncLocalStorage），
+// 所有嵌套 callRole 自动读取，不落盘、不进日志、不进报告；调用结束即随上下文销毁。
+const byokStore = new AsyncLocalStorage();
 const { ROLES, BOUNDARIES, SEAT_ORDER } = require('./roles.cjs');
 const {
   techAnalyst,
@@ -126,6 +132,9 @@ function parseJSONLoose(text) {
 /** 单角色调用：隔离守卫 → 系统卡 + 铁律 + 职责内数据 → 审计留痕；返回 { ok, json, ms, model, provider } */
 async function callRole(card, rawUserContent, { maxTokens = 900, originals = [] } = {}) {
   const t0 = Date.now();
+  // BYOK（自配 API）覆盖：AsyncLocalStorage 从 runLLM 入口自动传播到所有 callRole，
+  // 无需逐层改签名。存在时忽略角色卡 model/tier 分摊策略（用户的端点只有一个主模型）。
+  const byokCfg = byokStore.getStore()?.llmOverride || null;
   // A6 · 发送前运行时断言：user content 混入其他角色原文即判定违规
   const guard = isolationGuard(rawUserContent, { selfName: card.seat, originals });
   let userContent = rawUserContent;
@@ -158,9 +167,12 @@ async function callRole(card, rawUserContent, { maxTokens = 900, originals = [] 
         budgetMs: card.budgetMs,
         // 角色卡指定的模型置于链首：13 角色分饰多个模型，把负载分摊到 zhipu / 硅基流动，
         // 避免此前"全员打同一个 glm-4.7-flash"把它打到 429 后集体退化成规则引擎。
-        model: card.model,
+        // BYOK 覆盖时不分摊（用户的端点没有平台这组免费模型），统一用其主模型。
+        model: byokCfg ? undefined : card.model,
         // B4 · 角色分层路由：tier 供 cloud.cjs 决定是否优先本地端点（已配置时）
-        tier: card.tier,
+        tier: byokCfg ? undefined : card.tier,
+        // BYOK 每请求覆盖：用户的 base/key/model 仅存于本次调用的内存，不落盘不进日志
+        cfgOverride: byokCfg || undefined,
       },
     );
     const json = parseJSONLoose(out?.content);
@@ -309,9 +321,15 @@ function metricsTextOf(key, rule, klines, feed, marketNewsText) {
   );
 }
 
-/** 主入口：异步 LLM 流水线。云端未配置返回 null（调用方回退同步规则引擎） */
-async function runLLM({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed, uid = 'default', onProgress = () => {} }) {
-  if (!cloudAI.configured()) return null;
+/** 主入口：异步 LLM 流水线。云端未配置且无 BYOK 覆盖时返回 null（调用方回退同步规则引擎） */
+function runLLM(args) {
+  const { llmOverride } = args;
+  if (!llmOverride && !cloudAI.configured()) return Promise.resolve(null);
+  // BYOK 配置经 AsyncLocalStorage 传播：所有嵌套 callRole 自动读取（见 callRole 内 byokStore）
+  return byokStore.run(llmOverride ? { llmOverride } : {}, () => runLLMInner(args));
+}
+
+async function runLLMInner({ symbol, klines, quote, name, mode = 'full', agent, entryPrice, feed, uid = 'default', onProgress = () => {} }) {
   const total = TOTAL_STEPS[mode] ?? TOTAL_STEPS.full;
   let step = 0;
   const onStep = () => {

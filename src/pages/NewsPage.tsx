@@ -117,7 +117,12 @@ export default function NewsPage() {
 
   const title = useMemo(() => (tab === 'market' ? '市场要闻' : tab === 'official' ? `${symbol || '--'} 公告` : `${data?.stockName || symbol || '--'} 个股资讯`), [data, symbol, tab]);
 
-  const degradedSources = health ? Object.entries(health.sources || {}).filter(([, v]) => v.degraded).map(([k]) => k) : [];
+  // 降级提示只列「资讯内容源」：tdx-channel（行情通道探测）与 name-*（简称解析辅助）
+  // 不是内容来源，混进来会让用户误以为资讯出问题（2026-10-02 用户反馈）。
+  const CONTENT_SOURCES = new Set(['em-flash', 'sina-roll', 'sina-zhibo', 'tencent-news', 'tencent-stock-news', 'em-stock-news', 'em-search']);
+  const degradedSources = health
+    ? Object.entries(health.sources || {}).filter(([k, v]) => v.degraded && CONTENT_SOURCES.has(k)).map(([k]) => k)
+    : [];
 
   return (
     <div style={{ ...theme.page, minHeight: '100vh', paddingBottom: 48 }}>
@@ -146,7 +151,6 @@ export default function NewsPage() {
               <span>共 {data.items.length} 条</span>
               {tab === 'stock' && <span>· 高置信 {strong.length} 条</span>}
               <span>· 来源 {Object.entries(sourceSummary).map(([k, v]) => `${k} ${v}`).join(' / ')}</span>
-              {health?.tdxChannel && <span>· 通达信行情通道 {health.tdxChannel.available ? '正常' : '不可用'}</span>}
             </div>
           ) : null}
           {degradedSources.length > 0 && (

@@ -64,3 +64,28 @@ test('settleSources：fulfilled 透传、rejected 记空数组，顺序保持', 
   const out = newsEngine.settleSources(settled, 'unit');
   assert.deepEqual(out, [['a'], [], ['b', 'c']]);
 });
+
+// ───────── 腾讯资讯源映射 ─────────
+
+test('mapTencentNews：字段映射正确，symbols 统一小写，非法行丢弃', () => {
+  const rows = [
+    { title: '财联社快讯', summary: '测试摘要', url: 'https://gu.qq.com/x', src: '财联社', time: '2026-10-02 17:02:00', symbols: ['SH600519', 'sz000001'] },
+    { title: '缺时间', summary: '', url: 'https://gu.qq.com/y', src: 'X' },
+    { summary: '缺标题', url: 'https://gu.qq.com/z', time: '2026-10-02 17:00:00' },
+  ];
+  const out = sources.mapTencentNews(rows, 'tencent-news');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].title, '财联社快讯');
+  assert.equal(out[0].media, '财联社');
+  assert.equal(out[0].source, 'tencent-news');
+  assert.deepEqual(out[0].symbols, ['sh600519', 'sz000001']);
+  assert.equal(out[0].publishedAt, '2026-10-02T09:02:00.000Z'); // 东八区 → UTC
+});
+
+test('mapTencentNews：src 缺失回落「腾讯财经」，非数组入参返回空数组', () => {
+  const out = sources.mapTencentNews([{ title: '只有标题', time: '2026-10-02 08:00:00', url: 'https://gu.qq.com' }], 'tencent-news');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].media, '腾讯财经');
+  assert.deepEqual(sources.mapTencentNews(null, 'tencent-news'), []);
+  assert.deepEqual(sources.mapTencentNews(undefined, 'tencent-news'), []);
+});

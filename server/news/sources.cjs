@@ -102,12 +102,14 @@ async function getJSON(url, referer, timeout = 8000) {
 }
 
 // ───────── 源 1：东方财富 7x24 快讯（市场要闻主力源，支持 sortEnd 翻页） ─────────
-/** 单页拉取；timeout 可收紧（顺序翻页最坏耗时 = pages × timeout，须给服务端函数时限留边际） */
-async function fetchEmFlashPage(sortEnd = '', pageSize = 100, timeout = 8000) {
-  const url =
-    'https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102' +
-    `&sortEnd=${encodeURIComponent(sortEnd)}&pageSize=${pageSize}&req_trace=1`;
-  const j = await getJSON(url, 'https://kuaixun.eastmoney.com/', timeout);
+// 双集群容错：np-listapi 与 np-weblist 是不同集群（2026-10-02 实测 Vercel 出口
+// np-listapi 被风控超时、np-weblist 独立可达），逐集群重试同页，全部失败才上抛熔断。
+const EM_FLASH_HOSTS = [
+  'https://np-listapi.eastmoney.com',
+  'https://np-weblist.eastmoney.com',
+];
+
+function parseEmFlashPage(j) {
   const list = j?.data?.fastNewsList;
   if (!Array.isArray(list) || !list.length) return { items: [], sortEnd: '' };
   const items = list
@@ -128,6 +130,24 @@ async function fetchEmFlashPage(sortEnd = '', pageSize = 100, timeout = 8000) {
     })
     .filter(Boolean);
   return { items, sortEnd: String(j?.data?.sortEnd || '') };
+}
+
+/** 单页拉取；timeout 可收紧（顺序翻页最坏耗时 = pages × timeout，须给服务端函数时限留边际） */
+async function fetchEmFlashPage(sortEnd = '', pageSize = 100, timeout = 8000) {
+  const path =
+    '/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102' +
+    `&sortEnd=${encodeURIComponent(sortEnd)}&pageSize=${pageSize}&req_trace=1`;
+  let lastErr = null;
+  for (const host of EM_FLASH_HOSTS) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const j = await getJSON(host + path, 'https://kuaixun.eastmoney.com/', timeout);
+      return parseEmFlashPage(j);
+    } catch (e) {
+      lastErr = e; // 当前集群失败 → 尝试下一集群
+    }
+  }
+  throw lastErr || new Error('em-flash 全集群失败');
 }
 
 /**
@@ -296,6 +316,53 @@ async function fetchSinaZhiboRoll(num = 50) {
   return withSource('sina-zhibo', () => fetchSinaZhiboRollInner(num));
 }
 
+// ───────── 源 4c：腾讯自选股资讯（web.ifzq.gtimg.cn，与 K 线/分时同域族） ─────────
+// 为什么有它：Vercel 海外出口被东财 np-listapi / 新浪 feed.mix 双集群风控
+// （2026-10-02 线上实测全部超时，公网资讯内容长期空态），而 web.ifzq.gtimg.cn
+// 与 K 线/分时同域、线上实证可达（quote/kline 正常）。
+// type=3 固定值；symbol=sh000001（上证指数）返回市场要闻，symbol=个股 返回个股新闻。
+// 上游字段自带 symbols[]（如 "sh600519"）与 summary，直接映射进统一结构。
+function mapTencentNews(rows, source) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((r) => {
+      const ms = parseCnTime(r?.time);
+      const title = String(r?.title || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      if (!ms || !title) return null;
+      return {
+        title,
+        snippet: String(r?.summary || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+        url: String(r?.url || '').trim(),
+        media: String(r?.src || '腾讯财经').trim() || '腾讯财经',
+        publishedAt: new Date(ms).toISOString(),
+        source,
+        secids: [],
+        symbols: Array.isArray(r?.symbols) ? r.symbols.map((s) => String(s).toLowerCase()) : [],
+      };
+    })
+    .filter(Boolean);
+}
+
+async function fetchTencentNewsInner(symbol, n = 50, source = 'tencent-news') {
+  const sym = String(symbol || '').trim().toLowerCase();
+  if (!sym) return [];
+  const size = Math.min(Math.max(Number(n) || 50, 1), 100);
+  const url = `https://web.ifzq.gtimg.cn/appstock/news/info/search?symbol=${encodeURIComponent(sym)}&page=1&n=${size}&type=3`;
+  const j = await getJSON(url, 'https://gu.qq.com/');
+  return mapTencentNews(j?.data?.data, source);
+}
+
+/** 市场要闻腾讯路：上证指数代码返回全市场滚动资讯（财联社/21经济网等，分钟级时效） */
+async function fetchTencentMarketNews(num = 50) {
+  return withSource('tencent-news', () => fetchTencentNewsInner('sh000001', num, 'tencent-news'));
+}
+
+/** 个股资讯腾讯路：与东财官方资讯/全文检索互为兜底 */
+async function fetchTencentStockNews(symbol, n = 20) {
+  const norm = normalizeSymbol(symbol);
+  if (!norm) return []; // 非法代码不触网、不污染健康表
+  return withSource('tencent-stock-news', () => fetchTencentNewsInner(norm.symbol, n, 'tencent-stock-news'));
+}
+
 // ───────── 源 5：证券简称解析 ─────────
 // 交易所会在除权除息日把简称标成「XD中国平」这类形式（且截断末字），
 // 直接拿去匹配会漏掉正文中写的「中国平安」，因此统一清洗标记前缀。
@@ -424,6 +491,9 @@ module.exports = {
   cleanSecurityName,
   resolveName,
   tdxChannelHealth,
+  fetchTencentMarketNews,
+  fetchTencentStockNews,
+  mapTencentNews,
   healthSnapshot,
   isDisabled,
   withSource,

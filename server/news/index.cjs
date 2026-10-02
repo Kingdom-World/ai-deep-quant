@@ -69,16 +69,17 @@ function settleSources(settled, label) {
   return out;
 }
 
-/** 市场要闻：东财 7x24 分页快讯（主力，单页 100 条）+ 新浪财经滚动 + 新浪 7x24 直播（备用集群，互为兜底） */
+/** 市场要闻：东财 7x24 分页快讯（主力，双集群容错）+ 新浪滚动/直播（互为兜底）+ 腾讯自选股（同域族，Vercel 出口可达兜底） */
 async function getMarketNews({ pages = 3, force = false } = {}) {
   if (!force && marketCache.items.length && Date.now() - marketCache.ts < MARKET_TTL) {
     return marketCache.items;
   }
-  const [flash, sina, zhibo] = settleSources(
+  const [flash, sina, zhibo, tencent] = settleSources(
     await Promise.allSettled([
       sources.fetchMarketFlash(pages, 100),
       sources.fetchSinaRoll(50),
       sources.fetchSinaZhiboRoll(50),
+      sources.fetchTencentMarketNews(50),
     ]),
     'market'
   );
@@ -106,17 +107,18 @@ async function getStockNews(symbol, { limit = 60, force = false } = {}) {
   const profile = matcher.buildProfile(key, name);
   const digits = profile.digits;
 
-  const [official, byName, byCode, flash] = settleSources(
+  const [official, byName, byCode, flash, tencentStock] = settleSources(
     await Promise.allSettled([
       sources.fetchEmStockNews(key, 2, 20),
       name ? sources.fetchEmSearch(name, 20) : Promise.resolve([]),
       sources.fetchEmSearch(digits, 20),
       getMarketNews({ pages: 2 }),
+      sources.fetchTencentStockNews(key, 20),
     ]),
     `stock:${key}`
   );
 
-  const pool = [...official, ...byName, ...byCode, ...(flash || [])];
+  const pool = [...official, ...byName, ...byCode, ...(flash || []), ...tencentStock];
   const items = matcher.matchForSymbol(pool, profile, { minScore: 0.45, limit });
   pruneMap(stockCache, MAX_STOCK_CACHE, STOCK_TTL);
   stockCache.set(key, { ts: Date.now(), profile, items });

@@ -1125,35 +1125,7 @@ export default function HomePage() {
           </div>
         </section>
       </main>
-
-      {/* ── 页脚免责声明 ── */}
-      <footer
-        style={{
-          textAlign: 'center',
-          fontSize: '12px',
-          color: '#94a3b8',
-          borderTop: '1px solid #334155',
-          padding: '16px 24px 24px',
-          marginTop: '24px',
-          backgroundColor: '#0d1322',
-          lineHeight: '1.8',
-        }}
-      >
-        <p style={{ margin: '0 0 6px' }}>
-          ⚠️ 本平台为<b>学生学术研究演示</b>，数据来源于公开财经网站（新浪/腾讯/东方财富），
-          <b>不构成任何投资建议</b>，亦不涉及荐股、预测及实盘交易。
-        </p>
-        <p style={{ margin: '0 0 6px' }}>
-          📊 数据源：Baostock（历史K线与全A股票清单，版权归 Baostock 所有）· 腾讯公开接口（实时行情、选股与市场温度计快照）· 新浪公开接口（实时行情）·
-          东方财富公开接口（板块资金/财务/公告/新闻）· 仅用于历史回测展示 · 请勿据此操作
-        </p>
-        <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b' }}>
-          🌐 公网演示版：已启用自定义域名，可直接访问。行情来自公开接口，个别数据源可能临时不可用。
-        </p>
-        <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
-          © 2026 AI深度量化 · 仅供学习参考
-        </p>
-      </footer>
+      {/* 页脚免责声明已提升为 App 级全局 <AppFooter />（合规基建），此处不再重复渲染 */}
     </div>
   );
 }

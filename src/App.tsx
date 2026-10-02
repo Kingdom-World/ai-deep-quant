@@ -19,6 +19,8 @@ import AgentTeamPage from './pages/AgentTeamPage';
 import AgentReportPage from './pages/AgentReportPage';
 import NewsPage from './pages/NewsPage';
 import LoginPage from './pages/LoginPage';
+import LegalPage from './pages/LegalPage';
+import AppFooter from './components/AppFooter';
 
 /**
  * AI深度量化 路由：
@@ -118,8 +120,11 @@ function App() {
             <Route path="/paper" element={<PaperTradingPage />} />
             <Route path="/agents" element={<AgentTeamPage />} />
             <Route path="/agents/report/:id" element={<AgentReportPage />} />
+            <Route path="/legal" element={<LegalPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          {/* 全站页脚（合规基建）：一行风险提示 + /legal 入口，登录后的所有路由统一覆盖 */}
+          <AppFooter />
         </ErrorBoundary>
       </BrowserRouter>
     </>

@@ -102,11 +102,12 @@ async function getJSON(url, referer, timeout = 8000) {
 }
 
 // ───────── 源 1：东方财富 7x24 快讯（市场要闻主力源，支持 sortEnd 翻页） ─────────
-async function fetchEmFlashPage(sortEnd = '', pageSize = 100) {
+/** 单页拉取；timeout 可收紧（顺序翻页最坏耗时 = pages × timeout，须给服务端函数时限留边际） */
+async function fetchEmFlashPage(sortEnd = '', pageSize = 100, timeout = 8000) {
   const url =
     'https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102' +
     `&sortEnd=${encodeURIComponent(sortEnd)}&pageSize=${pageSize}&req_trace=1`;
-  const j = await getJSON(url, 'https://kuaixun.eastmoney.com/');
+  const j = await getJSON(url, 'https://kuaixun.eastmoney.com/', timeout);
   const list = j?.data?.fastNewsList;
   if (!Array.isArray(list) || !list.length) return { items: [], sortEnd: '' };
   const items = list
@@ -129,13 +130,19 @@ async function fetchEmFlashPage(sortEnd = '', pageSize = 100) {
   return { items, sortEnd: String(j?.data?.sortEnd || '') };
 }
 
-/** 分页拉取市场要闻，pages 越大覆盖越广（单页 100 条） */
+/**
+ * 分页拉取市场要闻，pages 越大覆盖越广（单页 100 条）
+ * 注意：翻页靠上游返回的 sortEnd 游标，页间有依赖只能顺序拉；
+ * 单页超时收紧到 5s，pages=3 时最坏 15s（Vercel 函数 30s 上限内留足边际）。
+ */
+const EM_FLASH_PAGE_TIMEOUT = 5000;
+
 async function fetchMarketFlash(pages = 3, pageSize = 100) {
   const all = [];
   let sortEnd = '';
   for (let i = 0; i < pages; i++) {
     // eslint-disable-next-line no-await-in-loop
-    const page = await withSource('em-flash', () => fetchEmFlashPage(sortEnd, pageSize));
+    const page = await withSource('em-flash', () => fetchEmFlashPage(sortEnd, pageSize, EM_FLASH_PAGE_TIMEOUT));
     if (!page.items.length) break;
     all.push(...page.items);
     if (!page.sortEnd || page.sortEnd === sortEnd) break;
@@ -145,7 +152,7 @@ async function fetchMarketFlash(pages = 3, pageSize = 100) {
 }
 
 // ───────── 源 2：东财个股官方资讯（按证券代码挂载，精准度最高） ─────────
-async function fetchEmStockNews(symbol, pages = 2, pageSize = 20) {
+async function fetchEmStockNewsInner(symbol, pages = 2, pageSize = 20) {
   const norm = normalizeSymbol(symbol);
   if (!norm) return [];
   const out = [];
@@ -178,8 +185,14 @@ async function fetchEmStockNews(symbol, pages = 2, pageSize = 20) {
   return out.filter((x) => x.url);
 }
 
+/** 熔断包装：东财个股资讯超时/故障时返回 []，不拖垮聚合层；连续 3 失败熔断 5 分钟 */
+async function fetchEmStockNews(symbol, pages = 2, pageSize = 20) {
+  if (!normalizeSymbol(symbol)) return []; // 非法代码不触网、不污染健康表
+  return withSource('em-stock-news', () => fetchEmStockNewsInner(symbol, pages, pageSize));
+}
+
 // ───────── 源 3：东财全文检索（关键词召回，交由匹配层降噪） ─────────
-async function fetchEmSearch(keyword, pageSize = 20) {
+async function fetchEmSearchInner(keyword, pageSize = 20) {
   if (!keyword) return [];
   const param = JSON.stringify({
     uid: '',
@@ -212,8 +225,17 @@ async function fetchEmSearch(keyword, pageSize = 20) {
     .filter((x) => x && x.url);
 }
 
+/** 熔断包装：全文检索故障时返回 []，不拖垮个股资讯聚合 */
+async function fetchEmSearch(keyword, pageSize = 20) {
+  if (!keyword) return [];
+  return withSource('em-search', () => fetchEmSearchInner(keyword, pageSize));
+}
+
 // ───────── 源 4：新浪财经滚动（补充源，提升媒体覆盖度） ─────────
-async function fetchSinaRoll(num = 50) {
+// ⚠️ feed.mix.sina.com.cn 在 Vercel 出口被拒（本地可达）：裸调时每次请求都会超时 throw，
+// 把 Promise.all 里其他源已成功的数据一起拖垮、整体回退本地快照——这正是公网资讯
+// 「时好时坏」的根因。包熔断后：单源失败返回 []（其余源照常），3 连败熔断 5 分钟零等待。
+async function fetchSinaRollInner(num = 50) {
   const url = `https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=${num}&page=1`;
   const j = await getJSON(url, 'https://finance.sina.com.cn/');
   const rows = j?.result?.data ?? [];
@@ -236,11 +258,16 @@ async function fetchSinaRoll(num = 50) {
     .filter(Boolean);
 }
 
+/** 熔断包装：见 fetchSinaRollInner 上方说明 */
+async function fetchSinaRoll(num = 50) {
+  return withSource('sina-roll', () => fetchSinaRollInner(num));
+}
+
 // ───────── 源 4b：新浪财经直播滚动（备用补充源） ─────────
 //   为什么有它：主滚动源 feed.mix.sina.com.cn 在部分运行环境（如 Vercel 出口）被拒，
 //   而 zhibo.sina.com.cn 是独立集群，实测可达。7x24 财经直播（zhibo_id=152）内容与
 //   滚动新闻高度重合，作为市场要闻的第三路输入，避免单一集群故障导致公网无资讯。
-async function fetchSinaZhiboRoll(num = 50) {
+async function fetchSinaZhiboRollInner(num = 50) {
   const n = Math.min(Math.max(Number(num) || 50, 1), 100);
   const url = `https://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=${n}&zhibo_id=152&tag_id=0&dire=f&dpc=1`;
   const j = await getJSON(url, 'https://finance.sina.com.cn/');
@@ -262,6 +289,11 @@ async function fetchSinaZhiboRoll(num = 50) {
       };
     })
     .filter(Boolean);
+}
+
+/** 熔断包装：备用直播集群同样纳入熔断观测 */
+async function fetchSinaZhiboRoll(num = 50) {
+  return withSource('sina-zhibo', () => fetchSinaZhiboRollInner(num));
 }
 
 // ───────── 源 5：证券简称解析 ─────────
@@ -394,4 +426,5 @@ module.exports = {
   tdxChannelHealth,
   healthSnapshot,
   isDisabled,
+  withSource,
 };

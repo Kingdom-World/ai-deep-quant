@@ -55,16 +55,33 @@ function dedupe(items) {
   return [...seen.values()].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
 }
 
+/** allSettled 聚合：单源 reject 不拖垮整体，拒绝显式告警（降级可见） */
+function settleSources(settled, label) {
+  const out = [];
+  for (const s of settled) {
+    if (s.status === 'fulfilled') {
+      out.push(s.value);
+    } else {
+      console.warn(`[news] ${label} 部分源失败: ${String(s.reason?.message || s.reason).slice(0, 120)}`);
+      out.push([]);
+    }
+  }
+  return out;
+}
+
 /** 市场要闻：东财 7x24 分页快讯（主力，单页 100 条）+ 新浪财经滚动 + 新浪 7x24 直播（备用集群，互为兜底） */
 async function getMarketNews({ pages = 3, force = false } = {}) {
   if (!force && marketCache.items.length && Date.now() - marketCache.ts < MARKET_TTL) {
     return marketCache.items;
   }
-  const [flash, sina, zhibo] = await Promise.all([
-    sources.fetchMarketFlash(pages, 100),
-    sources.fetchSinaRoll(50),
-    sources.fetchSinaZhiboRoll(50),
-  ]);
+  const [flash, sina, zhibo] = settleSources(
+    await Promise.allSettled([
+      sources.fetchMarketFlash(pages, 100),
+      sources.fetchSinaRoll(50),
+      sources.fetchSinaZhiboRoll(50),
+    ]),
+    'market'
+  );
   const merged = dedupe([...flash, ...sina, ...zhibo]);
   if (merged.length) {
     marketCache.ts = Date.now();
@@ -89,12 +106,15 @@ async function getStockNews(symbol, { limit = 60, force = false } = {}) {
   const profile = matcher.buildProfile(key, name);
   const digits = profile.digits;
 
-  const [official, byName, byCode, flash] = await Promise.all([
-    sources.fetchEmStockNews(key, 2, 20),
-    name ? sources.fetchEmSearch(name, 20) : Promise.resolve([]),
-    sources.fetchEmSearch(digits, 20),
-    getMarketNews({ pages: 2 }),
-  ]);
+  const [official, byName, byCode, flash] = settleSources(
+    await Promise.allSettled([
+      sources.fetchEmStockNews(key, 2, 20),
+      name ? sources.fetchEmSearch(name, 20) : Promise.resolve([]),
+      sources.fetchEmSearch(digits, 20),
+      getMarketNews({ pages: 2 }),
+    ]),
+    `stock:${key}`
+  );
 
   const pool = [...official, ...byName, ...byCode, ...(flash || [])];
   const items = matcher.matchForSymbol(pool, profile, { minScore: 0.45, limit });
@@ -113,4 +133,4 @@ function getHealth() {
   };
 }
 
-module.exports = { getMarketNews, getStockNews, getSymbolName, getHealth, dedupe, sources, matcher };
+module.exports = { getMarketNews, getStockNews, getSymbolName, getHealth, dedupe, settleSources, sources, matcher };

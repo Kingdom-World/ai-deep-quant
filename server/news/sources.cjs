@@ -104,10 +104,13 @@ async function getJSON(url, referer, timeout = 8000) {
 // ───────── 源 1：东方财富 7x24 快讯（市场要闻主力源，支持 sortEnd 翻页） ─────────
 // 双集群容错：np-listapi 与 np-weblist 是不同集群（2026-10-02 实测 Vercel 出口
 // np-listapi 被风控超时、np-weblist 独立可达），逐集群重试同页，全部失败才上抛熔断。
+// sticky：一旦某集群成功，翻页直接用它——避免每页都先在坏集群上耗满超时
+// （否则 pages=3 时最坏 3×(坏集群超时+好集群耗时)≈18s，sticky 后≈6s）。
 const EM_FLASH_HOSTS = [
   'https://np-listapi.eastmoney.com',
   'https://np-weblist.eastmoney.com',
 ];
+let emFlashStickyHost = null; // 实例级缓存（Vercel serverless 随实例存活，可接受）
 
 function parseEmFlashPage(j) {
   const list = j?.data?.fastNewsList;
@@ -137,14 +140,19 @@ async function fetchEmFlashPage(sortEnd = '', pageSize = 100, timeout = 8000) {
   const path =
     '/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102' +
     `&sortEnd=${encodeURIComponent(sortEnd)}&pageSize=${pageSize}&req_trace=1`;
+  const order = emFlashStickyHost
+    ? [emFlashStickyHost, ...EM_FLASH_HOSTS.filter((h) => h !== emFlashStickyHost)]
+    : EM_FLASH_HOSTS;
   let lastErr = null;
-  for (const host of EM_FLASH_HOSTS) {
+  for (const host of order) {
     try {
       // eslint-disable-next-line no-await-in-loop
       const j = await getJSON(host + path, 'https://kuaixun.eastmoney.com/', timeout);
+      emFlashStickyHost = host; // 成功即粘住，后续页/后续请求直接走该集群
       return parseEmFlashPage(j);
     } catch (e) {
       lastErr = e; // 当前集群失败 → 尝试下一集群
+      if (host === emFlashStickyHost) emFlashStickyHost = null; // 粘住的集群失效则重置
     }
   }
   throw lastErr || new Error('em-flash 全集群失败');
@@ -347,7 +355,7 @@ async function fetchTencentNewsInner(symbol, n = 50, source = 'tencent-news') {
   if (!sym) return [];
   const size = Math.min(Math.max(Number(n) || 50, 1), 100);
   const url = `https://web.ifzq.gtimg.cn/appstock/news/info/search?symbol=${encodeURIComponent(sym)}&page=1&n=${size}&type=3`;
-  const j = await getJSON(url, 'https://gu.qq.com/');
+  const j = await getJSON(url, 'https://gu.qq.com/', 6000); // 6s：腾讯资讯接口在部分出口被风控，收紧超时避免拖慢整体
   return mapTencentNews(j?.data?.data, source);
 }
 

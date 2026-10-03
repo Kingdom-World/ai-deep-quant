@@ -4,14 +4,14 @@
 // ─────────────────────────────────────────────────────────────
 export const theme = {
   color: {
-    bg: '#0a0e17',
-    bgRaised: '#111827',
+    bg: '#080b12',
+    bgRaised: '#131b2e',
     bgSunken: '#0d1322',
-    border: '#1e293b',
-    borderStrong: '#334155',
-    text: '#e2e8f0',
-    textMuted: '#94a3b8',
-    textFaint: '#64748b',
+    border: '#263349',
+    borderStrong: '#3b4a63',
+    text: '#eef2f8',
+    textMuted: '#a5b4cb',
+    textFaint: '#7c8ba1',
     primary: '#60a5fa',
     primaryDeep: '#2563eb',
     up: '#ef4444',
@@ -22,28 +22,31 @@ export const theme = {
   fontSize: { xs: 12, sm: 13, md: 14, lg: 16, xl: 20, xxl: 26 },
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
   spacing: (n: number) => `${n * 8}px`,
-  /** 卡片通用样式 */
+  /** 卡片通用样式（层次：边框微亮 + 顶部数据流描边 + 顶缘内高光，让卡片从深空底上"浮"起来） */
   card: {
-    backgroundColor: '#111827',
-    border: '1px solid #1e293b',
+    backgroundColor: '#131b2e',
+    border: '1px solid #263349',
+    borderTop: '1px solid rgba(96,165,250,0.38)',
     borderRadius: '12px',
     padding: '16px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.28), inset 0 1px 0 rgba(148,163,184,0.07)',
   },
-  /** 玻璃卡片（微透 + 辉光边框） */
+  /** 玻璃卡片（微透 + 辉光边框 + 顶部数据流描边 + 顶缘高光） */
   glass: {
-    backgroundColor: 'rgba(17,24,39,0.55)',
+    backgroundColor: 'rgba(15,22,38,0.62)',
     backdropFilter: 'blur(14px)',
     WebkitBackdropFilter: 'blur(14px)',
-    border: '1px solid rgba(96,165,250,0.14)',
+    border: '1px solid rgba(148,183,235,0.17)',
+    borderTop: '1px solid rgba(96,165,250,0.42)',
     borderRadius: '14px',
     padding: '16px',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)',
+    boxShadow: '0 10px 36px rgba(0,0,0,0.34), inset 0 1px 0 rgba(200,220,255,0.07)',
   } as const,
   /** 输入框通用样式 */
   input: {
     padding: '9px 12px',
     fontSize: '13px',
-    color: '#e2e8f0',
+    color: '#eef2f8',
     backgroundColor: '#0d1322',
     border: '1px solid #334155',
     borderRadius: '8px',
@@ -52,7 +55,7 @@ export const theme = {
   /** 页面容器（视觉底由全局 <Backdrop /> 深空极光层提供，此处保持透明让光斑透出） */
   page: {
     minHeight: '100vh',
-    color: '#e2e8f0',
+    color: '#eef2f8',
     background: 'transparent',
   },
   /** 页面主容器统一规范——**全站满宽**：数据页与内容页宽度一致，切换不再跳变；
@@ -79,7 +82,7 @@ export const theme = {
     fontSize: 20,
     fontWeight: 600,
     margin: '0 0 16px',
-    color: '#f1f5f9',
+    color: '#f8fafc',
   },
   /** CSS 动画关键帧（插入 <style> 标签用） */
   keyframes: `

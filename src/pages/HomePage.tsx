@@ -791,8 +791,11 @@ export default function HomePage() {
                           style={{
                             fontSize: '20px',
                             fontWeight: '700',
-                            color: '#f1f5f9',
+                            color: '#f8fafc',
                             marginTop: '4px',
+                            fontFamily: "'Consolas', 'SF Mono', monospace",
+                            fontVariantNumeric: 'tabular-nums',
+                            letterSpacing: '0.3px',
                           }}
                         >
                           {q.price.toLocaleString(undefined, {

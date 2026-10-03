@@ -406,9 +406,9 @@ export default function TopNav() {
           gap: narrow ? '10px' : '20px',
           padding: narrow ? '0 12px' : '0 28px',
           height: '58px',
-          backgroundColor: 'rgba(10,14,23,0.88)',
-          borderBottom: '1px solid rgba(96,165,250,0.14)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+          backgroundColor: 'rgba(8,11,18,0.82)',
+          borderBottom: '1px solid rgba(96,165,250,0.2)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
         }}
         className="pq-topnav"
       >

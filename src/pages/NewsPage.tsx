@@ -36,17 +36,45 @@ function MatchBadge({ item }: { item: NewsItem }) {
 }
 
 function NewsRow({ item }: { item: NewsItem }) {
+  const isOfficial = item.sourceType === 'official' || item.category === 'official';
+  const accent = isOfficial ? 'rgba(251,191,36,0.55)' : 'rgba(96,165,250,0.55)';
   return (
-    <article style={{ padding: '16px 0', borderBottom: `1px solid ${theme.color.border}` }}>
+    <article
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = 'rgba(96,165,250,0.35)';
+        (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(19,27,46,0.72)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = 'rgba(148,183,235,0.12)';
+        (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(15,22,38,0.5)';
+      }}
+      style={{
+        position: 'relative',
+        padding: '13px 16px 13px 18px',
+        marginBottom: 10,
+        backgroundColor: 'rgba(15,22,38,0.5)',
+        border: '1px solid rgba(148,183,235,0.12)',
+        borderLeft: `2px solid ${accent}`,
+        borderRadius: 10,
+        transition: 'border-color 0.15s, background-color 0.15s',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
-        <span style={{ fontSize: 11, color: item.sourceType === 'official' ? '#fbbf24' : '#93c5fd', border: `1px solid ${item.sourceType === 'official' ? 'rgba(251,191,36,.35)' : 'rgba(147,197,253,.35)'}`, borderRadius: 5, padding: '2px 6px' }}>
+        <span style={{ fontSize: 11, color: isOfficial ? '#fbbf24' : '#93c5fd', border: `1px solid ${isOfficial ? 'rgba(251,191,36,.35)' : 'rgba(147,197,253,.35)'}`, borderRadius: 5, padding: '2px 6px' }}>
           {item.category === 'official' ? '公告聚合' : '公开资讯'}
         </span>
         <MatchBadge item={item} />
         <span style={{ fontSize: 12, color: theme.color.textFaint }}>{item.media}</span>
         <span style={{ fontSize: 12, color: theme.color.textFaint }}>发布时间 {formatTime(item.publishedAt)}</span>
       </div>
-      <a href={item.url} target="_blank" rel="noreferrer" style={{ color: theme.color.text, fontSize: 15, fontWeight: 650, lineHeight: 1.55, textDecoration: 'none' }}>
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noreferrer"
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#93c5fd'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = theme.color.text; }}
+        style={{ color: theme.color.text, fontSize: 15, fontWeight: 650, lineHeight: 1.55, textDecoration: 'none', transition: 'color 0.15s' }}
+      >
         {item.title}
       </a>
       {item.snippet && <p style={{ margin: '7px 0 0', color: theme.color.textMuted, fontSize: 13, lineHeight: 1.65 }}>{item.snippet}</p>}

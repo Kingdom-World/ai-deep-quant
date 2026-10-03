@@ -30,14 +30,14 @@ export default function Backdrop() {
       <div
         style={{
           position: 'absolute', left: 0, right: 0, top: '31%', height: 1,
-          background: 'linear-gradient(90deg, transparent, rgba(34,211,238,0.2) 28%, rgba(232,121,249,0.22) 55%, rgba(34,211,238,0.14) 78%, transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(34,211,238,0.3) 28%, rgba(232,121,249,0.32) 55%, rgba(34,211,238,0.14) 78%, transparent)',
           animation: 'pq-flow1 38s linear infinite',
         }}
       />
       <div
         style={{
           position: 'absolute', left: 0, right: 0, top: '67%', height: 1,
-          background: 'linear-gradient(90deg, transparent, rgba(232,121,249,0.12) 32%, rgba(34,211,238,0.18) 58%, rgba(232,121,249,0.1) 80%, transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(232,121,249,0.2) 32%, rgba(34,211,238,0.28) 58%, rgba(232,121,249,0.1) 80%, transparent)',
           animation: 'pq-flow2 52s linear infinite',
         }}
       />
@@ -54,21 +54,21 @@ export default function Backdrop() {
       <div
         style={{
           position: 'absolute', width: 920, height: 660, left: '-14%', top: '-22%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(34,211,238,0.26), transparent 72%)',
+          background: 'radial-gradient(closest-side, rgba(34,211,238,0.4), transparent 72%)',
           filter: 'blur(58px)', animation: 'pq-aur1 26s ease-in-out infinite',
         }}
       />
       <div
         style={{
           position: 'absolute', width: 820, height: 600, right: '-12%', bottom: '-20%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(232,121,249,0.17), transparent 72%)',
+          background: 'radial-gradient(closest-side, rgba(232,121,249,0.26), transparent 72%)',
           filter: 'blur(64px)', animation: 'pq-aur2 34s ease-in-out infinite',
         }}
       />
       <div
         style={{
           position: 'absolute', width: 560, height: 460, left: '40%', top: '26%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(37,99,235,0.18), transparent 72%)',
+          background: 'radial-gradient(closest-side, rgba(37,99,235,0.26), transparent 72%)',
           filter: 'blur(70px)', animation: 'pq-aur3 40s ease-in-out infinite',
         }}
       />
@@ -85,7 +85,7 @@ export default function Backdrop() {
       <div
         style={{
           position: 'absolute', inset: 0,
-          background: 'radial-gradient(90% 55% at 50% -8%, rgba(34,211,238,0.1), transparent 60%)',
+          background: 'radial-gradient(90% 55% at 50% -8%, rgba(34,211,238,0.16), transparent 60%)',
         }}
       />
 

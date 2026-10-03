@@ -17,27 +17,28 @@ export const theme = {
     up: '#ef4444',
     down: '#22c55e',
     warn: '#f59e0b',
-    accent: '#38bdf8',
+    accent: '#22d3ee',
+    magenta: '#e879f9',
   },
   fontSize: { xs: 12, sm: 13, md: 14, lg: 16, xl: 20, xxl: 26 },
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
   spacing: (n: number) => `${n * 8}px`,
-  /** 卡片通用样式（层次：边框微亮 + 顶部数据流描边 + 顶缘内高光，让卡片从深空底上"浮"起来） */
+  /** 卡片通用样式（层次：边框微亮 + 顶部青色数据流描边 + 顶缘内高光，让卡片从深空底上"浮"起来） */
   card: {
     backgroundColor: '#131b2e',
     border: '1px solid #263349',
-    borderTop: '1px solid rgba(96,165,250,0.38)',
+    borderTop: '1px solid rgba(34,211,238,0.4)',
     borderRadius: '12px',
     padding: '16px',
     boxShadow: '0 2px 12px rgba(0,0,0,0.28), inset 0 1px 0 rgba(148,163,184,0.07)',
   },
-  /** 玻璃卡片（微透 + 辉光边框 + 顶部数据流描边 + 顶缘高光） */
+  /** 玻璃卡片（微透 + 辉光边框 + 顶部青色数据流描边 + 顶缘高光） */
   glass: {
     backgroundColor: 'rgba(15,22,38,0.62)',
     backdropFilter: 'blur(14px)',
     WebkitBackdropFilter: 'blur(14px)',
     border: '1px solid rgba(148,183,235,0.17)',
-    borderTop: '1px solid rgba(96,165,250,0.42)',
+    borderTop: '1px solid rgba(34,211,238,0.45)',
     borderRadius: '14px',
     padding: '16px',
     boxShadow: '0 10px 36px rgba(0,0,0,0.34), inset 0 1px 0 rgba(200,220,255,0.07)',

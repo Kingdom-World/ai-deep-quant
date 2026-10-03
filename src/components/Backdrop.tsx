@@ -26,18 +26,18 @@ export default function Backdrop() {
         ::-webkit-scrollbar-thumb:hover { background: rgba(96,165,250,0.32); border: 2px solid transparent; background-clip: content-box; }
       `}</style>
 
-      {/* 数据流线条 ×2（1px 水平流光，极低透明度——"数据在流动"的克制意象） */}
+      {/* 数据流线条 ×2（1px 流光，青→品红双色渐变——呼应画布的激光数据流） */}
       <div
         style={{
           position: 'absolute', left: 0, right: 0, top: '31%', height: 1,
-          background: 'linear-gradient(90deg, transparent, rgba(96,165,250,0.16) 30%, rgba(56,189,248,0.22) 50%, rgba(96,165,250,0.16) 70%, transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(34,211,238,0.2) 28%, rgba(232,121,249,0.22) 55%, rgba(34,211,238,0.14) 78%, transparent)',
           animation: 'pq-flow1 38s linear infinite',
         }}
       />
       <div
         style={{
           position: 'absolute', left: 0, right: 0, top: '67%', height: 1,
-          background: 'linear-gradient(90deg, transparent, rgba(56,189,248,0.1) 35%, rgba(124,58,237,0.14) 55%, rgba(56,189,248,0.1) 75%, transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(232,121,249,0.12) 32%, rgba(34,211,238,0.18) 58%, rgba(232,121,249,0.1) 80%, transparent)',
           animation: 'pq-flow2 52s linear infinite',
         }}
       />
@@ -50,34 +50,34 @@ export default function Backdrop() {
         }}
       />
 
-      {/* 极光光斑 ×4（深蓝 / 青 / 紫罗兰 / 琥珀暖斑——冷暖对比营造纵深，呼吸漂移） */}
+      {/* 极光光斑 ×4（青主 / 品红对角 / 蓝辅助 / 琥珀微暖——对齐参考画布的青左品右全息分布） */}
       <div
         style={{
           position: 'absolute', width: 920, height: 660, left: '-14%', top: '-22%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(37,99,235,0.34), transparent 72%)',
+          background: 'radial-gradient(closest-side, rgba(34,211,238,0.26), transparent 72%)',
           filter: 'blur(58px)', animation: 'pq-aur1 26s ease-in-out infinite',
         }}
       />
       <div
         style={{
           position: 'absolute', width: 820, height: 600, right: '-12%', bottom: '-20%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(14,165,233,0.26), transparent 72%)',
+          background: 'radial-gradient(closest-side, rgba(232,121,249,0.17), transparent 72%)',
           filter: 'blur(64px)', animation: 'pq-aur2 34s ease-in-out infinite',
         }}
       />
       <div
         style={{
           position: 'absolute', width: 560, height: 460, left: '40%', top: '26%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(124,58,237,0.2), transparent 72%)',
+          background: 'radial-gradient(closest-side, rgba(37,99,235,0.18), transparent 72%)',
           filter: 'blur(70px)', animation: 'pq-aur3 40s ease-in-out infinite',
         }}
       />
-      {/* 琥珀暖斑（右中，小而暖——与冷色主调形成金融终端式的冷暖平衡） */}
+      {/* 品红高光（右上，呼应画布 K 线图的品红侧光） */}
       <div
         style={{
-          position: 'absolute', width: 420, height: 340, right: '18%', top: '38%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(245,158,11,0.1), transparent 70%)',
-          filter: 'blur(66px)', animation: 'pq-aur2 46s ease-in-out infinite reverse',
+          position: 'absolute', width: 460, height: 380, right: '6%', top: '-10%', borderRadius: '50%',
+          background: 'radial-gradient(closest-side, rgba(232,121,249,0.12), transparent 70%)',
+          filter: 'blur(66px)', animation: 'pq-aur3 44s ease-in-out infinite reverse',
         }}
       />
 
@@ -85,7 +85,7 @@ export default function Backdrop() {
       <div
         style={{
           position: 'absolute', inset: 0,
-          background: 'radial-gradient(90% 55% at 50% -8%, rgba(96,165,250,0.12), transparent 60%)',
+          background: 'radial-gradient(90% 55% at 50% -8%, rgba(34,211,238,0.1), transparent 60%)',
         }}
       />
 

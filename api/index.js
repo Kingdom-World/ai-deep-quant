@@ -23,6 +23,10 @@
 //     既可 try/catch 捕获，又保持静态可分析（nft 能识别 require 字面量）。
 // ─────────────────────────────────────────────────────────────
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+/** 本文件（函数包内 api/index.js）所在目录的父目录 = 项目根 */
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // ── 进程级错误捕获（2026-09-20 追加）──────────────────────────
 //   背景：线上日志只出现 [PaperStore] 的 warn，却没有任何致命错误，
@@ -102,6 +106,65 @@ initMs = Date.now() - t0;
 /** 是否允许把错误细节外露（默认关闭；排查时临时置 1） */
 const exposeErrors = () => process.env.DEBUG_ERRORS === '1';
 
+// ── 打包完整性探针（2026-10-04 追加）────────────────────────────
+//   背景：线上 /api/* 全量 500 `INIT_FAILED`（initMs≈290），而本地
+//   Node 22 / Node 24 直接加载入口**完全正常**，且 .vercelignore 上传集
+//   模拟也正常 —— 即：故障只可能出在「Vercel 函数打包后的文件集」。
+//
+//   Vercel 用 @vercel/nft 从入口做静态分析决定函数包内容，动态路径追不到，
+//   **漏掉的文件在本地永远看不出来**。故此处从**函数真实运行环境**内直接
+//   探测关键路径是否存在，把"猜"变成"看"。
+//
+//   安全：只输出**相对路径 + 布尔**，不含绝对部署路径、不含任何内容。
+//   ⚠️ 这是排查期专用；故障定性后由 DEBUG_ERRORS 收敛（见 fix 提交）。
+function probeFiles() {
+  const fs = require_('node:fs');
+  const p = require_('node:path');
+  const base = ROOT;
+  const targets = [
+    'server/index.cjs',
+    'server/modelrun.cjs',
+    'server/modelstore.cjs',
+    'server/modelxform.cjs',
+    'server/crosssect.cjs',
+    'server/factorexpr.cjs',
+    'server/routes/models.cjs',
+    'shared/modelspec.mjs',
+    'shared/experiments.mjs',
+    'shared/rsi.cjs',
+    'shared/cn-holidays.json',
+    'dist/index.html',
+    'node_modules/express/package.json',
+    'node_modules/pg/package.json',
+  ];
+  const out = {};
+  for (const t of targets) {
+    try {
+      out[t] = fs.existsSync(p.join(base, t));
+    } catch {
+      out[t] = 'err';
+    }
+  }
+  return out;
+}
+
+/** 初始化错误的"可诊断签名"：剥掉绝对路径，只留模块名/错误码 */
+function initErrorSignature(e) {
+  const scrub = (s) =>
+    String(s || '')
+      .replace(/[A-Za-z]:\\[^\s)'"]+/g, (m) => '…/' + m.split(/[\\/]/).pop())
+      .replace(/\/(?:var|usr|opt|home|Users|tmp)\/[^\s)'"]+/g, (m) => '…/' + m.split('/').pop());
+  return {
+    name: (e && e.name) || null,
+    code: (e && e.code) || null,
+    message: scrub(e && e.message).slice(0, 300),
+    frames: String((e && e.stack) || '')
+      .split('\n')
+      .slice(1, 5)
+      .map(scrub),
+  };
+}
+
 function sendJson(res, status, body) {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -132,11 +195,19 @@ export default function handler(req, res) {
     //    这是本端点在 2026-09-22 自查中发现的信息外露，故默认收进
     //    `DEBUG_ERRORS=1` 后面，仅内网排查时临时打开。
     const detail = exposeErrors();
+    // 打包完整性探针：`?probe=files` 或 DEBUG_ERRORS=1 时输出（排查期）
+    const wantProbe = urlSeen.includes('probe=files') || detail;
     return sendJson(res, 200, {
       ok: true,
       probe: 'entry-alive',
       appReady: !initError,
       initMs,
+      ...(wantProbe
+        ? {
+            fileProbe: probeFiles(),
+            initErrorSig: initError ? initErrorSignature(initError) : null,
+          }
+        : {}),
       ...(detail
         ? {
             initError: initError ? initError.message.slice(0, 300) : null,
@@ -152,16 +223,23 @@ export default function handler(req, res) {
 
   // ── 初始化失败：给出可诊断的响应，而不是让 Vercel 抛通用 500 ──
   if (initError) {
-    const detail = exposeErrors()
-      ? {
-          message: initError.message,
-          stack: String(initError.stack || '').split('\n').slice(0, 10),
-        }
-      : { message: '服务初始化失败，请查看运行日志（DEBUG_ERRORS=1 可临时外露详情）' };
+    const detail = exposeErrors();
+    const wantProbe = urlSeen.includes('probe=files') || detail;
     return sendJson(res, 500, {
       ok: false,
       error: 'INIT_FAILED',
-      ...detail,
+      ...(detail
+        ? {
+            message: initError.message,
+            stack: String(initError.stack || '').split('\n').slice(0, 10),
+          }
+        : { message: '服务初始化失败，请查看运行日志（DEBUG_ERRORS=1 可临时外露详情）' }),
+      ...(wantProbe
+        ? {
+            initErrorSig: initErrorSignature(initError),
+            fileProbe: probeFiles(),
+          }
+        : {}),
       diagnostics: {
         initMs,
         node: process.version,

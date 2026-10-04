@@ -1297,6 +1297,9 @@ app.get('/api/agents/capabilities', (req, res) => {
 
 
 // ───────────── 7. 健康检查 ─────────────
+// 「子系统装载状态」：可选功能模块的加载失败必须**显式外露**，不得静默吞掉（项目铁律 #4）。
+// 由 8d 段赋值；为空表示全部就绪。
+let modelRoutesError = null;
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -1306,6 +1309,12 @@ app.get('/api/health', (req, res) => {
     cacheSize: cache.size,
     staticMode: fs.existsSync(path.join(__dirname, '..', 'dist', 'index.html')),
     maintainWindow: !NO_MAINTAIN,
+    // 子系统状态：ok=就绪；degraded=该子系统装载失败（原因见 reason），其余功能不受影响
+    subsystems: {
+      modelRoutes: modelRoutesError
+        ? { ok: false, status: 'degraded', reason: String(modelRoutesError.message || modelRoutesError).slice(0, 200) }
+        : { ok: true, status: 'ready' },
+    },
     time: new Date().toISOString(),
   });
 });
@@ -1550,13 +1559,24 @@ require('./routes/knowledge-screener.cjs').registerKnowledgeScreenerRoutes(app, 
 });
 
 // ───────────── 8d. 模型工坊路由（Phase 1：/api/models/schema|validate|run） ─────────────
-require('./routes/models.cjs').registerModelRoutes(app, {
-  modelrun: require('./modelrun.cjs'),
-  modelspec: require('../shared/modelspec.mjs'),
-  modelstore: require('./modelstore.cjs'),
-  uidOf: broker.uidOf, // 与模拟盘/自选池同一套分账（登录用户名，未开鉴权时按 IP）
-  IS_VERCEL,
-});
+// 🔴 装载隔离（2026-10-04 线上 INIT_FAILED 事故后的结构性加固）：
+//   模型工坊是**新增可选功能**，它依赖的新模块（modelrun/modelstore/modelspec…）
+//   一旦在装载期抛错，绝不允许把「整站」一起带走 —— 事故当天正是如此：
+//   一个新增子系统的 require 失败，让 /api/* 全量 500、连登录都进不去。
+//   故此处按子系统隔离装载：失败 → 记日志 + 写入 modelRoutesError，
+//   由 /api/health 的 subsystems.modelRoutes 显式外露（不静默、可观测）。
+try {
+  require('./routes/models.cjs').registerModelRoutes(app, {
+    modelrun: require('./modelrun.cjs'),
+    modelspec: require('../shared/modelspec.mjs'),
+    modelstore: require('./modelstore.cjs'),
+    uidOf: broker.uidOf, // 与模拟盘/自选池同一套分账（登录用户名，未开鉴权时按 IP）
+    IS_VERCEL,
+  });
+} catch (e) {
+  modelRoutesError = e;
+  console.error('[model-routes] 装载失败（模型工坊降级，其余功能不受影响）:', (e && e.stack) || e);
+}
 
 // ───────────── 9. 静态托管（生产模式：单端口整站） ─────────────
 const DIST_DIR = path.join(__dirname, '..', 'dist');

@@ -336,6 +336,42 @@ function runCrossBacktest(opts = {}) {
   const slippage = Math.min(Math.max(Number(opts.slippage ?? 0.001), 0), 0.05);
   const ctx = buildContext(universe, factorWin, opts);
   if (ctx.error) return ctx;
+
+  return simulateWithCrossSection({
+    ctx,
+    universe,
+    crossSection,
+    isRevFactor,
+    factorWin,
+    topN,
+    rebalanceEvery,
+    capital,
+    slippage,
+    factorLabel: factor,
+    factorKind: resolved.kind,
+    factorExprMeta: resolved.exprMeta ?? null,
+    emptyGuard,
+  });
+}
+
+/**
+ * 核心模拟（唯一账本实现）：以「截面函数」作为因子的唯一入口。
+ *
+ *   为什么抽出来：Phase 1 模型工坊要跑**多因子加权 + 截面预处理 + 过滤**的复合模型，
+ *   但账本（调仓/涨跌停守卫/手续费/估值/IC）绝不能因此出现第二份实现。
+ *   `runCrossBacktest`（单因子）与 `runWithCrossSection`（复合截面）共用本函数，
+ *   口径分叉在结构上被排除。
+ *
+ *   @param {object} cfg
+ *   @param {object} cfg.ctx         buildContext 产出（dates/rowIndex/priceAt/startDate/lastDate）
+ *   @param {Function} cfg.crossSection (universe, rowIndex, prevDate) => [{code, mom}]
+ *   @param {object} cfg.emptyGuard  makeEmptyCrossSectionGuard 实例（空截面必须显式报错）
+ */
+function simulateWithCrossSection(cfg) {
+  const {
+    ctx, universe, crossSection, isRevFactor, factorWin, topN, rebalanceEvery, capital, slippage,
+    factorLabel, factorKind, factorExprMeta, emptyGuard,
+  } = cfg;
   const { dates, rowIndex, priceAt, startDate, lastDate } = ctx;
 
   // ── IC 序列（Rank IC，逐调仓期）──
@@ -508,9 +544,9 @@ function runCrossBacktest(opts = {}) {
 
   return {
     engine: 'crosssect',
-    factor,
-    factorKind: resolved.kind,
-    factorExprMeta: resolved.exprMeta ?? null,
+    factor: factorLabel,
+    factorKind,
+    factorExprMeta,
     factorWindow: factorWin,
     topN,
     rebalanceEvery,
@@ -549,7 +585,7 @@ function runCrossBacktest(opts = {}) {
     ic: {
       series: icSeries,
       ...icSummary,
-      factor,
+      factor: factorLabel,
       factorWindow: factorWin,
       basis: 'Rank IC（Spearman），T-1 因子暴露 vs 下一调仓期收益；口径与 statstest.spearman 同源',
     },
@@ -723,4 +759,56 @@ function layerAnalysis(opts = {}) {
   };
 }
 
-module.exports = { runCrossBacktest, layerAnalysis, resolveFactor, FACTOR_WINDOWS, REVERSAL_FACTORS };
+/**
+ * 以「外部提供的截面函数」驱动**同一套账本**（Phase 1 模型工坊入口）。
+ *
+ *   与 runCrossBacktest 的唯一差别：因子不再由 factor 字符串解析而来，而是调用方传入的
+ *   截面函数（典型：多因子加权 + 截面预处理 + 过滤的复合截面）。账本、涨跌停守卫、
+ *   手续费、估值、IC 全部复用 simulateWithCrossSection——不存在第二份实现。
+ *
+ * @param {(universe:Map, rowIndex:Map, prevDate:string) => {code:string, mom:number}[]} crossSection
+ * @param {object} [opts] topN / rebalanceEvery / capital / slippage / startDate / endDate /
+ *                        factorWin / factorLabel / isRevFactor / factorExprMeta
+ */
+function runWithCrossSection(crossSection, opts = {}) {
+  if (typeof crossSection !== 'function') return { error: 'runWithCrossSection 需要截面函数' };
+  const dirAbs = process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
+  const universe = loadUniverseCached(dirAbs, 80);
+  if (universe.size < 2) return { error: archiveError(universe.size) };
+
+  const factorWin = Math.max(1, Math.min(Number(opts.factorWin) || 1, 250));
+  const topN = Math.max(1, Math.min(Number(opts.topN) || 5, 20));
+  const rebalanceEvery = Math.max(1, Math.min(Number(opts.rebalanceEvery) || 20, 250));
+  const capital = Math.max(Number(opts.capital) || 1_000_000, 10_000);
+  const slippage = Math.min(Math.max(Number(opts.slippage ?? 0.001), 0), 0.05);
+
+  const emptyGuard = makeEmptyCrossSectionGuard(opts.factorLabel || 'composite');
+  const crossSectionGuarded = emptyGuard.wrap(crossSection);
+  const ctx = buildContext(universe, factorWin, opts);
+  if (ctx.error) return ctx;
+
+  return simulateWithCrossSection({
+    ctx,
+    universe,
+    crossSection: crossSectionGuarded,
+    isRevFactor: opts.isRevFactor === true,
+    factorWin,
+    topN,
+    rebalanceEvery,
+    capital,
+    slippage,
+    factorLabel: opts.factorLabel || 'composite',
+    factorKind: 'composite',
+    factorExprMeta: opts.factorExprMeta ?? null,
+    emptyGuard,
+  });
+}
+
+module.exports = {
+  runCrossBacktest,
+  runWithCrossSection,
+  layerAnalysis,
+  resolveFactor,
+  FACTOR_WINDOWS,
+  REVERSAL_FACTORS,
+};

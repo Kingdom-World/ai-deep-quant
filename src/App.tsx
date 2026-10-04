@@ -22,6 +22,7 @@ import LoginPage from './pages/LoginPage';
 import LegalPage from './pages/LegalPage';
 import ModelStudioPage from './pages/ModelStudioPage';
 import AppFooter from './components/AppFooter';
+import { zoneOfPath } from './lib/zones';
 
 /**
  * AI深度量化 路由：
@@ -72,6 +73,14 @@ function ScrollToTop() {
   return null;
 }
 
+/** 分区背景：按当前路由选区。
+ *  ⚠️ 必须在 <BrowserRouter> 内才能读 location —— 故 Backdrop 从 Router 外移入。
+ *  未迁移的功能区（backdrop='aurora'）渲染结果与改造前一致（零视觉回归）。 */
+function ZoneBackdrop() {
+  const { pathname } = useLocation();
+  return <Backdrop zone={zoneOfPath(pathname)} />;
+}
+
 function App() {
   const [authState, setAuthState] = useState<'checking' | 'in' | 'out'>('checking');
 
@@ -92,8 +101,9 @@ function App() {
 
   return (
     <>
-      <Backdrop />
       <BrowserRouter>
+        {/* 分区背景（原来挂在 Router 外 → 拿不到路由，只能全站共用一套底） */}
+        <ZoneBackdrop />
         <ScrollToTop />
         <ErrorBoundary>
           {/* 🔴 顶部导航全局单例：此前 TopNav 在每个页面组件内各自渲染（pages/* 13 处），

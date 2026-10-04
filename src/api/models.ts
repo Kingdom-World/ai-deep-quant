@@ -9,6 +9,15 @@ import type { ModelSpec, NormalizedModel, ValidationIssue } from '../../shared/m
 
 export type { ModelSpec, NormalizedModel, ValidationIssue };
 
+/** 预置模型骨架（模板库；规范单一源在 shared/modelspec.cjs → 服务端下发） */
+export interface ModelTemplate {
+  key: string;
+  label: string;
+  desc: string;
+  tags: string[];
+  model: ModelSpec;
+}
+
 /** 规范常量（由服务端下发，前端据此渲染表单） */
 export interface ModelSchema {
   ok: boolean;
@@ -24,6 +33,8 @@ export interface ModelSchema {
   engineVersion: string;
   /** 每用户模型库上限 */
   quotaPerUser: number;
+  /** 模板库（新手冷启动入口） */
+  templates: ModelTemplate[];
   /** 当前环境是否支持执行回测（公网 false：仅可配置/校验/保存/导出） */
   canRun: boolean;
 }
@@ -84,6 +95,12 @@ export interface ModelValidationResponse {
   errors: ValidationIssue[];
   warnings: ValidationIssue[];
   model: NormalizedModel | null;
+  /**
+   * 语义核心哈希（模型**定义**身份；与 name / 数据窗口 / 回测参数无关）。
+   * 公网不能执行回测时，用它生成「离线执行回执」——本地跑出的结果
+   * 可凭同一哈希核对是同一个模型定义。校验不通过时为 null。
+   */
+  modelHash: string | null;
 }
 
 export type ModelRunResponse =

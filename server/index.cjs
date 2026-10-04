@@ -1306,7 +1306,7 @@ app.get('/api/health', (req, res) => {
     name: `${APP_NAME}数据服务`,
     version: APP_VERSION,
     uptime: Math.floor(process.uptime()),
-    cacheSize: cache.size,
+    cacheSize: quoteGateway.cacheSize(),
     staticMode: fs.existsSync(path.join(__dirname, '..', 'dist', 'index.html')),
     maintainWindow: !NO_MAINTAIN,
     // 子系统状态：ok=就绪；degraded=该子系统装载失败（原因见 reason），其余功能不受影响

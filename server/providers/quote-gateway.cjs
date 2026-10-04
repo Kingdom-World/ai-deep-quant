@@ -833,6 +833,10 @@ function createQuoteGateway(deps) {
     searchSymbol,
     getQuoteInternal,
     fetchDailyRows,
+    // 内存缓存条数（观测用）。缓存是闭包私有 —— 第四刀拆分后 index.cjs 再也
+    // 碰不到它，故必须由网关自己对外暴露，否则 /api/health 的 cacheSize 会
+    // 引用不存在的变量直接 500。
+    cacheSize: () => cache.size,
   };
 }
 

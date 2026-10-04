@@ -148,6 +148,31 @@ function probeFiles() {
   return out;
 }
 
+// ── 逐模块真实 require 探针 ────────────────────────────────────
+//   `existsSync=true` 只证明**文件在**，不证明**能被 require**。
+//   模型工坊链路上有一个"文件存在但加载失败"的可能（require(esm) 互操作、
+//   模块级副作用…），故这里真刀真枪 require 一次，把错误码原样带出来。
+//   ⚠️ 只 require 纯模块（无副作用）；失败模块不会被缓存，可重复探测。
+function probeRequires() {
+  const mods = [
+    '../server/modelxform.cjs',
+    '../server/modelrun.cjs',
+    '../server/modelstore.cjs',
+    '../server/routes/models.cjs',
+    '../shared/modelspec.mjs',
+  ];
+  const out = {};
+  for (const m of mods) {
+    try {
+      require_(m);
+      out[m] = 'ok';
+    } catch (e) {
+      out[m] = `${(e && (e.code || e.name)) || 'Error'}: ${initErrorSignature(e).message}`;
+    }
+  }
+  return out;
+}
+
 /** 初始化错误的"可诊断签名"：剥掉绝对路径，只留模块名/错误码 */
 function initErrorSignature(e) {
   const scrub = (s) =>
@@ -205,6 +230,7 @@ export default function handler(req, res) {
       ...(wantProbe
         ? {
             fileProbe: probeFiles(),
+            requireProbe: probeRequires(),
             initErrorSig: initError ? initErrorSignature(initError) : null,
           }
         : {}),

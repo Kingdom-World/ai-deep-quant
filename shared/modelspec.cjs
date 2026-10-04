@@ -71,6 +71,94 @@ const LIMITS = {
   maxIdLen: 40,
 };
 
+/**
+ * 预置模型骨架（模板库）—— 声明式数据，**每个模板都必须能通过本文件自己的校验**。
+ *
+ *   为什么放在规范里，而不是前端硬编码：
+ *     模板本质就是「一份合法的 Model JSON」，属于规范的示例面。放在这里 ⇒
+ *       · 服务端经 /api/models/schema 下发（单一真相源，前端不手抄）
+ *       · test/modelspec.test.cjs 可以锁住「每个模板真的能过校验」
+ *         —— 模板写错是最难查的一类缺陷：用户点一下才报错，且看着像"表单坏了"。
+ *   ⚠️ 模板与用户手写模型**完全同构**：前端载入后一切可改，不构成第二套规范。
+ *   ⚠️ 数值型过滤器一律不放进模板：归档字段的量纲（amount/turn）会变，
+ *      写死阈值会把候选池筛空。模板里只用 `min: 0` 表达「该字段必须存在」
+ *      （引擎口径：字段缺失视为不满足）。
+ */
+const MODEL_TEMPLATES = [
+  {
+    key: 'mom20-baseline',
+    label: '20 日动量基线',
+    desc: '最小可用模型：单因子 + 月度调仓。第一次用就从这里开始。',
+    tags: ['单因子', '月度'],
+    model: {
+      schemaVersion: SCHEMA_VERSION,
+      name: '20日动量基线',
+      hypothesis: '短周期动量在核心池上具备横截面区分度',
+      factors: [{ id: 'mom20', expr: 'mom20', weight: 1, direction: 1 }],
+      backtest: { rebalance: 'monthly', groups: 5, fees: true },
+      meta: { author: 'template', tags: ['动量'] },
+    },
+  },
+  {
+    key: 'multi-mom',
+    label: '双周期动量 + 标准化',
+    desc: '120 日趋势确认叠加 20 日短动量；先去极值再 z-score，让两因子量纲可比。',
+    tags: ['双因子', '去极值', '标准化'],
+    model: {
+      schemaVersion: SCHEMA_VERSION,
+      name: '双周期动量(120/20)',
+      hypothesis: '长期趋势成立时，短周期动量更可能延续',
+      factors: [
+        { id: 'trend', expr: 'mom120', weight: 1, direction: 1 },
+        { id: 'short', expr: 'mom20', weight: 0.6, direction: 1 },
+      ],
+      transforms: [
+        { type: 'winsorize', args: { method: 'mad', n: 3 } },
+        { type: 'zscore' },
+      ],
+      backtest: { rebalance: 'monthly', groups: 5, fees: true },
+      meta: { author: 'template', tags: ['动量', '趋势'] },
+    },
+  },
+  {
+    key: 'mom-rev-combo',
+    label: '动量 + 反转组合',
+    desc: '用方向相反的因子互相对冲：中期动量为主，短期反转做辅。',
+    tags: ['双因子', '对冲'],
+    model: {
+      schemaVersion: SCHEMA_VERSION,
+      name: '动量+反转组合(60/20)',
+      hypothesis: '中期动量与短期反转的相关性低，组合后截面区分度更稳',
+      factors: [
+        { id: 'mom60', expr: 'mom60', weight: 1, direction: 1 },
+        { id: 'rev20', expr: 'rev20', weight: 0.8, direction: 1 },
+      ],
+      transforms: [
+        { type: 'winsorize', args: { method: 'mad', n: 3 } },
+        { type: 'zscore' },
+      ],
+      backtest: { rebalance: 'monthly', groups: 5, fees: true },
+      meta: { author: 'template', tags: ['动量', '反转'] },
+    },
+  },
+  {
+    key: 'flow-cleaned-mom',
+    label: '流动性清洗 + 动量（周频）',
+    desc: '先用过滤器剔除成交额缺失样本（缺失视为不满足），再按周频调仓、按分位排名合成。',
+    tags: ['过滤器', '排名', '周频'],
+    model: {
+      schemaVersion: SCHEMA_VERSION,
+      name: '流动性清洗动量(周频)',
+      hypothesis: '剔除成交额缺失的样本后，动量信号的横截面区分度更干净',
+      factors: [{ id: 'mom20', expr: 'mom20', weight: 1, direction: 1 }],
+      transforms: [{ type: 'rank' }],
+      filters: [{ type: 'field_range', field: 'amount', min: 0 }],
+      backtest: { rebalance: 'weekly', groups: 10, fees: true },
+      meta: { author: 'template', tags: ['动量', '流动性'] },
+    },
+  },
+];
+
 // ── 工具 ─────────────────────────────────────────────────────
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -400,6 +488,7 @@ module.exports = {
   UNIVERSES,
   COMBINE_METHODS,
   LIMITS,
+  MODEL_TEMPLATES,
   validateModel,
   normalizeModel,
   rebalanceBars,

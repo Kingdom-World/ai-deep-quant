@@ -75,26 +75,49 @@ function assertHasKeys(obj, keys, label) {
 
 test('契约 schema：页面渲染表单所需的全部字段', async () => {
   const r = await call(app(), 'GET /api/models/schema');
-  assertHasKeys(r.body, ['ok', 'schemaVersion', 'presets', 'transforms', 'filterFields', 'filterOps', 'rebalance', 'universes', 'combineMethods', 'limits', 'engineVersion', 'quotaPerUser', 'canRun'], 'schema');
+  assertHasKeys(r.body, ['ok', 'schemaVersion', 'presets', 'transforms', 'filterFields', 'filterOps', 'rebalance', 'universes', 'combineMethods', 'limits', 'engineVersion', 'quotaPerUser', 'templates', 'canRun'], 'schema');
   assertHasKeys(r.body.limits, ['maxFactors', 'maxTransforms', 'maxFilters', 'maxTags', 'maxNameLen', 'maxHypothesisLen', 'maxWeight', 'minGroups', 'maxGroups', 'maxIdLen'], 'schema.limits');
   assert.ok(Array.isArray(r.body.transforms) && r.body.transforms.every((t) => 'type' in t && 'args' in t), 'transforms 每项需含 type/args');
   assert.ok(r.body.presets.length > 0 && r.body.filterFields.length > 0);
+  // 模板库：新手入口（左栏「从模板新建」直接读这些字段）
+  assert.ok(Array.isArray(r.body.templates) && r.body.templates.length > 0, 'templates 必须非空');
+  assert.ok(
+    r.body.templates.every((t) => t.key && t.label && t.desc && Array.isArray(t.tags) && t.model),
+    'templates 每项需含 key/label/desc/tags/model',
+  );
 });
 
-test('契约 validate：ok / errors[] / warnings[] / model', async () => {
+test('契约 validate：ok / errors[] / warnings[] / model / modelHash', async () => {
   const ok = await call(app(), 'POST /api/models/validate', {
     schemaVersion: 1, name: '契约', factors: [{ id: 'f1', expr: 'mom20' }], meta: { author: 'x' },
   });
-  assertHasKeys(ok.body, ['ok', 'errors', 'warnings', 'model'], 'validate');
+  assertHasKeys(ok.body, ['ok', 'errors', 'warnings', 'model', 'modelHash'], 'validate');
   assert.strictEqual(ok.body.errors.length, 0);
   assert.strictEqual(ok.body.warnings.length, 1, '未声明 weight 应给 warning（页面会展示）');
   assertHasKeys(ok.body.warnings[0], ['path', 'message'], 'validate.warnings[0]');
+  // 离线执行回执依赖该哈希（公网不能执行时，JSON 在本地跑出的结果要与它对上）
+  assert.strictEqual(typeof ok.body.modelHash, 'string', 'modelHash 必须为字符串');
+  assert.ok(ok.body.modelHash.length >= 8, 'modelHash 长度异常');
 
   const bad = await call(app(), 'POST /api/models/validate', {
     schemaVersion: 1, name: '契约', factors: [{ id: 'f1', expr: 'nope(1)' }], meta: { author: 'x' },
   });
   assert.ok(bad.body.errors.length > 0, '应报错');
   assertHasKeys(bad.body.errors[0], ['path', 'message'], 'validate.errors[0]');
+  assert.strictEqual(bad.body.modelHash, null, '校验不通过时不得给出哈希（避免为非法模型背书）');
+});
+
+test('契约 validate：modelHash 与窗口参数无关（同定义 → 同哈希，可复现）', async () => {
+  const base = { schemaVersion: 1, name: '同定义', factors: [{ id: 'f1', expr: 'mom20', weight: 1, direction: 1 }], meta: { author: 'x' } };
+  const a = await call(app(), 'POST /api/models/validate', base);
+  // 只改 name（非语义核心）→ 哈希必须不变：否则"改个标题就换身份"，回执对不上
+  const b = await call(app(), 'POST /api/models/validate', { ...base, name: '改了标题' });
+  assert.strictEqual(a.body.modelHash, b.body.modelHash, 'name 属非语义字段，不得影响 modelHash');
+  // 改语义核心（因子权重）→ 哈希必须变
+  const c = await call(app(), 'POST /api/models/validate', {
+    ...base, factors: [{ id: 'f1', expr: 'mom20', weight: 2, direction: 1 }],
+  });
+  assert.notStrictEqual(a.body.modelHash, c.body.modelHash, '权重变了哈希必须跟着变');
 });
 
 test('契约 模型库：list/save/get/remove 的字段', async () => {

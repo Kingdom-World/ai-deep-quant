@@ -9,7 +9,7 @@
 //     缺失值（mom === null/非有限）一律**透传不参与统计**，由最后一步 fill_missing 兜底，
 //     或由组合阶段按"缺任一因子即剔除"处理（与 factorexpr 的交集语义一致）。
 //
-//   算子白名单由 shared/modelspec.mjs 持有（TRANSFORM_TYPES），本文件负责实现；
+//   算子白名单由 shared/modelspec.cjs 持有（TRANSFORM_TYPES），本文件负责实现；
 //   两者的键一致性由 test/modelxform.test.cjs 的锁用例保证。
 // ─────────────────────────────────────────────────────────────
 
@@ -115,7 +115,7 @@ function fillMissing(rows, args = {}) {
 
 const IMPL = { winsorize, zscore, rank, fill_missing: fillMissing };
 
-/** 支持的算子名（与 shared/modelspec.mjs TRANSFORM_TYPES 必须一致——测试有锁） */
+/** 支持的算子名（与 shared/modelspec.cjs TRANSFORM_TYPES 必须一致——测试有锁） */
 const SUPPORTED = Object.keys(IMPL);
 
 /**

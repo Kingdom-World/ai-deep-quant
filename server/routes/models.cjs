@@ -39,6 +39,8 @@ function registerModelRoutes(app, deps) {
       limits: modelspec.LIMITS,
       engineVersion: modelrun.ENGINE_VERSION,
       quotaPerUser: modelstore.QUOTA_PER_UID,
+      /** 预置模型骨架（模板库；规范单一源在 shared/modelspec.cjs） */
+      templates: modelspec.MODEL_TEMPLATES,
       /** 公网是否可执行（false=仅可配置/导出；前端据此禁用「运行」按钮并给出说明） */
       canRun: !IS_VERCEL,
     });
@@ -48,7 +50,19 @@ function registerModelRoutes(app, deps) {
   app.post('/api/models/validate', (req, res) => {
     try {
       const r = modelspec.normalizeModel(req.body, { parseExpr: fe.parseExpression });
-      res.json({ ok: r.ok, errors: r.errors, warnings: r.warnings, model: r.model });
+      res.json({
+        ok: r.ok,
+        errors: r.errors,
+        warnings: r.warnings,
+        model: r.model,
+        /**
+         * 语义核心哈希（模型**定义**身份，与数据窗口/回测参数无关）。
+         * 用途：公网不能执行回测时，前端用它生成「离线执行回执」——
+         * 用户把 JSON 拿到本地跑出来的结果，可以凭这个 hash 对上是同一个模型定义。
+         * 由服务端计算 ⇒ 前后端不会各写一份哈希规则（规则含 canonicalJSON 排序）。
+         */
+        modelHash: r.ok ? modelrun.modelHash(r.model) : null,
+      });
     } catch (e) {
       res.status(500).json({ ok: false, error: `校验失败: ${String(e.message || e).slice(0, 120)}` });
     }

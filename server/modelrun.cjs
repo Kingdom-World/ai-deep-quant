@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────
 // Model JSON → 回测执行桥接（Phase 1 模型工坊）
 //
-//   职责：把**声明式 Model JSON**（shared/modelspec.mjs 规范）翻译成引擎能吃的
+//   职责：把**声明式 Model JSON**（shared/modelspec.cjs 规范）翻译成引擎能吃的
 //   「复合截面函数」，再交给 crosssect.runWithCrossSection 跑同一套账本。
 //
 //   🔴 绝不静默忽略：模型里声明的 factors / transforms / filters 必须**全部生效**。

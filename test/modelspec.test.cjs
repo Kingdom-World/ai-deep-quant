@@ -306,3 +306,49 @@ test('接链：规范化模型的因子表达式可直接喂给 runCrossBacktest
   assert.ok(!bt.error, `引擎应接受该表达式，实际：${bt.error}`);
   assert.ok(Array.isArray(bt.equity) && bt.equity.length > 5, '应产出净值序列');
 });
+
+// ── 5. 模板库：每个模板必须"点一下就合法" ─────────────────────
+//   模板写错是最难查的一类缺陷：用户点一下才报错，且看着像"表单坏了"。
+//   故此处把「模板 == 合法 Model JSON」变成硬断言。
+test('模板库：结构完整（key/label/desc/tags/model）且 key 唯一', () => {
+  const tpl = ms.MODEL_TEMPLATES;
+  assert.ok(Array.isArray(tpl) && tpl.length >= 3, '至少提供 3 个模板（新手冷启动必需）');
+  const keys = tpl.map((t) => t.key);
+  assert.deepStrictEqual([...new Set(keys)], keys, '模板 key 不得重复');
+  for (const t of tpl) {
+    for (const k of ['key', 'label', 'desc', 'tags', 'model']) {
+      assert.ok(k in t, `模板 ${t.key} 缺少字段 ${k}`);
+    }
+    assert.ok(Array.isArray(t.tags) && t.tags.length > 0, `模板 ${t.key} 的 tags 必须非空数组`);
+    assert.strictEqual(typeof t.model, 'object', `模板 ${t.key} 的 model 必须是对象`);
+  }
+});
+
+test('模板库：每个模板都能通过权威校验（0 error / 0 warning）', () => {
+  const bad = [];
+  for (const t of ms.MODEL_TEMPLATES) {
+    const r = ms.normalizeModel(t.model, { parseExpr: fe.parseExpression });
+    if (!r.ok || r.errors.length) bad.push(`${t.key}: ${JSON.stringify(r.errors)}`);
+    // warning 也不允许：模板出现"未声明 weight"之类提示，等于给新手看红字
+    else if (r.warnings.length) bad.push(`${t.key} 有 warning: ${JSON.stringify(r.warnings)}`);
+  }
+  assert.deepStrictEqual(bad, [], `模板不合法：\n  · ${bad.join('\n  · ')}`);
+});
+
+test('模板库：因子表达式均为预置因子或白名单表达式（不得夹带可执行内容）', () => {
+  const forbidden = /[;'"`\\{}\[\]=><!&|$#@~\u3000-\u303f\uff00-\uffef]/;
+  for (const t of ms.MODEL_TEMPLATES) {
+    for (const f of t.model.factors || []) {
+      assert.ok(ms.PRESET_FACTORS.includes(f.expr) || typeof fe.parseExpression(f.expr).ok === 'boolean',
+        `模板 ${t.key} 的因子 ${f.expr} 既不是预置因子也不可解析`);
+      assert.ok(!forbidden.test(f.expr), `模板 ${t.key} 的因子表达式含可疑字符：${f.expr}`);
+    }
+    for (const tr of t.model.transforms || []) {
+      assert.ok(tr.type in ms.TRANSFORM_TYPES, `模板 ${t.key} 用了未知算子 ${tr.type}`);
+    }
+    for (const flt of t.model.filters || []) {
+      assert.ok(ms.FILTER_FIELDS.includes(flt.field), `模板 ${t.key} 用了未知过滤字段 ${flt.field}`);
+    }
+  }
+});
+

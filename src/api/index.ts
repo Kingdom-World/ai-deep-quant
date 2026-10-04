@@ -33,6 +33,8 @@ export { screenerApi, moodApi, getTicks, watchlistApi } from './screener';
 export type { NewsItem, NewsResponse, NewsHealth } from './news';
 export { newsApi, newsHealthApi, feedApi } from './news';
 export { askAssistant, aiApi } from './assistant';
+export type { ModelSpec, NormalizedModel, ValidationIssue, ModelSchema, ModelBacktestResult, ModelPlan, ModelRunResponse, ModelRunOptions, ModelValidationResponse } from './models';
+export { modelsApi } from './models';
 export * from './backtest';
 export * from './agent';
 export * from './research';

@@ -1548,6 +1548,14 @@ require('./routes/knowledge-screener.cjs').registerKnowledgeScreenerRoutes(app, 
   watchlist,
   broker,
 });
+
+// ───────────── 8d. 模型工坊路由（Phase 1：/api/models/schema|validate|run） ─────────────
+require('./routes/models.cjs').registerModelRoutes(app, {
+  modelrun: require('./modelrun.cjs'),
+  modelspec: require('../shared/modelspec.mjs'),
+  IS_VERCEL,
+});
+
 // ───────────── 9. 静态托管（生产模式：单端口整站） ─────────────
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const MIME = {

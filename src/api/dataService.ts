@@ -13,123 +13,23 @@ import {
   CACHE_TTL_HISTORY,
   CACHE_TTL_MKLINE,
   CACHE_TTL_SEARCH,
-  REQUEST_TIMEOUT,
 } from '../config';
+import { clearCache as clearMemoryCache, getCached, setCached } from '../utils/cache';
+
+// ============ Client 层（已抽出至 src/api/client.ts，此处 re-export 保持调用方零改动） ============
 import {
-  clearCache as clearMemoryCache,
-  getCacheSize,
-  getCached,
-  setCached,
-} from '../utils/cache';
-
-// ============ 配置 ============
-const CONFIG = {
-  /** 后端 API 基础路径（同源 /api：生产由服务端提供，开发经 vite proxy） */
-  basePath: '/api',
-  /** 请求超时 */
-  timeout: REQUEST_TIMEOUT,
-  /** 是否启用缓存 */
-  enableCache: true,
-};
-
-// ============ 缓存（统一内存缓存工具，分级 TTL） ============
-const getCacheKey = (type: string, params: unknown): string => `${type}:${JSON.stringify(params)}`;
-
-/**
- * 带 HTTP 状态与结构化响应体的错误。
- * 用于后端「因档位/运行时不可用而拒绝」的场景（403/503）：这类拒绝不是故障，
- * 而是**能力边界声明**，UI 必须能读到 tier / availableTiers 才能给出正确指引。
- */
-export class ApiError extends Error {
-  status: number;
-  body: any;
-  constructor(message: string, status: number, body: any) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.body = body;
-  }
-  /** 从任意异常里取出后端结构化体（非 ApiError 返回 null） */
-  static bodyOf(e: unknown): any {
-    return e instanceof ApiError ? e.body : null;
-  }
-}
-
-// ============ 请求去重（相同 in-flight 请求合并） ============
-const inFlight = new Map<string, Promise<unknown>>();
-
-/** 公共行情端点前缀（与后端 PUBLIC_API_PREFIXES 白名单一致）：不带 Cookie 发送，
- *  无 Cookie 请求才能吃到 Vercel CDN 边缘缓存（s-maxage），20 人轮询在边缘合并、不烧函数 CPU。
- *  这些端点返回公开市场数据、无个体差异，omit 凭证无任何功能影响。 */
-const PUBLIC_PATH_PREFIXES = ['/indices', '/mood', '/quote/', '/quotes?', '/minute/', '/sectors/', '/news?'];
-function isPublicPath(path: string): boolean {
-  return PUBLIC_PATH_PREFIXES.some((p) => path.startsWith(p));
-}
-
-/** 基础请求（相对路径 /api，经 vite proxy 或同源到后端）
- *  opts.omitCredentials：强制不带凭证；公共行情路径（isPublicPath）自动 omit。 */
-export async function apiGet<T>(path: string, opts?: { omitCredentials?: boolean }): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
-  try {
-    const res = await fetch(`${CONFIG.basePath}${path}`, {
-      signal: controller.signal,
-      credentials: opts?.omitCredentials || isPublicPath(path) ? 'omit' : 'same-origin',
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      throw new Error(body?.error || `后端接口 HTTP ${res.status}`);
-    }
-    markSourceOk();
-    return (await res.json()) as T;
-  } catch (e: any) {
-    markSourceFail();
-    if (e?.name === 'AbortError') {
-      throw new Error('请求超时（请确认已启动数据服务）');
-    }
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** 公共行情请求：不带凭证（吃边缘缓存），仅用于后端公开行情白名单内的只读端点 */
-export const apiGetPublic = <T>(path: string): Promise<T> => apiGet<T>(path, { omitCredentials: true });
-
-/**
- * 带缓存 + 去重的请求（TTL 内命中直接返回缓存，不发起网络请求）
- */
-async function apiGetCached<T>(key: string, path: string, ttlMs: number): Promise<T> {
-  if (CONFIG.enableCache) {
-    const cached = getCached<T>(key, ttlMs);
-    if (cached !== null) return cached;
-  }
-
-  const existing = inFlight.get(key);
-  if (existing) return existing as Promise<T>;
-
-  const p = apiGet<T>(path).then((data) => {
-    if (CONFIG.enableCache) setCached(key, data);
-    return data;
-  });
-  inFlight.set(key, p);
-  try {
-    return await p;
-  } finally {
-    inFlight.delete(key);
-  }
-}
-
-// ============ 数据源健康（真实记录，替代此前"永远健康"的假状态） ============
-const sourceHealth = { lastSuccessAt: 0, lastFailureAt: 0, failCount: 0 };
-function markSourceOk() {
-  sourceHealth.lastSuccessAt = Date.now();
-  sourceHealth.failCount = 0;
-}
-function markSourceFail() {
-  sourceHealth.lastFailureAt = Date.now();
-  sourceHealth.failCount += 1;
-}
+  getCacheKey,
+  ApiError,
+  apiGet,
+  apiGetPublic,
+  apiGetTimed,
+  apiPost,
+  apiDelete,
+  apiGetCached,
+  fetchAbsolute,
+  getSourceHealth,
+} from './client';
+export { ApiError, apiGet, apiGetPublic };
 
 // ============ 统一数据结构 ============
 
@@ -312,7 +212,7 @@ export const getHistoryWithMeta = async (
   if (HISTORY_API) {
     try {
       const url = `${HISTORY_API}/api/history?symbol=${encodeURIComponent(symbol)}&count=${count}&frequency=${frequency}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      const res = await fetchAbsolute(url, { timeoutMs: 12000 });
       if (res.ok) {
         const j = await res.json();
         const rows: { date: string; open: number; close: number; high: number; low: number; volume: number }[] =
@@ -654,87 +554,21 @@ export const askAssistant = async (
 ): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string; reasoning?: string | null; degraded?: string }> => {
   const qs = new URLSearchParams();
   qs.set('q', question);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 75000);
-  if (externalSignal) {
-    if (externalSignal.aborted) { clearTimeout(timer); throw new DOMException('Aborted', 'AbortError'); }
-    externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-  try {
-    const res = await fetch(`${CONFIG.basePath}/qa?${qs.toString()}`, { signal: controller.signal });
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
-    }
-    return (await res.json()) as {
-      question: string;
-      type: string;
-      answer: string;
-      engine?: string;
-      reasoning?: string | null;
-      degraded?: string;
-    };
-  } catch (e) {
-    if ((e as Error)?.name === 'AbortError') throw new Error('云端模型响应超时，请稍后重试');
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
+  return apiGetTimed<{
+    question: string;
+    type: string;
+    answer: string;
+    engine?: string;
+    reasoning?: string | null;
+    degraded?: string;
+  }>(`/qa?${qs.toString()}`, {
+    timeoutMs: 75000,
+    signal: externalSignal,
+    timeoutMessage: '云端模型响应超时，请稍后重试',
+  });
 };
 
-/** DELETE 请求（告警删除等资源移除） */
-async function apiDelete<T>(path: string): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
-  try {
-    const res = await fetch(`${CONFIG.basePath}${path}`, { method: 'DELETE', signal: controller.signal });
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      throw new Error((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`);
-    }
-    return (await res.json()) as T;
-  } catch (e) {
-    if ((e as Error)?.name === 'AbortError') {
-      throw new Error('请求超时（请确认已启动数据服务）');
-    }
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // ───────────── 模拟交易（paper trading） ─────────────
-
-/** POST 请求（模拟盘下单/撤单/重置/策略启停）
- *  opts.timeoutMs：个别慢端点（如 Agent 流水线）单独放宽——全局 30s 预算对它们是假性故障
- *  （GUI 检查 Bug2：Agent 完整模式公网耗时 >30s，前端先断，报"请求超时（请确认已启动数据服务）"） */
-async function apiPost<T>(path: string, body: unknown, opts?: { timeoutMs?: number; timeoutMessage?: string }): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? CONFIG.timeout);
-  try {
-    const res = await fetch(`${CONFIG.basePath}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      // 后端在 403/503 时会带回结构化信息（tier / availableTiers），
-      // 前端据此给出「该用哪个档位」的可操作提示，而不是笼统一句失败。
-      // 挂在 ApiError 上而非塞进 message 字符串，避免调用方反解析文案。
-      throw new ApiError((err as { error?: string })?.error || `后端接口 HTTP ${res.status}`, res.status, err);
-    }
-    return (await res.json()) as T;
-  } catch (e) {
-    if ((e as Error)?.name === 'AbortError') {
-      throw new Error(opts?.timeoutMessage || '请求超时（请确认已启动数据服务）');
-    }
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 export interface PaperPosition {
   symbol: string;
@@ -964,17 +798,20 @@ export const watchlistApi = {
 };
 
 /** 6. 数据源状态 */
-export const getDataSourceStatus = () => ({
-  primary: 'AI深度量化数据服务',
-  /** 60 秒内没有新失败即视为健康（真实探测，非硬编码） */
-  primaryHealthy: Date.now() - sourceHealth.lastFailureAt > 60_000 || sourceHealth.failCount === 0,
-  primaryConfigured: true,
-  fallback: '本地 Baostock 归档（上游失败时自动兜底）',
-  current: 'backend',
-  cacheSize: getCacheSize(),
-  lastFailureAt: sourceHealth.lastFailureAt,
-  failCount: sourceHealth.failCount,
-});
+export const getDataSourceStatus = () => {
+  const h = getSourceHealth();
+  return {
+    primary: 'AI深度量化数据服务',
+    /** 60 秒内没有新失败即视为健康（真实探测，非硬编码） */
+    primaryHealthy: Date.now() - h.lastFailureAt > 60_000 || h.failCount === 0,
+    primaryConfigured: true,
+    fallback: '本地 Baostock 归档（上游失败时自动兜底）',
+    current: 'backend',
+    cacheSize: h.cacheSize,
+    lastFailureAt: h.lastFailureAt,
+    failCount: h.failCount,
+  };
+};
 
 /** 7. 强制切换（占位） */
 export const forceSwitchDataSource = () => {

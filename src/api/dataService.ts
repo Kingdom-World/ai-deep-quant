@@ -7,7 +7,6 @@
 // ─────────────────────────────────────────────────────────────
 import type { Market } from '../lib/stock';
 import {
-  BACKEND_MODE,
   CACHE_TTL_QUOTE,
   CACHE_TTL_INDICES,
   CACHE_TTL_HISTORY,
@@ -31,147 +30,13 @@ import {
 } from './client';
 export { ApiError, apiGet, apiGetPublic };
 
-// ============ 统一数据结构 ============
-
-/** 统一报价 */
-export interface UnifiedQuote {
-  symbol: string;
-  name?: string;
-  price: number;
-  changePercent: number | null;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  volume: number | null;
-  prevClose: number | null;
-  timestamp: number;
-  _source: 'backend';
-  /** A 股五档盘口（腾讯源提供；美股/港股为 null） */
-  bids?: { price: number; qty: number }[] | null;
-  asks?: { price: number; qty: number }[] | null;
-  quoteTime?: string | null;
-}
-
-/** 统一 K 线 */
-export interface UnifiedKline {
-  time: number;
-  date: string;
-  open: number;
-  close: number;
-  high: number;
-  low: number;
-  volume: number;
-  _source?: 'backend';
-}
-
-/** 后端报价响应 */
-interface BackendQuote {
-  symbol: string;
-  name: string;
-  price: number;
-  prevClose: number | null;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  volume: number | null;
-  changePercent: number;
-  bids?: { price: number; qty: number }[] | null;
-  asks?: { price: number; qty: number }[] | null;
-  quoteTime?: string | null;
-}
-
-/** 后端 K 线响应 */
-interface BackendHistory {
-  symbol: string;
-  frequency: string;
-  /** 实际复权口径：主源失败回退新浪（不复权）时后端标注 'none(备用源)'，前端必须透传展示 */
-  adjust?: string;
-  klines: { date: string; open: number | null; close: number | null; high: number | null; low: number | null; volume: number | null }[];
-}
-
-// ============ 统一对外接口 ============
-
-/** 1. 获取单个股票实时报价 */
-export const getQuote = async (
-  symbol: string,
-  market: Market = 'CN',
-  forceRefresh = false,
-): Promise<UnifiedQuote> => {
-  const cacheKey = getCacheKey('quote', { symbol, market });
-  if (!forceRefresh) {
-    const cached = getCached<UnifiedQuote>(cacheKey, CACHE_TTL_QUOTE);
-    if (cached !== null) return cached;
-  }
-  const raw = await apiGetCached<BackendQuote>(
-    forceRefresh ? `${cacheKey}:fresh` : cacheKey,
-    `/quote/${encodeURIComponent(symbol)}`,
-    CACHE_TTL_QUOTE,
-  );
-  const result: UnifiedQuote = {
-    symbol,
-    name: raw.name ?? undefined,
-    price: raw.price,
-    changePercent: raw.changePercent ?? 0,
-    open: raw.open,
-    high: raw.high,
-    low: raw.low,
-    volume: raw.volume,
-    prevClose: raw.prevClose,
-    timestamp: Date.now(),
-    _source: 'backend',
-    bids: raw.bids ?? null,
-    asks: raw.asks ?? null,
-    quoteTime: raw.quoteTime ?? null,
-  };
-  setCached(cacheKey, result);
-  return result;
-};
-
-/** Python+Flask 后端模式：推荐/批量报价走服务端聚合接口（限流友好） */
-const PYTHON = BACKEND_MODE === 'python';
-
-/** 最近一次评分快照时间（python 模式来自后端每日 16:00 定时任务） */
-let lastComputedAt: string | null = null;
-export const getLastComputedAt = (): string | null => lastComputedAt;
-
-/** 2. 批量获取报价（python 模式：后端 /api/quotes 一次聚合；node 模式：逐个调用） */
-export const getQuotesBatch = async (
-  symbols: string[],
-  market: Market = 'CN',
-  forceRefresh = false,
-): Promise<UnifiedQuote[]> => {
-  if (symbols.length === 0) return [];
-  if (PYTHON) {
-    const key = getCacheKey('quotes', { symbols, forceRefresh });
-    if (!forceRefresh) {
-      const cached = getCached<UnifiedQuote[]>(key, CACHE_TTL_QUOTE);
-      if (cached !== null) return cached;
-    }
-    const raw = await apiGetCached<BackendQuote[]>(
-      forceRefresh ? `${key}:fresh` : key,
-      `/quotes?symbols=${encodeURIComponent(symbols.join(','))}`,
-      CACHE_TTL_QUOTE,
-    );
-    const items = (raw || []).map((it) => ({
-      symbol: it.symbol,
-      name: it.name ?? undefined,
-      price: it.price,
-      changePercent: it.changePercent ?? 0,
-      open: it.open,
-      high: it.high,
-      low: it.low,
-      volume: it.volume,
-      prevClose: it.prevClose,
-      timestamp: Date.now(),
-      _source: 'backend' as const,
-    }));
-    setCached(key, items);
-    return items;
-  }
-  return Promise.all(
-    symbols.map((s) => getQuote(s, market, forceRefresh).catch(() => null)),
-  ).then((list) => list.filter((q): q is UnifiedQuote => q !== null));
-};
+// ============ 共享类型 / 报价域 / 运行态（已抽出；此处 re-export 保持调用方零改动） ============
+import type { UnifiedQuote, UnifiedKline, BackendQuote, BackendHistory } from './types';
+import { PYTHON, setLastComputedAt } from './runtime';
+import { getQuote, getQuotesBatch } from './quote';
+export type { UnifiedQuote, UnifiedKline, BackendQuote, BackendHistory } from './types';
+export { getQuote, getQuotesBatch } from './quote';
+export { getLastComputedAt } from './runtime';
 
 /** 可选：本地/Render Baostock 历史后端地址（.env 配置 VITE_HISTORY_API） */
 const HISTORY_API = (import.meta.env.VITE_HISTORY_API as string) || '';
@@ -440,7 +305,7 @@ export const getRecommendations = async (
         computedAt?: string;
       }
     >(`/recommend?count=${count}`);
-    if (raw?.computedAt) lastComputedAt = raw.computedAt;
+    if (raw?.computedAt) setLastComputedAt(raw.computedAt);
     return raw?.items || [];
   }
   const { analyzeStockPotential } = await import('../lib/stock');

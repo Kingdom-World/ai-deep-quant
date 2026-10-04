@@ -14,7 +14,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ms = require('../shared/modelspec.mjs');
+const ms = require('../shared/modelspec.cjs');
 const crosssect = require('../server/crosssect.cjs');
 const fe = require('../server/factorexpr.cjs');
 

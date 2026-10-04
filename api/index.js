@@ -116,7 +116,9 @@ const exposeErrors = () => process.env.DEBUG_ERRORS === '1';
 //   探测关键路径是否存在，把"猜"变成"看"。
 //
 //   安全：只输出**相对路径 + 布尔**，不含绝对部署路径、不含任何内容。
-//   ⚠️ 这是排查期专用；故障定性后由 DEBUG_ERRORS 收敛（见 fix 提交）。
+//   ✅ 2026-10-04 事故复盘：本探针是唯一"一次部署即定性"的手段
+//      （前两次同类事故都靠反复猜 + 多次部署试错）。故**保留为常驻运维能力**，
+//      仅在 `?probe=files` 或 DEBUG_ERRORS=1 时输出，且永远不输出文件内容与绝对路径。
 function probeFiles() {
   const fs = require_('node:fs');
   const p = require_('node:path');
@@ -130,7 +132,9 @@ function probeFiles() {
     'server/factorexpr.cjs',
     'server/routes/models.cjs',
     'shared/modelspec.mjs',
+    'shared/modelspec.cjs',
     'shared/experiments.mjs',
+    'shared/experiments.cjs',
     'shared/rsi.cjs',
     'shared/cn-holidays.json',
     'dist/index.html',
@@ -159,7 +163,8 @@ function probeRequires() {
     '../server/modelrun.cjs',
     '../server/modelstore.cjs',
     '../server/routes/models.cjs',
-    '../shared/modelspec.mjs',
+    '../shared/modelspec.cjs',
+    '../shared/experiments.cjs',
   ];
   const out = {};
   for (const m of mods) {

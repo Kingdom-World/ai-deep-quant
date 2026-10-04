@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { wilderRsiSeries, wilderRsiLast } = require('../shared/rsi.mjs');
+const { wilderRsiSeries, wilderRsiLast } = require('../shared/rsi.cjs');
 const { rsiSeries } = require('../server/quant.cjs');
 
 /** 确定性伪随机序列（避免测试不稳定） */

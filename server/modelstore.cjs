@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { writeJsonAtomic } = require('./atomic-write.cjs');
 const db = require('./db.cjs');
-const ms = require('../shared/modelspec.mjs');
+const ms = require('../shared/modelspec.cjs');
 const fe = require('./factorexpr.cjs');
 const { modelHash } = require('./modelrun.cjs');
 

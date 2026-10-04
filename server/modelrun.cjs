@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────
 const crypto = require('crypto');
 
-const ms = require('../shared/modelspec.mjs');
+const ms = require('../shared/modelspec.cjs');
 const fe = require('./factorexpr.cjs');
 const crosssect = require('./crosssect.cjs');
 const xform = require('./modelxform.cjs');

@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { recKey, nextSelection, paramKeyUnion, diffParams, MAX_COMPARE } = require('../shared/experiments.mjs');
+const { recKey, nextSelection, paramKeyUnion, diffParams, MAX_COMPARE } = require('../shared/experiments.cjs');
 
 const rec = (ts, params = {}) => ({ ts, params });
 

@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const xf = require('../server/modelxform.cjs');
-const ms = require('../shared/modelspec.mjs');
+const ms = require('../shared/modelspec.cjs');
 
 const rows = (...vals) => vals.map((v, i) => ({ code: `s${i + 1}`, mom: v }));
 const vals = (out) => out.map((r) => r.mom);

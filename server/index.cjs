@@ -1568,7 +1568,7 @@ require('./routes/knowledge-screener.cjs').registerKnowledgeScreenerRoutes(app, 
 try {
   require('./routes/models.cjs').registerModelRoutes(app, {
     modelrun: require('./modelrun.cjs'),
-    modelspec: require('../shared/modelspec.mjs'),
+    modelspec: require('../shared/modelspec.cjs'),
     modelstore: require('./modelstore.cjs'),
     uidOf: broker.uidOf, // 与模拟盘/自选池同一套分账（登录用户名，未开鉴权时按 IP）
     IS_VERCEL,

@@ -22,7 +22,7 @@ const assert = require('node:assert');
 
 const { registerModelRoutes } = require('../server/routes/models.cjs');
 const modelrun = require('../server/modelrun.cjs');
-const modelspec = require('../shared/modelspec.mjs');
+const modelspec = require('../shared/modelspec.cjs');
 const modelstore = require('../server/modelstore.cjs');
 
 const REAL_DIR = path.join(__dirname, '..', 'data', 'history', 'kline');

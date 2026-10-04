@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-// 报价域（Quote）—— 实时报价 / 批量报价
-//   · 数据源：后端 /api/quote/:symbol、/api/quotes（python 模式）
-//   · 缓存：CACHE_TTL_QUOTE（10s）；请求去重由 client.apiGetCached 统一承担
+// 报价域（Quote）—— 实时报价 / 批量报价 / 大盘指数 / 代码搜索
+//   · 数据源：后端 /api/quote/:symbol、/api/quotes（python 模式）、/api/indices、/api/search
+//   · 缓存：CACHE_TTL_QUOTE（10s）/ CACHE_TTL_INDICES（15s）/ CACHE_TTL_SEARCH（60s）
+//   · 请求去重由 client.apiGetCached 统一承担
 //   · 行为零变化：自 src/api/dataService.ts 原样迁出
 // ─────────────────────────────────────────────────────────────
 import type { Market } from '../lib/stock';
-import { CACHE_TTL_QUOTE } from '../config';
+import { CACHE_TTL_QUOTE, CACHE_TTL_INDICES, CACHE_TTL_SEARCH } from '../config';
 import { getCached, setCached } from '../utils/cache';
 import { getCacheKey, apiGetCached } from './client';
 import { PYTHON } from './runtime';
@@ -86,4 +87,46 @@ export const getQuotesBatch = async (
   return Promise.all(
     symbols.map((s) => getQuote(s, market, forceRefresh).catch(() => null)),
   ).then((list) => list.filter((q): q is UnifiedQuote => q !== null));
+};
+
+/** 获取大盘指数 */
+export const getIndices = async (forceRefresh = false): Promise<UnifiedQuote[]> => {
+  const cacheKey = getCacheKey('indices', {});
+  if (!forceRefresh) {
+    const cached = getCached<UnifiedQuote[]>(cacheKey, CACHE_TTL_INDICES);
+    if (cached !== null) return cached;
+  }
+  const raw = await apiGetCached<BackendQuote[]>(
+    forceRefresh ? `${cacheKey}:fresh` : cacheKey,
+    '/indices',
+    CACHE_TTL_INDICES,
+  );
+  const items = (raw || []).map((it) => ({
+    symbol: it.symbol,
+    name: it.name,
+    price: it.price,
+    changePercent: it.changePercent ?? 0,
+    open: null,
+    high: null,
+    low: null,
+    volume: null,
+    prevClose: it.prevClose,
+    timestamp: Date.now(),
+    _source: 'backend' as const,
+  }));
+  setCached(cacheKey, items);
+  return items;
+};
+
+/** 搜索股票 */
+export const searchSymbol = async (
+  keyword: string,
+): Promise<{ name: string; code: string; market: string }[]> => {
+  const cacheKey = getCacheKey('search', { keyword });
+  const raw = await apiGetCached<{ name: string; code: string; market: string }[]>(
+    cacheKey,
+    `/search/${encodeURIComponent(keyword)}`,
+    CACHE_TTL_SEARCH,
+  );
+  return raw || [];
 };

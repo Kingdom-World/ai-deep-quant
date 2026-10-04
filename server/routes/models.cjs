@@ -18,8 +18,9 @@
 
 /** 注册模型工坊路由 */
 function registerModelRoutes(app, deps) {
-  const { modelrun, modelspec, modelstore, uidOf, IS_VERCEL } = deps;
+  const { modelrun, modelspec, modelstore, modelexp, uidOf, IS_VERCEL } = deps;
   const fe = require('../factorexpr.cjs'); // 服务端权威表达式校验（白名单 AST）
+  const { MAX_COMPARE } = require('../../shared/experiments.cjs'); // 对比上限单一源（⚠️ 必须 .cjs）
 
   // ── 规范常量（必须注册在 /:id 之前）──
   app.get('/api/models/schema', (req, res) => {
@@ -59,7 +60,7 @@ function registerModelRoutes(app, deps) {
          * 语义核心哈希（模型**定义**身份，与数据窗口/回测参数无关）。
          * 用途：公网不能执行回测时，前端用它生成「离线执行回执」——
          * 用户把 JSON 拿到本地跑出来的结果，可以凭这个 hash 对上是同一个模型定义。
-         * 由服务端计算 ⇒ 前后端不会各写一份哈希规则（规则含 canonicalJSON 排序）。
+         * 由服务端计算 ⇒ 前后端不会各写一份哈希规则。
          */
         modelHash: r.ok ? modelrun.modelHash(r.model) : null,
       });
@@ -118,8 +119,55 @@ function registerModelRoutes(app, deps) {
     }
   });
 
+  // ── 模型实验记录（不可变留痕；per-uid 隔离）──
+  app.get('/api/model-experiments', async (req, res) => {
+    try {
+      const uid = uidOf(req);
+      const items = await modelexp.list(uid, { limit: req.query.limit });
+      const stats = await modelexp.statsForUid(uid);
+      res.json({ ok: true, items, ...stats, maxCompare: MAX_COMPARE });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取实验列表失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ── 对比：一次取多条完整记录（前端直接喂 shared/experiments.mjs 的纯函数）──
+  app.post('/api/model-experiments/compare', async (req, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+      if (ids.length > MAX_COMPARE) {
+        return res.status(400).json({ ok: false, error: `最多对比 ${MAX_COMPARE} 条实验（收到 ${ids.length} 条）` });
+      }
+      const items = await modelexp.getMany(ids, uidOf(req));
+      res.json({ ok: true, items, maxCompare: MAX_COMPARE, requested: ids.length });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `对比读取失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  app.get('/api/model-experiments/:id', async (req, res) => {
+    try {
+      const doc = await modelexp.get(req.params.id, uidOf(req));
+      if (!doc) return res.status(404).json({ ok: false, error: '实验不存在' });
+      res.json({ ok: true, experiment: doc });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  app.delete('/api/model-experiments/:id', async (req, res) => {
+    try {
+      const r = await modelexp.remove(req.params.id, uidOf(req));
+      if (!r.ok) return res.status(400).json(r);
+      if (!r.removed) return res.status(404).json({ ok: false, error: '实验不存在' });
+      res.json({ ok: true, removed: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `删除失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
   // ── 执行回测 ──
-  app.post('/api/models/run', (req, res) => {
+  app.post('/api/models/run', async (req, res) => {
     if (IS_VERCEL) {
       return res.status(503).json({
         ok: false,
@@ -131,7 +179,15 @@ function registerModelRoutes(app, deps) {
     }
     try {
       const body = req.body || {};
-      const r = modelrun.runModel(body.model !== undefined ? body.model : body, {
+      /**
+       * 入参两种包装：裸模型对象 / `{ model, topN, …, record, modelId }`。
+       * 🔴 控制字段（record / modelId）**只在包装形态下生效**：裸对象形态里
+       *    body 本身就是 Model JSON，往里加 `record:false` 会被规范判为「未知键」
+       *    而直接 400 —— 开关不能反过来污染模型（这是实测踩到的缺陷，勿回退）。
+       */
+      const wrapped = body.model !== undefined;
+      const modelInput = wrapped ? body.model : body;
+      const r = modelrun.runModel(modelInput, {
         topN: body.topN,
         capital: body.capital,
         slippage: body.slippage,
@@ -141,6 +197,31 @@ function registerModelRoutes(app, deps) {
       if (!r.ok) {
         return res.status(400).json({ ok: false, stage: r.stage, error: r.error, issues: r.issues });
       }
+
+      // 自动留痕（项目惯例：每次回测留实验记录）。包装形态下可经 body.record===false 关闭。
+      //   ⚠️ 必须在响应返回**之前** await 完成——Serverless 响应后函数冻结，未 await 的写入会静默丢失。
+      //   记录失败**不影响回测结果**返回，但必须把失败如实告知（不假装记录成功）。
+      let experiment = null;
+      let recordError = null;
+      if (!wrapped || body.record !== false) {
+        try {
+          const rec = await modelexp.record(uidOf(req), {
+            model: r.model,
+            plan: r.plan,
+            fingerprint: r.fingerprint,
+            engineVersion: r.engineVersion,
+            modelHash: modelrun.modelHash(r.model),
+            modelId: wrapped && typeof body.modelId === 'string' ? body.modelId : null,
+            result: r.result,
+          });
+          if (rec.ok) experiment = { id: rec.id, ts: rec.ts, evicted: rec.evicted || 0 };
+          else recordError = rec.error;
+        } catch (e) {
+          recordError = `实验记录失败: ${String(e.message || e).slice(0, 100)}`;
+          console.error('[ModelStudio] 实验记录异常:', e.message);
+        }
+      }
+
       res.json({
         ok: true,
         engineVersion: r.engineVersion,
@@ -148,6 +229,8 @@ function registerModelRoutes(app, deps) {
         fingerprint: r.fingerprint,
         model: r.model,
         result: r.result,
+        experimentId: experiment ? experiment.id : null,
+        ...(recordError ? { recordWarning: recordError } : {}),
       });
     } catch (e) {
       res.status(500).json({ ok: false, error: `模型执行失败: ${String(e.message || e).slice(0, 120)}` });

@@ -1570,6 +1570,7 @@ try {
     modelrun: require('./modelrun.cjs'),
     modelspec: require('../shared/modelspec.cjs'),
     modelstore: require('./modelstore.cjs'),
+    modelexp: require('./modelexperiments.cjs'), // 实验留痕（不可变；与可变的 model_store 分工）
     uidOf: broker.uidOf, // 与模拟盘/自选池同一套分账（登录用户名，未开鉴权时按 IP）
     IS_VERCEL,
   });

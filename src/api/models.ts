@@ -147,6 +147,79 @@ export type ModelSaveResponse =
   | { ok: true; id: string; modelHash?: string }
   | { ok: false; error: string; issues?: ValidationIssue[] };
 
+// ── 实验记录（第六刀：不可变留痕 + 对比）─────────────────────
+//   与「我的模型库」的分工：模型库是**可变**的模型定义；实验是**不可变**的留痕。
+/** 列表行（索引冗余字段，免解正文） */
+export interface ModelExperimentRow {
+  id: string;
+  /** ISO 时间；同时是前端勾选的唯一键（shared/experiments.cjs 的 recKey = e.ts） */
+  ts: string;
+  modelName: string;
+  fingerprint: string;
+  totalReturn: number | null;
+  /** 总收益 − 等权基准（对比时最直观的一列） */
+  excessReturn: number | null;
+  maxDrawdownPct: number | null;
+  sharpe: number | null;
+}
+
+export interface ModelExperimentMetrics {
+  totalReturn: number | null;
+  annualized: number | null;
+  maxDrawdownPct: number | null;
+  sharpe: number | null;
+  benchmarkReturn: number | null;
+  excessReturn: number | null;
+  rebalances: number | null;
+  fills: number | null;
+  totalFees: number | null;
+  feeRatePct: number | null;
+  icMean: number | null;
+  icir: number | null;
+  icPositiveRate: number | null;
+  icN: number | null;
+}
+
+/** 完整实验记录（对比页与「载入该实验的模型」用） */
+export interface ModelExperimentDoc {
+  id: string;
+  ts: string;
+  modelId: string | null;
+  modelName: string;
+  modelHash: string | null;
+  fingerprint: string;
+  engineVersion: string;
+  /**
+   * **扁平**参数字典（人类可读摘要）。
+   * ⚠️ 必须是扁平的：前端 paramKeyUnion/diffParams 只做一层 Object.keys，
+   * 嵌套对象会让对比表静默变成一堆 undefined。
+   */
+  params: Record<string, string | number | boolean | undefined>;
+  metrics: ModelExperimentMetrics;
+  range: { start: string; end: string; bars: number } | null;
+  universeSize: number | null;
+  /** 模型快照（约 1KB）：实验是"复现承诺的载体"，只存指纹则拿不回当时那个模型 */
+  modelSnapshot: ModelSpec | null;
+  equityThumb?: { d: string; v: number }[];
+  benchmarkThumb?: { d: string; v: number }[];
+}
+
+export interface ModelExperimentListResponse {
+  ok: boolean;
+  items: ModelExperimentRow[];
+  count: number;
+  quota: number;
+  /** 对比上限（由 shared/experiments.cjs 单一源下发，前端不硬编码） */
+  maxCompare: number;
+}
+
+export interface ModelExperimentCompareResponse {
+  ok: boolean;
+  items: ModelExperimentDoc[];
+  maxCompare: number;
+  requested: number;
+}
+
 export const modelsApi = {
   /** 规范常量（表单渲染用；服务端为单一源） */
   schema: () => apiGet<ModelSchema>('/models/schema'),
@@ -170,4 +243,21 @@ export const modelsApi = {
   /** 执行回测（本地版可用；公网返回 stage='env' 的 503 显式拒绝） */
   run: (model: ModelSpec, opts?: ModelRunOptions) =>
     apiPost<ModelRunResponse>('/models/run', opts ? { model, ...opts } : { model }),
+
+  // ── 实验记录（不可变留痕；per-uid 隔离，越权一律 404）──
+  experiments: {
+    /** 本人实验列表（新在前） */
+    list: (limit?: number) =>
+      apiGet<ModelExperimentListResponse>(
+        `/model-experiments${limit ? `?limit=${encodeURIComponent(String(limit))}` : ''}`,
+      ),
+    /** 一次取多条完整记录（前端直接喂 shared/experiments.mjs 的纯函数做对比） */
+    compare: (ids: string[]) => apiPost<ModelExperimentCompareResponse>('/model-experiments/compare', { ids }),
+    get: (id: string) =>
+      apiGet<{ ok: boolean; experiment: ModelExperimentDoc; error?: string }>(
+        `/model-experiments/${encodeURIComponent(id)}`,
+      ),
+    remove: (id: string) =>
+      apiDelete<{ ok: boolean; removed: boolean; error?: string }>(`/model-experiments/${encodeURIComponent(id)}`),
+  },
 };

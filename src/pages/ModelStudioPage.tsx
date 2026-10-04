@@ -37,6 +37,7 @@ import {
 import { theme } from '../lib/theme';
 import ZoneShell from '../components/ZoneShell';
 import PipelineView from './studio/PipelineView';
+import ExperimentCompare from './studio/ExperimentCompare';
 import {
   STUDIO_SECTIONS,
   draftToModel,
@@ -136,7 +137,9 @@ export default function ModelStudioPage() {
   // 工作台状态
   const [touched, setTouched] = useState(false); // 是否已开始编辑（决定是否显示模板墙）
   const [section, setSection] = useState<StudioSection>('factors');
-  const [track, setTrack] = useState<'form' | 'json'>('form');
+  const [track, setTrack] = useState<'form' | 'json' | 'exp'>('form');
+  /** 递增即让「实验轨」重新拉取列表（跑完回测后留痕才有意义） */
+  const [expToken, setExpToken] = useState(0);
   const [flashPath, setFlashPath] = useState<string | null>(null);
   const flashTimer = useRef<number | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
@@ -285,6 +288,8 @@ export default function ModelStudioPage() {
         setRun(null);
       } else {
         setRun(r);
+        // 服务端已自动留痕 ⇒ 让实验轨重新拉取（记录不可变，回测本身不改动它）
+        setExpToken((n) => n + 1);
         flash('ok', `回测完成 · 指纹 ${r.fingerprint.slice(0, 12)}…`);
       }
     } catch (e) {
@@ -648,7 +653,7 @@ export default function ModelStudioPage() {
           <div className="zw-editor" style={panel}>
             <div style={panelHead}>
               <div style={{ display: 'flex', gap: 6 }}>
-                {(['form', 'json'] as const).map((k) => (
+                {(['form', 'json', 'exp'] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
@@ -660,11 +665,13 @@ export default function ModelStudioPage() {
                       borderColor: track === k ? theme.color.primary : LINE,
                     }}
                   >
-                    {k === 'form' ? '表单轨' : 'JSON 轨（只读）'}
+                    {k === 'form' ? '表单轨' : k === 'json' ? 'JSON 轨（只读）' : '实验轨'}
                   </button>
                 ))}
               </div>
-              <span style={{ fontSize: 11, color: theme.color.textFaint }}>同一份 Model JSON · 两轨等价</span>
+              <span style={{ fontSize: 11, color: theme.color.textFaint }}>
+                {track === 'exp' ? '每次回测自动留痕 · 可勾选对比' : '同一份 Model JSON · 两轨等价'}
+              </span>
             </div>
 
             <div style={panelBody}>
@@ -690,6 +697,20 @@ export default function ModelStudioPage() {
                     <button type="button" style={btn()} onClick={doExportReceiptModel}>下载（文件名含参数）</button>
                   </div>
                 </div>
+              ) : track === 'exp' ? (
+                /* 实验轨：不可变留痕 + 对比（载入模型只写草稿，不改动原记录） */
+                <ExperimentCompare
+                  refreshToken={expToken}
+                  onLoadModel={(snap) => {
+                    setDraft(modelToDraft(snap));
+                    setEditingId(null);
+                    setRun(null);
+                    setTouched(true);
+                    setSection('factors');
+                    setTrack('form');
+                    flash('ok', '已载入该实验当时的模型定义（原实验记录未被修改）');
+                  }}
+                />
               ) : showGallery ? (
                 /* 冷启动：先给骨架，而不是空白表单 */
                 <div>

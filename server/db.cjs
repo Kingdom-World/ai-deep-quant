@@ -103,6 +103,20 @@ async function migrate() {
       updated_at  timestamptz NOT NULL DEFAULT now()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS model_store_uid_idx ON model_store (uid, updated_at DESC)`);
+  // 模型实验记录（Phase 1）：一行 = 一次模型回测的留痕。
+  //   · 与 model_store 分开：模型可反复修改（可变），实验**不可变**（复现承诺的载体）
+  //   · fingerprint 唯一标识"同一模型+同窗口+同参数"的一次实验
+  //   · uid 列同样用于行级所有权校验
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS model_experiments (
+      id          text PRIMARY KEY,
+      uid         text NOT NULL,
+      model_name  text NOT NULL DEFAULT '',
+      fingerprint text NOT NULL DEFAULT '',
+      ts          timestamptz NOT NULL DEFAULT now(),
+      doc         jsonb NOT NULL
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS model_experiments_uid_idx ON model_experiments (uid, ts DESC)`);
 }
 
 /**

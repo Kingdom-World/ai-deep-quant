@@ -89,6 +89,20 @@ async function migrate() {
       trace      jsonb NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now()
     )`);
+  // 模型库（Phase 1，模型工坊）：一行 = 一个用户保存的声明式 Model JSON。
+  //   · uid 列用于**行级所有权校验**（读取/删除必须带 uid 条件，防止越权访问他人模型）
+  //   · model_hash = 模型**定义**身份（语义核心的哈希，与运行窗口无关），供列表展示与判重
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS model_store (
+      id          text PRIMARY KEY,
+      uid         text NOT NULL,
+      name        text NOT NULL DEFAULT '',
+      model_hash  text NOT NULL DEFAULT '',
+      doc         jsonb NOT NULL,
+      created_at  timestamptz NOT NULL DEFAULT now(),
+      updated_at  timestamptz NOT NULL DEFAULT now()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS model_store_uid_idx ON model_store (uid, updated_at DESC)`);
 }
 
 /**

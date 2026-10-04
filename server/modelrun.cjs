@@ -214,4 +214,22 @@ function runModel(inputModel, opts = {}) {
   };
 }
 
-module.exports = { runModel, buildCompositeCrossSection, fingerprint, ENGINE_VERSION, applyFilters, passesFilter };
+/**
+ * 模型**定义**身份（与运行窗口/参数无关）：语义核心的 SHA-256。
+ *   与 fingerprint 的分工：fingerprint 标识"一次实验"（含数据窗口与参数），
+ *   modelHash 标识"一份模型定义"——模型库里判重、列表展示用它。
+ */
+function modelHash(model) {
+  return crypto.createHash('sha256').update(ms.canonicalJSON(semanticCore(model))).digest('hex');
+}
+
+module.exports = {
+  runModel,
+  buildCompositeCrossSection,
+  fingerprint,
+  modelHash,
+  semanticCore,
+  ENGINE_VERSION,
+  applyFilters,
+  passesFilter,
+};

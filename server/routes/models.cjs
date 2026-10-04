@@ -1,21 +1,27 @@
 'use strict';
 // ─────────────────────────────────────────────────────────────
 // 模型工坊路由（Phase 1）
-//   · GET  /api/models/schema   规范常量（前端表单由**单一源**生成，不手抄白名单）
-//   · POST /api/models/validate 只校验不执行（表单实时反馈；权威校验在服务端）
-//   · POST /api/models/run      校验 → 构建复合截面 → 跑引擎 → 返回指纹与结果
+//   · GET    /api/models/schema    规范常量（前端表单的单一源）
+//   · POST   /api/models/validate  只校验不执行（服务端权威 AST 校验）
+//   · GET    /api/models           列出**本人**模型（uid 隔离）
+//   · POST   /api/models           保存/覆盖模型（入库即校验 + 配额）
+//   · GET    /api/models/:id       取单个模型（所有权校验）
+//   · DELETE /api/models/:id       删除模型（所有权校验）
+//   · POST   /api/models/run       执行回测（本地版；公网 503 显式拒绝）
 //
-//   🔴 公网门控：模型回测依赖**本地归档**（data/history/kline），Vercel 上不存在。
-//     直接在 Vercel 返回 503 显式拒绝，而不是让用户等一个必然失败的请求——
-//     master-plan 纪律："IS_VERCEL 门控先于功能上线"。
+//   🔴 路由注册顺序：/schema 必须在 /:id 之前，否则 'schema' 会被当成 id 吃掉。
+//
+//   🔴 公网能力边界（用户决策 2026-10-04）：
+//     公网允许**配置、校验、保存、导出**模型（纯声明式，无执行 → 无损害面）；
+//     **执行**依赖本地数据归档，公网显式 503，不启用"必然失败"的重计算。
 // ─────────────────────────────────────────────────────────────
 
 /** 注册模型工坊路由 */
 function registerModelRoutes(app, deps) {
-  const { modelrun, modelspec, IS_VERCEL } = deps;
+  const { modelrun, modelspec, modelstore, uidOf, IS_VERCEL } = deps;
   const fe = require('../factorexpr.cjs'); // 服务端权威表达式校验（白名单 AST）
 
-  /** 规范常量：前端据此渲染表单（避免前后端各维护一份白名单） */
+  // ── 规范常量（必须注册在 /:id 之前）──
   app.get('/api/models/schema', (req, res) => {
     res.json({
       ok: true,
@@ -32,10 +38,13 @@ function registerModelRoutes(app, deps) {
       combineMethods: modelspec.COMBINE_METHODS,
       limits: modelspec.LIMITS,
       engineVersion: modelrun.ENGINE_VERSION,
+      quotaPerUser: modelstore.QUOTA_PER_UID,
+      /** 公网是否可执行（false=仅可配置/导出；前端据此禁用「运行」按钮并给出说明） */
+      canRun: !IS_VERCEL,
     });
   });
 
-  /** 只校验（不执行、不落库）：表单实时反馈用；权威结论仍以本接口为服务端口径 */
+  // ── 只校验（不执行、不落库）──
   app.post('/api/models/validate', (req, res) => {
     try {
       const r = modelspec.normalizeModel(req.body, { parseExpr: fe.parseExpression });
@@ -45,15 +54,65 @@ function registerModelRoutes(app, deps) {
     }
   });
 
-  /** 执行模型回测 */
+  // ── 本人模型列表 ──
+  app.get('/api/models', async (req, res) => {
+    try {
+      const uid = uidOf(req);
+      const items = await modelstore.list(uid, { limit: req.query.limit });
+      const stats = await modelstore.statsForUid(uid);
+      res.json({ ok: true, items, ...stats });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取模型列表失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ── 保存/覆盖（入库即校验；配额超限显式拒绝）──
+  app.post('/api/models', async (req, res) => {
+    try {
+      const uid = uidOf(req);
+      const body = req.body || {};
+      const input = body.model !== undefined ? body.model : body;
+      const id = body.id !== undefined ? body.id : undefined;
+      const r = await modelstore.save(uid, input, id);
+      if (!r.ok) return res.status(400).json(r);
+      res.json(r);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `保存失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ── 取单个（所有权校验；非本人一律 404，不泄露存在性）──
+  app.get('/api/models/:id', async (req, res) => {
+    try {
+      const doc = await modelstore.get(req.params.id, uidOf(req));
+      if (!doc) return res.status(404).json({ ok: false, error: '模型不存在' });
+      res.json({ ok: true, model: doc });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ── 删除（所有权校验）──
+  app.delete('/api/models/:id', async (req, res) => {
+    try {
+      const r = await modelstore.remove(req.params.id, uidOf(req));
+      if (!r.ok) return res.status(400).json(r);
+      if (!r.removed) return res.status(404).json({ ok: false, error: '模型不存在' });
+      res.json({ ok: true, removed: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `删除失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ── 执行回测 ──
   app.post('/api/models/run', (req, res) => {
     if (IS_VERCEL) {
       return res.status(503).json({
         ok: false,
         stage: 'env',
         error:
-          '模型回测依赖本地数据归档，公网演示版暂不支持——请在本地版本中使用「模型工坊」。' +
-          '公网可用的在线功能：行情/资讯/因子分析/策略回测（预设因子）。',
+          '模型回测依赖本地数据归档，公网演示版不提供执行。' +
+          '公网仍可**配置、校验、保存与导出**模型 JSON；若要跑净值，请在本地版本中导入该模型执行。',
       });
     }
     try {

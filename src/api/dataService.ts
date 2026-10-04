@@ -1,25 +1,29 @@
 // ─────────────────────────────────────────────────────────────
-// 统一数据服务层（直连服务端 API）
-//   前端 → /api/*（vite proxy 或同源）→ server/index.cjs（Express）
-//   → 新浪/腾讯公开财经接口（无需 API Key，双源自动切换）
-//   前端缓存: 分级 TTL（报价10s / 指数15s / 历史5min），命中输出 [Cache] 日志；
-//   请求去重：相同 in-flight 请求合并
+// 统一数据服务层（迁移中·兼容层）
+//   各域已抽至 src/api/{client,types,runtime,quote,history,recommend,paper,auth,datasource}.ts；
+//   本文件保留 re-export 与旧 import 路径 `../api/dataService`，待全部域迁完后删除。
 // ─────────────────────────────────────────────────────────────
-// ============ Client 层（已抽出至 src/api/client.ts，此处 re-export 保持调用方零改动） ============
-import { ApiError, apiGet, apiGetPublic, apiGetTimed, apiPost, apiDelete, getSourceHealth } from './client';
-import { clearCache as clearMemoryCache } from '../utils/cache';
+// ============ Client 层（已抽出至 src/api/client.ts） ============
+import { ApiError, apiGet, apiGetPublic, apiGetTimed, apiPost, apiDelete } from './client';
 export { ApiError, apiGet, apiGetPublic };
 
-// ============ 已抽出域（client/types/quote/history/recommend）：import 供本文件复用 + re-export 保兼容 ============
+// ============ 已抽出域：import 供本文件复用 + re-export 保调用方零改动 ============
 import { getQuote, getQuotesBatch, getIndices, searchSymbol } from './quote';
 import { getHistoryWithMeta, getHistory, getPeriodPolicy, getMinuteKline, getMinuteSeries } from './history';
 import { getRecommendations } from './recommend';
+import type { PaperAccount } from './paper';
+import { getDataSourceStatus, forceSwitchDataSource, clearCache, checkBridgeHealth } from './datasource';
 export type { UnifiedQuote, UnifiedKline, BackendQuote, BackendHistory } from './types';
 export type { HistoryResult, PeriodPolicy, MinuteKline } from './history';
 export { getQuote, getQuotesBatch, getIndices, searchSymbol };
 export { getHistoryWithMeta, getHistory, getPeriodPolicy, getMinuteKline, getMinuteSeries };
 export { getRecommendations };
 export { getLastComputedAt } from './runtime';
+export type { PaperPosition, PaperOrder, PaperAccount, PaperStrategy, PaperLogEntry, PaperAlert, PaperTriggeredAlert } from './paper';
+export { paperApi } from './paper';
+export { authApi } from './auth';
+export type { InviteEntry } from './auth';
+export { getDataSourceStatus, forceSwitchDataSource, clearCache, checkBridgeHealth } from './datasource';
 
 /** 回测交易明细 */
 export interface BacktestTrade {
@@ -102,141 +106,6 @@ export const askAssistant = async (
     signal: externalSignal,
     timeoutMessage: '云端模型响应超时，请稍后重试',
   });
-};
-
-// ───────────── 模拟交易（paper trading） ─────────────
-
-export interface PaperPosition {
-  symbol: string;
-  name?: string;
-  market: string;
-  qty: number;
-  avgCost: number;
-  lastPrice: number;
-  marketValue: number;
-  unrealizedPnl: number;
-  unrealizedPct: number;
-  /** A股 T+1：当前可卖出数量（= qty - 当日买入锁定数） */
-  sellableQty?: number;
-  /** A股 T+1：今日买入、当日不可卖的数量 */
-  t1Locked?: number;
-}
-
-export interface PaperOrder {
-  id: string;
-  symbol: string;
-  name?: string;
-  side: 'buy' | 'sell';
-  type: 'market' | 'limit';
-  qty: number;
-  limitPrice: number | null;
-  status: 'pending' | 'resting' | 'filled' | 'canceled' | 'rejected';
-  /** GFD 当日有效：YYYY-MM-DD（限价挂单挂出时设置，到期由撮合自动撤销） */
-  validUntil?: string;
-  /** 委托估算价（下单瞬间的行情价） */
-  estimatePrice?: number | null;
-  /** 策略归因标记（策略引擎下单时传入，人工下单为空串） */
-  src?: string;
-  filledAt?: string;
-  reason?: string;
-  avgFillPrice?: number;
-  fees?: { total: number };
-  createdAt: string;
-}
-
-export interface PaperAccount {
-  uid: string;
-  cash: number;
-  /** 可用现金 = 现金 − 挂单冻结（评审 P1-4） */
-  availableCash?: number;
-  reservedCash?: number;
-  initialCapital: number;
-  marketValue: number;
-  totalAssets: number;
-  totalPnl: number;
-  totalPnlPct: number;
-  todayPnl: number;
-  /** 回撤熔断状态（评审 P2-2） */
-  peakAssets?: number;
-  drawdownPct?: number;
-  riskLocked?: boolean;
-  ddLevel?: number;
-  positions: PaperPosition[];
-  orders: PaperOrder[];
-  equity: { t: string; total: number; cash: number; marketValue: number }[];
-}
-
-export interface PaperStrategy {
-  id: string;
-  type: string;
-  symbol: string;
-  name?: string;
-  params: Record<string, number>;
-  status: 'running' | 'stopped';
-  lastSignal: string;
-  startedAt: string;
-  lastRunAt: string;
-  error: string;
-}
-
-export interface PaperLogEntry {
-  t: string;
-  msg: string;
-}
-
-export interface PaperAlert {
-  id: string;
-  symbol: string;
-  name: string;
-  condition: 'above' | 'below';
-  price: number;
-  createdAt: string;
-  triggeredAt?: string;
-  triggeredPrice?: number;
-}
-
-export interface PaperTriggeredAlert {
-  id: string;
-  alertId: string;
-  symbol: string;
-  name: string;
-  condition: 'above' | 'below';
-  price: number;
-  triggeredPrice: number;
-  at: string;
-}
-
-/** 10. 模拟交易 API（后端 server/paper/*） */
-export const paperApi = {
-  getAccount: () => apiGet<PaperAccount>('/paper/account'),
-  placeOrder: (body: {
-    symbol: string;
-    name?: string;
-    side: 'buy' | 'sell';
-    type: 'market' | 'limit';
-    qty: number;
-    limitPrice?: number;
-  }) => apiPost<{ ok: boolean; order?: PaperOrder; error?: string }>('/paper/order', body),
-  cancelOrder: (id: string) =>
-    apiPost<{ ok: boolean; error?: string }>(`/paper/order/${encodeURIComponent(id)}/cancel`, {}),
-  reset: () => apiPost<{ ok: boolean; message?: string }>('/paper/reset', {}),
-  listStrategies: () => apiGet<PaperStrategy[]>('/paper/strategies'),
-  startStrategy: (body: {
-    type: string;
-    symbol: string;
-    name?: string;
-    params: Record<string, number>;
-  }) => apiPost<{ ok: boolean; error?: string }>('/paper/strategies', body),
-  stopStrategy: (id: string) =>
-    apiPost<{ ok: boolean; error?: string }>(`/paper/strategies/${encodeURIComponent(id)}/stop`, {}),
-  getLogs: () => apiGet<PaperLogEntry[]>('/paper/logs'),
-  listAlerts: () =>
-    apiGet<{ ok: boolean; alerts: PaperAlert[]; triggered: PaperTriggeredAlert[] }>('/paper/alerts'),
-  addAlert: (body: { symbol: string; name?: string; condition: 'above' | 'below'; price: number }) =>
-    apiPost<{ ok: boolean; alert?: PaperAlert; error?: string }>('/paper/alerts', body),
-  removeAlert: (id: string) =>
-    apiDelete<{ ok: boolean; error?: string }>(`/paper/alerts/${encodeURIComponent(id)}`),
-  clearTriggeredAlerts: () => apiPost<{ ok: boolean }>('/paper/alerts/clear-triggered', {}),
 };
 
 // ───────────── 选股器 + 市场温度计 + 自选池（融合 TSP） ─────────────
@@ -331,83 +200,6 @@ export const watchlistApi = {
     apiPost<{ ok: boolean; existed?: boolean; error?: string }>('/watchlist', body),
   remove: (symbol: string) =>
     apiDelete<{ ok: boolean; error?: string }>(`/watchlist/${encodeURIComponent(symbol)}`),
-};
-
-/** 6. 数据源状态 */
-export const getDataSourceStatus = () => {
-  const h = getSourceHealth();
-  return {
-    primary: 'AI深度量化数据服务',
-    /** 60 秒内没有新失败即视为健康（真实探测，非硬编码） */
-    primaryHealthy: Date.now() - h.lastFailureAt > 60_000 || h.failCount === 0,
-    primaryConfigured: true,
-    fallback: '本地 Baostock 归档（上游失败时自动兜底）',
-    current: 'backend',
-    cacheSize: h.cacheSize,
-    lastFailureAt: h.lastFailureAt,
-    failCount: h.failCount,
-  };
-};
-
-/** 7. 强制切换（占位） */
-export const forceSwitchDataSource = () => {
-  /* 单一后端数据源，无需切换 */
-};
-
-/** 8. 清理缓存（切换股票时调用，强制更新） */
-export const clearCache = () => clearMemoryCache();
-
-/** 9. 后端健康检查 */
-export const checkBridgeHealth = async (): Promise<{ ok: boolean; mcpReady: boolean; tools: string[] }> => {
-  try {
-    const res = await apiGet<{ ok: boolean }>('/health');
-    return {
-      ok: res.ok === true,
-      mcpReady: res.ok === true,
-      tools: ['quote', 'history', 'mkline', 'minute', 'indices', 'search', 'backtest', 'qa'],
-    };
-  } catch {
-    return { ok: false, mcpReady: false, tools: [] };
-  }
-};
-
-/** 11. 认证 API（/api/auth/*，Cookie 会话由后端 Set-Cookie 维护） */
-export const authApi = {
-  me: () =>
-    apiGet<{ ok: boolean; username: string | null; isAdmin?: boolean; authEnabled?: boolean }>('/auth/me'),
-  login: (username: string, password: string) =>
-    apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/login', { username, password }),
-  register: (username: string, password: string, invite?: string) =>
-    apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/register', { username, password, invite }),
-  changePassword: (oldPassword: string, newPassword: string) =>
-    apiPost<{ ok: boolean; username?: string; error?: string }>('/auth/change-password', { oldPassword, newPassword }),
-  logout: () => apiPost<{ ok: boolean }>('/auth/logout', {}),
-
-  // ── 邀请码管理（一码一人）──────────────────────────────────
-  //   后端挂在 /api/auth/* 下（该路由段在鉴权中间件之前，故**自行校验管理员身份**，
-  //   非管理员一律 403）。管理员判定 = 用户名等于后端 SITE_USERNAME。
-  listInvites: () =>
-    apiGet<{
-      ok: boolean;
-      enabled: boolean;
-      codes: InviteEntry[];
-      summary?: { total: number; unused: number; used: number; revoked: number };
-    }>('/auth/invites'),
-  createInvite: (note: string, ttlDays?: number) =>
-    apiPost<{ ok: boolean; entry?: InviteEntry; error?: string }>('/auth/invites', { note, ttlDays }),
-  revokeInvite: (code: string) =>
-    apiPost<{ ok: boolean; entry?: InviteEntry; error?: string }>('/auth/invites/revoke', { code }),
-};
-
-/** 邀请码条目 —— 字段与 server/invites.cjs 的 rowToEntry 一一对应（勿臆造字段名） */
-export type InviteEntry = {
-  code: string;
-  note: string;
-  createdAt: string | null;
-  usedBy: string | null;
-  usedAt: string | null;
-  revoked: boolean;
-  expiresAt: string | null;
 };
 
 // ───────────── Agent 团队分析 ─────────────

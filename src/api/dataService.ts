@@ -4,7 +4,8 @@
 //   本文件保留 re-export 与旧 import 路径 `../api/dataService`，待全部域迁完后删除。
 // ─────────────────────────────────────────────────────────────
 // ============ Client 层（已抽出至 src/api/client.ts） ============
-import { ApiError, apiGet, apiGetPublic, apiGetTimed, apiPost, apiDelete } from './client';
+import { ApiError, apiGet, apiGetPublic, apiPost, apiDelete } from './client';
+import { askAssistant } from './assistant';
 export { ApiError, apiGet, apiGetPublic };
 
 // ============ 已抽出域：import 供本文件复用 + re-export 保调用方零改动 ============
@@ -24,6 +25,11 @@ export { paperApi } from './paper';
 export { authApi } from './auth';
 export type { InviteEntry } from './auth';
 export { getDataSourceStatus, forceSwitchDataSource, clearCache, checkBridgeHealth } from './datasource';
+export type { ScreenerRow, ScreenerResult, ScreenerStrategy, MarketMood, WatchItem, TickData } from './screener';
+export { screenerApi, moodApi, getTicks, watchlistApi } from './screener';
+export type { NewsItem, NewsResponse, NewsHealth } from './news';
+export { newsApi, newsHealthApi, feedApi } from './news';
+export { askAssistant, aiApi } from './assistant';
 
 /** 回测交易明细 */
 export interface BacktestTrade {
@@ -85,121 +91,6 @@ export const runBacktest = async (params: {
   if (params.count) qs.set('count', String(params.count));
   if (typeof params.slippage === 'number') qs.set('slippage', String(params.slippage));
   return apiGet<BacktestResult>(`/backtest?${qs.toString()}`);
-};
-
-/** 5f. 网站 AI 问答（云端模型生成较慢，专用 75s 超时；思考链独立返回） */
-export const askAssistant = async (
-  question: string,
-  externalSignal?: AbortSignal,
-): Promise<{ question: string; type: string; answer: string; symbol?: string; engine?: string; reasoning?: string | null; degraded?: string }> => {
-  const qs = new URLSearchParams();
-  qs.set('q', question);
-  return apiGetTimed<{
-    question: string;
-    type: string;
-    answer: string;
-    engine?: string;
-    reasoning?: string | null;
-    degraded?: string;
-  }>(`/qa?${qs.toString()}`, {
-    timeoutMs: 75000,
-    signal: externalSignal,
-    timeoutMessage: '云端模型响应超时，请稍后重试',
-  });
-};
-
-// ───────────── 选股器 + 市场温度计 + 自选池（融合 TSP） ─────────────
-
-export interface ScreenerRow {
-  code: string;
-  name: string;
-  price: number;
-  pct: number;
-  volume: number;
-  amount: number;
-  turnover: number;
-  volRatio: number;
-  high: number;
-  low: number;
-  open: number;
-  mktCap: number;
-  industry: string;
-}
-
-export interface ScreenerResult {
-  ok: boolean;
-  ts: number;
-  stale: boolean;
-  strategy: string;
-  strategyName: string;
-  desc: string;
-  scanned: number;
-  matched: number;
-  rows: ScreenerRow[];
-  error?: string;
-}
-
-export interface ScreenerStrategy {
-  key: string;
-  name: string;
-  desc: string;
-}
-
-export interface MarketMood {
-  ok: boolean;
-  ts: number;
-  stale: boolean;
-  total: number;
-  up: number;
-  down: number;
-  flat: number;
-  limitUp: number;
-  limitDown: number;
-  totalAmount: number;
-  score: number;
-  industries: { name: string; avgPct: number; upRatio: number; count: number }[];
-  coldest: { name: string; avgPct: number; upRatio: number; count: number }[];
-  error?: string;
-}
-
-export interface WatchItem {
-  symbol: string;
-  name: string;
-  note: string;
-  addedAt: string;
-}
-
-/** 11. 选股器 / 市场温度计 / 自选池 */
-export const screenerApi = {
-  strategies: () => apiGet<{ ok: boolean; strategies: ScreenerStrategy[] }>('/screener/strategies'),
-  run: (strategy: string, sort = 'pct', limit = 50) =>
-    apiGet<ScreenerResult>(`/screener?strategy=${encodeURIComponent(strategy)}&sort=${sort}&limit=${limit}`),
-};
-
-export const moodApi = {
-  get: () => apiGet<MarketMood>('/mood'),
-};
-
-export interface TickData {
-  time: string;
-  price: number;
-  chg: number;
-  vol: number;
-  type: 'B' | 'S' | 'M';
-}
-
-/** 12. 分笔成交（东财逐笔，仅 A 股） */
-export const getTicks = (symbol: string) =>
-  apiGet<{ ok: boolean; code: string; ticks: TickData[]; ts: number; error?: string }>(
-    `/ticks/${encodeURIComponent(symbol)}`,
-  );
-
-export const watchlistApi = {
-  list: () => apiGet<{ ok: boolean; items: WatchItem[] }>('/watchlist'),
-  add: (body: { symbol: string; name?: string; note?: string }) =>
-    apiPost<{ ok: boolean; existed?: boolean; error?: string }>('/watchlist', body),
-  remove: (symbol: string) =>
-    apiDelete<{ ok: boolean; error?: string }>(`/watchlist/${encodeURIComponent(symbol)}`),
 };
 
 // ───────────── Agent 团队分析 ─────────────
@@ -310,83 +201,6 @@ export const agentsApi = {
     ),
   remove: (id: string) =>
     apiDelete<{ ok: boolean; error?: string }>(`/agents/reports/${encodeURIComponent(id)}`),
-};
-
-export interface NewsItem {
-  id: string;
-  title: string;
-  snippet?: string;
-  media: string;
-  url: string;
-  date: string;
-  publishedAt: string;
-  fetchedAt: string;
-  category: 'market' | 'stock' | 'official';
-  sourceType: 'official' | 'public-media';
-  symbol?: string;
-  symbols?: string[];
-  source?: string;
-  /** 个股相关度置信度 0~1，仅个股资讯返回 */
-  matchScore?: number;
-  /** 命中原因，例如「个股官方资讯 · 标题点名」 */
-  matchReason?: string;
-  matchLevel?: 'high' | 'medium' | 'low';
-}
-
-export interface NewsResponse {
-  ok: boolean;
-  type: 'market' | 'stock' | 'official';
-  symbol: string | null;
-  /** 个股资讯返回的证券简称 */
-  stockName?: string | null;
-  items: NewsItem[];
-  fetchedAt: string;
-  stale?: boolean;
-  retentionHours: 72;
-  sourceNote?: string;
-  error?: string;
-}
-
-export const newsApi = {
-  get: (type: NewsResponse['type'] = 'market', symbol?: string, limit = 60) => {
-    const qs = new URLSearchParams({ type, limit: String(limit) });
-    if (symbol) qs.set('symbol', symbol);
-    return apiGet<NewsResponse>(`/news?${qs.toString()}`);
-  },
-};
-
-export interface NewsHealth {
-  ok: boolean;
-  sources: Record<string, { ok: number; fails: number; lastOk: number | null; lastErr: string | null; degraded: boolean }>;
-  tdxChannel?: { reachable: number; total: number; available: boolean; checkedAt: string | null };
-  snapshot?: { updatedAt: string | null; count: number; byCategory: Record<string, number> };
-}
-
-export const newsHealthApi = {
-  get: () => apiGet<NewsHealth>('/news/health'),
-};
-
-/** 13. 看板数据面板（资金流 / 财务 / 估值 / 新闻，东方财富公开接口，缺失自动为 null） */
-export const feedApi = {
-  get: (symbol: string) =>
-    apiGet<{
-      ok: boolean;
-      moneyFlow: any;
-      fundamentals: any;
-      valuation: any;
-      announcements: NewsItem[] | null;
-      stockNews: NewsItem[] | null;
-      marketNews: NewsItem[] | null;
-      error?: string;
-    }>(`/feed/${encodeURIComponent(symbol)}`),
-};
-
-/** 14. AI 助手学习系统（知识库 / 反馈 / 教学 / 训练状态） */
-export const aiApi = {
-  stats: () => apiGet<{ ok: boolean; knowledge: number; trainCount: number; lastNightly: any; pendingQuestions: number }>('/ai/stats'),
-  feedback: (body: { question: string; answer: string; rating: 'up' | 'down'; comment?: string }) =>
-    apiPost<{ ok: boolean }>('/ai/feedback', body),
-  teach: (body: { q: string; a: string }) => apiPost<{ ok: boolean; updated?: boolean; error?: string }>('/ai/teach', body),
 };
 
 /** 15. 研究工作台（横截面回测 / 实验历史 / 一致性报告 / 对账 / 熔断解锁） */

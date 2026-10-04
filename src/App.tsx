@@ -20,6 +20,7 @@ import AgentReportPage from './pages/AgentReportPage';
 import NewsPage from './pages/NewsPage';
 import LoginPage from './pages/LoginPage';
 import LegalPage from './pages/LegalPage';
+import ModelStudioPage from './pages/ModelStudioPage';
 import AppFooter from './components/AppFooter';
 
 /**
@@ -104,6 +105,7 @@ function App() {
             <Route path="/stock/:symbol" element={<StockDetailPage />} />
             <Route path="/analyze" element={<AnalyzePage />} />
             <Route path="/backtest" element={<BacktestPage />} />
+            <Route path="/models" element={<ModelStudioPage />} />
             <Route path="/screener" element={<ScreenerPage />} />
             <Route path="/research" element={<ResearchCenterPage tab="cross" />} />
             <Route path="/research/consistency" element={<ResearchCenterPage tab="consistency" />} />

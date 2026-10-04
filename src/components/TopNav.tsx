@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { path: '/screener', label: '选股' },
   { path: '/analyze', label: '因子分析' },
   { path: '/backtest', label: '策略回测' },
+  { path: '/models', label: '模型工坊' },
   // match 前缀：/research 下含 5 个子页签（/research/consistency 等）。
   // 缺 match 时需 pathname 精确等于 '/research'，进子页签就匹配不到 → 指示器回落首页。
   { path: '/research', label: '研究中心', match: '/research' },

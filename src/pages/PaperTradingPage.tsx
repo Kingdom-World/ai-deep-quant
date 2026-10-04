@@ -22,7 +22,7 @@ import {
   type PaperTriggeredAlert,
   type UnifiedQuote,
   type UnifiedKline,
-} from '../api/dataService';
+} from '../api';
 import { setVisibilityInterval } from '../lib/polling';
 import { detectMarket, pctColor } from '../lib/stock';
 import { getMarketStatus, useMinuteTick } from '../lib/marketHours';

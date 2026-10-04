@@ -8,7 +8,7 @@
 //   未登录 / 无运行中策略时给出明确引导文案，避免用户把空态误判为 bug。
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from 'react';
-import { researchApi, type ConsistencyEntry } from '../../api/dataService';
+import { researchApi, type ConsistencyEntry } from '../../api';
 import { card, sectionTitle, sectionSub, input, btn, btnGhost, Metric, pctColorOf } from './shared';
 
 function RiskAndReconcile() {

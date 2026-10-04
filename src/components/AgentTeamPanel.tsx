@@ -15,10 +15,11 @@ import {
   agentsApi,
   authApi,
   ApiError,
+  getQuote,
   type AgentTrace,
   type AgentTier,
   type AgentCapabilities,
-} from '../api/dataService';
+} from '../api';
 import {
   PROVIDERS,
   SUGGESTED_MODELS,
@@ -765,7 +766,7 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
       // digest 由**平台规则引擎**算好（数值不由 LLM 产出 —— 项目铁律）
       let digest = '';
       try {
-        const q = await fetch(`/api/quote/${encodeURIComponent(symbol)}`).then((r) => r.json());
+        const q = await getQuote(symbol);
         const parts: string[] = [];
         if (q?.price != null) parts.push(`最新价：${q.price}`);
         if (q?.changePercent != null) parts.push(`涨跌幅：${q.changePercent}%`);

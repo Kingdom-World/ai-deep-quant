@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fmtDateTime } from '../lib/time';
 import { theme } from '../lib/theme';
-import { agentsApi, type AgentTrace } from '../api/dataService';
+import { agentsApi, type AgentTrace } from '../api';
 
 const CARD = {
   backgroundColor: 'rgba(17,24,39,0.6)',

@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import MeshGradient from '../components/MeshGradient';
 import BrandMark from '../components/BrandMark';
-import { authApi } from '../api/dataService';
+import { authApi } from '../api';
 
 const inputStyle = {
   width: '100%',

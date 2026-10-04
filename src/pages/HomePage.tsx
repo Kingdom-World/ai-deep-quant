@@ -14,7 +14,7 @@ import {
   watchlistApi,
   type MarketMood,
   type UnifiedQuote,
-} from '../api/dataService';
+} from '../api';
 import { BACKEND_MODE, indexRefreshMs } from '../config';
 import {
   getFavorites,

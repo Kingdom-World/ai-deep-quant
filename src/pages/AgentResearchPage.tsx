@@ -14,7 +14,7 @@ import {
   type AgentResearchResult,
   type AgentToolData,
   type AgentTraceEntry,
-} from '../api/dataService';
+} from '../api';
 
 const KV = ({ k, v }: { k: string; v: unknown }) => (
   <div style={{ display: 'flex', gap: 10, fontSize: 12, lineHeight: 1.9 }}>

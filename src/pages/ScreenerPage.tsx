@@ -12,7 +12,7 @@ import {
   type ScreenerResult,
   type MarketMood,
   type ScreenerStrategy,
-} from '../api/dataService';
+} from '../api';
 import { pctColor } from '../lib/stock';
 import { theme } from '../lib/theme';
 import { setVisibilityInterval } from '../lib/polling';

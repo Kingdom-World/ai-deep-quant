@@ -6,7 +6,7 @@ import { fmtDateTime } from '../lib/time';
 import { Link, useNavigate } from 'react-router-dom';
 import AgentTeamPanel from '../components/AgentTeamPanel';
 import { theme } from '../lib/theme';
-import { agentsApi } from '../api/dataService';
+import { agentsApi } from '../api';
 
 const CARD = {
   backgroundColor: 'rgba(17,24,39,0.6)',

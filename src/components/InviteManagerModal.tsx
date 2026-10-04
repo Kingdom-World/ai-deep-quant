@@ -13,7 +13,7 @@
 //     · 已过期 → 到了 expiresAt（未设天数则永不过期，只能吊销）
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from 'react';
-import { authApi, type InviteEntry } from '../api/dataService';
+import { authApi, type InviteEntry } from '../api';
 import { theme } from '../lib/theme';
 
 const INPUT = {

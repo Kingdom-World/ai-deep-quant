@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as echarts from 'echarts';
-import { researchApi, type CrossBacktestResult } from '../../api/dataService';
+import { researchApi, type CrossBacktestResult } from '../../api';
 import { theme } from '../../lib/theme';
 import { card, sectionTitle, sectionSub, label, input, btn, Metric, pctColorOf } from './shared';
 

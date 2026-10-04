@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { newsApi, newsHealthApi, type NewsItem, type NewsResponse, type NewsHealth } from '../api/dataService';
+import { newsApi, newsHealthApi, type NewsItem, type NewsResponse, type NewsHealth } from '../api';
 import { theme } from '../lib/theme';
 
 const TABS: { key: NewsResponse['type']; label: string }[] = [

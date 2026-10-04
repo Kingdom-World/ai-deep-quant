@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as echarts from 'echarts';
-import { getHistory, getQuote } from '../api/dataService';
+import { getHistory, getQuote } from '../api';
 import { theme } from '../lib/theme';
 import {
   analyzeStockPotential,

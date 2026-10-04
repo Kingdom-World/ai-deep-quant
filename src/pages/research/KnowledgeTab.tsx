@@ -13,7 +13,7 @@
 //     · 关联口径点击后**就地展开**目标条目而非跳页——研究场景下跳页会打断思路。
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { knowledgeApi, type KnowledgeEntry, type KnowledgeSearchMode } from '../../api/dataService';
+import { knowledgeApi, type KnowledgeEntry, type KnowledgeSearchMode } from '../../api';
 import { card, sectionTitle, sectionSub, input, btnGhost } from './shared';
 
 const CATEGORY_COLOR: Record<string, string> = {

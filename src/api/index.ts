@@ -1,7 +1,10 @@
 // ─────────────────────────────────────────────────────────────
-// 统一数据服务层（迁移中·兼容层）
-//   全部域已抽至 src/api/<domain>.ts；本文件保留 re-export 与旧 import 路径
-//   `../api/dataService`，待调用点全部改指 src/api 后删除。
+// ─────────────────────────────────────────────────────────────
+// API 统一出口（src/api/index.ts）
+//   全站唯一 import 入口：`import { getQuote, paperApi } from '../api'`
+//   分层：组件层 → src/api/<domain> → src/api/client（唯一 fetch）
+//   ⚠️ 组件层禁止裸 fetch；新域请新增 <domain>.ts 并在此 re-export。
+// ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 // ============ Client 层（已抽出至 src/api/client.ts） ============
 import { ApiError, apiGet, apiGetPublic } from './client';

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { askAssistant, aiApi, authApi } from '../api/dataService';
+import { askAssistant, aiApi, authApi } from '../api';
 import { fmtDate } from '../lib/time';
 import { theme } from '../lib/theme';
 

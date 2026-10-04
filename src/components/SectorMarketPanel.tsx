@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
-import { apiGet } from '../api/dataService';
+import { apiGet } from '../api';
 import { theme } from '../lib/theme';
 
 const TABS = [

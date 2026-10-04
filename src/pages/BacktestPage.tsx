@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
-import { runBacktest, type BacktestResult } from '../api/dataService';
+import { runBacktest, type BacktestResult } from '../api';
 import { detectMarket, marketLabel, pctColor } from '../lib/stock';
 import { theme } from '../lib/theme';
 

@@ -18,7 +18,7 @@ import {
   type NewsItem,
   type PeriodPolicy,
   type TickData,
-} from '../api/dataService';
+} from '../api';
 import {
   aggregateData,
   aggregatePoints,

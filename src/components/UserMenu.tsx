@@ -4,7 +4,7 @@
 //   · 改密成功后会话令牌仍有效，无需重新登录
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from 'react';
-import { authApi } from '../api/dataService';
+import { authApi } from '../api';
 import { theme } from '../lib/theme';
 import InviteManagerModal from './InviteManagerModal';
 

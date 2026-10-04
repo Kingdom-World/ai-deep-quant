@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as echarts from 'echarts';
-import { researchApi, type ExperimentRecord } from '../../api/dataService';
+import { researchApi, type ExperimentRecord } from '../../api';
 import { theme } from '../../lib/theme';
 import { MAX_COMPARE, recKey, nextSelection, diffParams } from '../../../shared/experiments.mjs';
 

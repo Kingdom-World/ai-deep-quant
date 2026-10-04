@@ -4,7 +4,7 @@ import TopNav from './components/TopNav';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Backdrop from './components/Backdrop';
 import BrandMark from './components/BrandMark';
-import { authApi } from './api/dataService';
+import { authApi } from './api';
 import HomePage from './pages/HomePage';
 import StockDetailPage from './pages/StockDetailPage';
 import AnalyzePage from './pages/AnalyzePage';

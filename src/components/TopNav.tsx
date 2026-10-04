@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { searchSymbol } from '../api/dataService';
+import { searchSymbol } from '../api';
 import { theme } from '../lib/theme';
 import BrandMark from './BrandMark';
 import UserMenu from './UserMenu';

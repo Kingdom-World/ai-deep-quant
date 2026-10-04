@@ -17,7 +17,7 @@ import {
   type FactorEvalResult,
   type FactorVerdict,
   type LayerAnalysisResult,
-} from '../../api/dataService';
+} from '../../api';
 
 const VERDICT_STYLE: Record<FactorVerdict, { bg: string; fg: string }> = {
   稳健: { bg: 'rgba(56,189,248,0.16)', fg: '#38bdf8' },

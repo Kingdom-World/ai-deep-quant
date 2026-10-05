@@ -203,6 +203,25 @@ test('plateauScan：正常 topN 扫描覆盖多个取值，中心点 delta 为 0
   assert.strictEqual(center.deltaPct, 0, '中心点相对自身的变化必须为 0');
 });
 
+test('plateauScan：实际覆盖窄于请求范围时必须披露 partial-coverage（判定按实际可达极值）', (t) => {
+  if (skip(t)) return;
+  // topN=5 时 0.7 与 0.85 都取整到 4 ⇒ −30% 那一侧被合并吞掉，实际只覆盖到 85%。
+  //   旧实现按 ratio 匹配 0.7/1.3 判定边界，−30% 那一侧**静默漏检**；现改为按实际极值点判定。
+  const r = V.plateauScan(MODEL(), { param: 'topN', opts: { topN: 5 } });
+  assert.strictEqual(r.ok, true, r.error);
+  assert.deepStrictEqual(r.coverage.requested, [0.7, 1.3]);
+  assert.ok(r.coverage.actual[0] > 0.7 + 1e-9, `−30% 侧应被合并（实际 ${r.coverage.actual[0]}）`);
+  assert.ok(
+    r.flags.some((f) => f.startsWith('partial-coverage')),
+    '覆盖窄于请求必须显式披露，否则用户以为做了完整 ±30% 检验',
+  );
+  assert.strictEqual(r.verdict, 'plateau', 'partial-coverage 是披露而非失败，不得据此判尖峰');
+  // 判定的边界点必须是**实际**最极端的两个取值
+  const okVals = r.points.filter((p) => p.ok).map((p) => p.value);
+  assert.strictEqual(Math.min(...okVals), 4);
+  assert.strictEqual(Math.max(...okVals), 7);
+});
+
 test('plateauScan：只改第一个因子的权重（单因子模型下等比缩放不改变排序 → 收益恒定）', (t) => {
   if (skip(t)) return;
   // 单因子模型整体缩放权重是严格单调变换，选股不变 ⇒ 各点收益必须完全相同。

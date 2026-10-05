@@ -259,19 +259,44 @@ function plateauScan(model, cfg = {}) {
     dropPct: p.ok && baseRet !== 0 ? +(((baseRet - p.totalReturn) / Math.abs(baseRet)) * 100).toFixed(1) : null,
   }));
 
-  const edges = withDelta.filter((p) => p.ok && (Math.abs(p.ratio - 0.7) < 1e-9 || Math.abs(p.ratio - 1.3) < 1e-9));
+  // 🔴 边界点按**实际可达的极值**取，而不是按 ratio 匹配 0.7 / 1.3：
+  //    取整合并会让某一侧的比例被吞掉（实测 topN=5 时 0.7 与 0.85 都取整到 4，
+  //    按 ratio 匹配就只剩 1.3 一侧被检查，−30% 那一侧静默漏检）。
+  //    真实可达的极值点才是"邻域稳健性"真正要检验的地方。
+  const okPts = withDelta.filter((p) => p.ok);
+  const byValue = [...okPts].sort((a, b) => a.value - b.value);
+  const edgePts = byValue.length > 1 ? [byValue[0], byValue[byValue.length - 1]] : [];
+  const wantMin = Math.min(...ratios);
+  const wantMax = Math.max(...ratios);
+  const gotMin = okPts.length ? Math.min(...okPts.map((p) => p.ratio)) : null;
+  const gotMax = okPts.length ? Math.max(...okPts.map((p) => p.ratio)) : null;
+
   const flags = [];
-  for (const e of edges) {
+  for (const e of edgePts) {
+    const at = `${(e.ratio * 100).toFixed(0)}%（${param}=${e.value}）`;
     if (e.dropPct !== null && e.dropPct > RULES.plateauMaxDropPct) {
-      flags.push(`参数 ${param}=${e.value}（${(e.ratio * 100).toFixed(0)}%）时收益跌幅 ${e.dropPct}%（> ${RULES.plateauMaxDropPct}%）——尖峰`);
+      flags.push(`边界点 ${at} 收益跌幅 ${e.dropPct}%（> ${RULES.plateauMaxDropPct}%）——尖峰`);
     }
-    if (baseRet > 0 && e.ok && e.totalReturn < 0) {
-      flags.push(`参数 ${param}=${e.value}（${(e.ratio * 100).toFixed(0)}%）时收益转负（${e.totalReturn}%）——邻域不稳健`);
+    if (baseRet > 0 && e.totalReturn < 0) {
+      flags.push(`边界点 ${at} 收益转负（${e.totalReturn}%）——邻域不稳健`);
     }
   }
-  // 边界点缺失（该 ratio 被取整合并）时显式说明，避免"看着像扫过但没扫"
-  if (!edges.length) {
+  // 最接近基准的可达点若已明显变差，给出较早的提示（不必等到边界）
+  const near = okPts
+    .filter((p) => Math.abs(p.ratio - 1) > 1e-9)
+    .sort((a, b) => Math.abs(a.ratio - 1) - Math.abs(b.ratio - 1))[0];
+  if (near && near.dropPct !== null && near.dropPct > RULES.plateauCenterHintPct) {
+    flags.push(`最近邻参数点 ${(near.ratio * 100).toFixed(0)}%（${param}=${near.value}）收益跌幅已达 ${near.dropPct}%（> ${RULES.plateauCenterHintPct}%）——参数敏感`);
+  }
+  // 边界点缺失（所有比例都塌到同一个取值）时显式说明，避免"看着像扫过但没扫"
+  if (!edgePts.length) {
     flags.push(`no-edge-points：取整后 ±30% 边界与基准点重合（${param} 基准值 ${param === 'topN' ? baseTopN : baseWeight} 太小），本次扫描**未能覆盖 ±30% 边界**——需提高基准参数才能做真正的邻域检验`);
+  } else if (gotMin > wantMin + 1e-9 || gotMax < wantMax - 1e-9) {
+    flags.push(
+      `partial-coverage：请求覆盖 ${(wantMin * 100).toFixed(0)}%~${(wantMax * 100).toFixed(0)}%，` +
+        `实际可达 ${(gotMin * 100).toFixed(0)}%~${(gotMax * 100).toFixed(0)}%` +
+        `（取整后部分比例合并到同一取值，见 mergedPoints）——判定以**实际可达的极值点**为准`,
+    );
   }
 
   const merged = withDelta.filter((p) => p.mergedRatios.length > 1);
@@ -283,12 +308,15 @@ function plateauScan(model, cfg = {}) {
     distinctPoints: points.length,
     requestedRatios: ratios.length,
     mergedPoints: merged.map((p) => ({ value: p.value, keptRatio: p.ratio, mergedRatios: p.mergedRatios })),
-    verdict: flags.some((f) => !f.startsWith('no-edge-points')) ? 'spike' : 'plateau',
+    /** 真实覆盖范围（请求 vs 实际可达）——取整合并会缩窄，必须显式给出 */
+    coverage: { requested: [wantMin, wantMax], actual: [gotMin, gotMax] },
+    verdict: flags.some((f) => !f.startsWith('no-edge-points') && !f.startsWith('partial-coverage')) ? 'spike' : 'plateau',
     flags,
     rules: RULES,
     backtests: points.filter((p) => p.ok || p.reason).length,
     note:
       `${param} 在基准 ±30% 内扫描；${points.length}/${ratios.length} 个网格取到不同取值` +
+      `，实际可达覆盖 ${gotMin === null ? '—' : `${(gotMin * 100).toFixed(0)}%~${(gotMax * 100).toFixed(0)}%`}` +
       (merged.length
         ? `（${merged.length} 个点由多个比例合并而来，已保留最接近基准的比例并如实列出：见 mergedPoints）`
         : '') +

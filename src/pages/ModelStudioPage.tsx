@@ -38,6 +38,7 @@ import { theme } from '../lib/theme';
 import ZoneShell from '../components/ZoneShell';
 import PipelineView from './studio/PipelineView';
 import ExperimentCompare from './studio/ExperimentCompare';
+import ValidationPanel from './studio/ValidationPanel';
 import {
   STUDIO_SECTIONS,
   draftToModel,
@@ -139,7 +140,7 @@ export default function ModelStudioPage() {
   // 工作台状态
   const [touched, setTouched] = useState(false); // 是否已开始编辑（决定是否显示模板墙）
   const [section, setSection] = useState<StudioSection>('factors');
-  const [track, setTrack] = useState<'form' | 'json' | 'exp'>('form');
+  const [track, setTrack] = useState<'form' | 'json' | 'exp' | 'verify'>('form');
   /** 递增即让「实验轨」重新拉取列表（跑完回测后留痕才有意义） */
   const [expToken, setExpToken] = useState(0);
   const [flashPath, setFlashPath] = useState<string | null>(null);
@@ -655,7 +656,7 @@ export default function ModelStudioPage() {
           <div className="zw-editor" style={panel}>
             <div style={panelHead}>
               <div style={{ display: 'flex', gap: 6 }}>
-                {(['form', 'json', 'exp'] as const).map((k) => (
+                {(['form', 'json', 'exp', 'verify'] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
@@ -667,12 +668,16 @@ export default function ModelStudioPage() {
                       borderColor: track === k ? theme.color.primary : LINE,
                     }}
                   >
-                    {k === 'form' ? '表单轨' : k === 'json' ? 'JSON 轨（只读）' : '实验轨'}
+                    {k === 'form' ? '表单轨' : k === 'json' ? 'JSON 轨（只读）' : k === 'exp' ? '实验轨' : '验证轨'}
                   </button>
                 ))}
               </div>
               <span style={{ fontSize: 11, color: theme.color.textFaint }}>
-                {track === 'exp' ? '每次回测自动留痕 · 可勾选对比' : '同一份 Model JSON · 两轨等价'}
+                {track === 'exp'
+                  ? '每次回测自动留痕 · 可勾选对比'
+                  : track === 'verify'
+                    ? '只读、不回写 · 样本外滚动 + 参数平原'
+                    : '同一份 Model JSON · 两轨等价'}
               </span>
             </div>
 
@@ -713,6 +718,9 @@ export default function ModelStudioPage() {
                     flash('ok', '已载入该实验当时的模型定义（原实验记录未被修改）');
                   }}
                 />
+              ) : track === 'verify' ? (
+                /* 验证轨：Phase 2 独立验证套件（只读模型；不回写/不落库/不留痕） */
+                <ValidationPanel model={model} canRun={canRun} spec={schema?.validation ?? null} invalid={errors.length > 0} />
               ) : showGallery ? (
                 /* 冷启动：先给骨架，而不是空白表单 */
                 <div>

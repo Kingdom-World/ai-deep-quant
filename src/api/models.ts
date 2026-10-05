@@ -205,6 +205,12 @@ export interface PlateauResult {
   distinctPoints: number;
   requestedRatios: number;
   mergedPoints: { value: number; keptRatio: number; mergedRatios: number[] }[];
+  /**
+   * 真实覆盖范围（请求 vs 实际可达）。
+   * ⚠️ 参数取整会让部分比例合并到同一取值 ⇒ 实际覆盖可能窄于 ±30%；
+   *   判定以**实际可达的极值点**为准，故这里必须显式给出，不能只声称"扫了 ±30%"。
+   */
+  coverage: { requested: [number, number]; actual: [number | null, number | null] };
   verdict: 'spike' | 'plateau';
   flags: string[];
   rules: Record<string, number>;

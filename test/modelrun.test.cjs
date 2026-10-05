@@ -14,8 +14,10 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { runModel, fingerprint, ENGINE_VERSION } = require('../server/modelrun.cjs');
+const { runModel, fingerprint, buildCompositeCrossSection, ENGINE_VERSION } = require('../server/modelrun.cjs');
 const crosssect = require('../server/crosssect.cjs');
+const modelspec = require('../shared/modelspec.cjs');
+const fe = require('../server/factorexpr.cjs');
 
 const REAL_DIR = path.join(__dirname, '..', 'data', 'history', 'kline');
 const hasRealArchive = fs.existsSync(REAL_DIR);
@@ -43,9 +45,55 @@ test('校验失败：非法表达式被服务端 AST 拒绝（stage=validate）'
   assert.ok(r.issues.some((i) => i.path.includes('expr')));
 });
 
-test('构建阶段失败：因子合法但引擎不认时给出 stage=build', () => {
-  // 用 engines 不认识的预置名（绕过规范校验需注入 presets 的场景）——此处直接验证 build 分支存在性
-  assert.strictEqual(typeof runModel(model()).stage, 'undefined', '正常模型不应有 stage');
+// ── 构建阶段不变量（无需归档）─────────────────────────────────
+//   🔴 2026-10-05 修正：原用例名为「构建阶段失败：因子合法但引擎不认时给出 stage=build」，
+//      但断言的是「正常模型不应有 stage」——**标题与断言不符**，且它需要一次成功回测，
+//      因此依赖真实归档却**漏了 skip 守卫**：本地有归档所以一直绿，CI 无归档时
+//      收到 stage:'build'（本地归档不足）直接红 —— CI 连续 8 次失败的成因之一。
+//
+//   同时实测确认：`stage:'build'` 在**公开路径上已不可达**（validate 会把 engine 不认的
+//   因子全部拦下，见下方矩阵实验），它本质是「引擎与规范脱节」的安全网。
+//   故这里锁住真正有价值的不变量：**validate 接受集 ⊆ build 可构建集**。
+test('构建阶段不变量：通过校验的模型一律可构建（validate 接受集 ⊆ build 可构建集）', () => {
+  const cases = [
+    ['预置因子', model()],
+    ['表达式因子', model({ factors: [{ id: 's', expr: 'mom60 - mom20', weight: 1, direction: 1 }] })],
+    ['多因子+反向', model({
+      factors: [
+        { id: 'a', expr: 'mom20', weight: 1, direction: 1 },
+        { id: 'b', expr: 'rev20', weight: -0.5, direction: -1 },
+      ],
+    })],
+    ['全算子链', model({
+      transforms: [
+        { type: 'winsorize', args: { method: 'mad', n: 3 } },
+        { type: 'zscore' },
+        { type: 'rank' },
+        { type: 'fill_missing', args: { method: 'cross_mean' } },
+      ],
+    })],
+    ['过滤器', model({ filters: [{ type: 'field_range', field: 'close', min: 1 }] })],
+  ];
+  for (const [label, m] of cases) {
+    const norm = modelspec.normalizeModel(m, { parseExpr: fe.parseExpression });
+    assert.strictEqual(norm.ok, true, `${label}: 本应通过校验 ${JSON.stringify(norm.errors)}`);
+    let err = null;
+    try {
+      buildCompositeCrossSection(norm.model);
+    } catch (e) {
+      err = e.message;
+    }
+    assert.strictEqual(
+      err,
+      null,
+      `${label}: 通过校验却在构建期抛错 ⇒ 用户会看到莫名的 stage=build 失败（规范与引擎脱节）：${err}`,
+    );
+  }
+});
+
+test('正常模型成功执行时不得携带 stage（stage 仅用于表示失败阶段）', (t) => {
+  if (skip(t)) return;
+  assert.strictEqual(typeof runModel(model()).stage, 'undefined', '成功结果不应带 stage');
 });
 
 test('指纹只认语义：改标题/作者/标签不换指纹，改权重才换', () => {

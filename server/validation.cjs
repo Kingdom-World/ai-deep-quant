@@ -42,7 +42,18 @@ const RULES = {
   minIcPeriods: 12,
   /** 因果性检验的默认截断点数（1 个基准 + N 个截断 = N+1 次回测） */
   causalityCuts: 3,
+  /**
+   * 显式截断点的上限。每个截断点都要**重写整份归档**（真实归档约 90MB，本机约 10s）
+   * ⇒ 不加限制时 `cuts:[... 1000 个日期]` 会造成分钟级的重计算。
+   * 超出即**拒绝**（不是静默截断到上限——静默会让调用方以为扫过了全部日期）。
+   */
+  causalityMaxCuts: 8,
 };
+
+/** 截断日期必须是严格 `YYYY-MM-DD`。
+ *  🔴 这同时是一条**安全校验**：`getCuts` 会把它 `path.join` 进临时目录，
+ *     不校验就等于允许 `../../..` 之类的路径穿越写到临时目录之外。 */
+const CUT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** 已知局限（§5.3：必须在报告与 UI 显式标注，防止小样本假信心） */
 const LIMITATIONS = [
@@ -430,10 +441,63 @@ function writeTruncatedArchive(srcDir, destDir, cutDate) {
   return { kept, emptied, rowsKept };
 }
 
+/**
+ * 归一化并校验**外部传入**的截断点。
+ *
+ * 🔴 两道必做的校验（都属"外部输入面"）：
+ *   ① **严格 `YYYY-MM-DD`**：截断点会被 `path.join` 进临时目录 ⇒ 不校验等于允许路径穿越
+ *      （`cuts:['../../../x']` 会写到临时目录之外）。
+ *   ② **上限**：每个截断点都要重写整份归档，无上限 = 可被无成本放大成分钟级重计算。
+ * 另外去重 + 升序（重复日期等于白跑一遍 90MB；乱序会让"逐折递增"的判读失真）。
+ *
+ * @returns {{ok:true, cuts:string[]} | {ok:false, error:string}}
+ */
+function normalizeCuts(input) {
+  const raw = Array.isArray(input) ? input : null;
+  if (!raw) return { ok: false, error: 'cuts 必须是日期数组（YYYY-MM-DD），或省略/传数字以用等分默认点' };
+  if (!raw.length) return { ok: false, error: 'cuts 不能为空数组 —— 省略它即使用等分默认点' };
+  const bad = raw.filter((x) => typeof x !== 'string' || !CUT_DATE_RE.test(x));
+  if (bad.length) {
+    return {
+      ok: false,
+      error: `cuts 每一项都必须是 YYYY-MM-DD 形式的日期；非法项：${bad.slice(0, 3).map((x) => JSON.stringify(x)).join('、')}${bad.length > 3 ? ' 等' : ''}`,
+    };
+  }
+  const cuts = [...new Set(raw)].sort();
+  if (cuts.length > RULES.causalityMaxCuts) {
+    return {
+      ok: false,
+      error: `显式截断最多 ${RULES.causalityMaxCuts} 个（收到 ${cuts.length} 个）：每个截断点都要重写整份归档，成本随之线性上升`,
+    };
+  }
+  return { ok: true, cuts };
+}
+
 function causalityCheck(model, cfg = {}) {
   const opts = { ...(cfg.opts || {}), rawEquity: true };
-  const explicit = Array.isArray(cfg.cuts) ? cfg.cuts.filter((x) => typeof x === 'string') : null;
+  const explicit = Array.isArray(cfg.cuts) ? cfg.cuts : null;
   const cutCount = Math.max(1, Math.min(Number(cfg.cuts) || RULES.causalityCuts, 6));
+
+  // 🔴 外部输入优先校验（纯校验、无副作用）：不合法的 cuts 直接拒绝，不必先白跑一遍回测。
+  //    注意这不算"环境检查"——顺序约定只要求**模型**错误优先于**环境**错误（见下）。
+  let explicitCuts = null;
+  if (cfg.cuts !== undefined) {
+    if (explicit === null) {
+      // 数字形态 = "自动取 N 个等分截断点"
+      if (typeof cfg.cuts !== 'number' || !Number.isFinite(cfg.cuts) || cfg.cuts < 1) {
+        return {
+          ok: false,
+          error: `cuts 只接受 ≥1 的数字（=自动取 N 个截断点）或 YYYY-MM-DD 日期数组；收到 ${typeof cfg.cuts}（${JSON.stringify(cfg.cuts)}）`,
+          rules: RULES,
+          backtests: 0,
+        };
+      }
+    } else {
+      const n = normalizeCuts(explicit);
+      if (!n.ok) return { ok: false, error: n.error, rules: RULES, backtests: 0 };
+      explicitCuts = n.cuts;
+    }
+  }
 
   // 🔴 顺序：先跑模型（模型非法就该报 stage=validate），再检查归档是否可用于截断。
   //    反过来写会让"模型写错了"被"归档不存在"遮住 —— CI（无归档）里就是这么暴露出来的。
@@ -459,20 +523,20 @@ function causalityCheck(model, cfg = {}) {
   const fullDaily = stripTerminalArtifact(fullSeries);
   const fullUniverseSize = full.result.universeSize;
 
-  // 池子完整的起点：默认截断点必须晚于它，否则"历史段不同"分不清是泄露还是池子缩水
+  // 池子完整的起点。**显式 cuts 也照算**：截断点由调用方指定时，这条 as-of 事实正是
+  // 判读"历史段不同"所必需的解释材料（否则使用者只会看到一群 inconclusive 不明所以）。
   let pool = { poolStableFrom: null, poolStocks: 0 };
-  if (!explicit) {
-    try {
-      pool = computePoolStableFrom(srcDir, crosssect.UNIVERSE_MIN_ROWS);
-    } catch (e) {
-      return { ok: false, error: `读取归档以确定池子完整起点失败：${String(e.message || e).slice(0, 100)}`, backtests };
-    }
+  let poolError = null;
+  try {
+    pool = computePoolStableFrom(srcDir, crosssect.UNIVERSE_MIN_ROWS);
+  } catch (e) {
+    poolError = `读取归档以确定池子完整起点失败（as-of 提示缺失，不影响逐点比对）：${String(e.message || e).slice(0, 100)}`;
   }
 
   // 截断点：默认取"池子完整之后"到末尾的等分位置上的**真实交易日**（两端各留出样本）
   let cuts;
-  if (explicit) {
-    cuts = explicit;
+  if (explicitCuts) {
+    cuts = explicitCuts;
   } else {
     const firstIdx = pool.poolStableFrom
       ? fullDaily.series.findIndex((p) => p.date >= pool.poolStableFrom)
@@ -502,6 +566,10 @@ function causalityCheck(model, cfg = {}) {
   const skipped = [];
   /** 归档截断概况（**累计**，证明"数据真的变了"，而不是只传了 endDate） */
   const archived = { cuts: 0, kept: 0, emptied: 0, rowsKept: 0 };
+  // 🔴 本函数必须**全程同步**：它靠临时改写进程级环境变量 LOCAL_HISTORY_DIR 来切数据源，
+  //    一旦中途出现 await/异步边界，同进程内并发的另一次回测就会读到**别的截断归档**。
+  //    runModel / writeTruncatedArchive / fs.* 全部同步 ⇒ 单线程事件循环里这段是原子的。
+  //    ⚠️ 今后若要把它改成异步（例如并发跑多个截断点），必须改成显式传目录而不是改 env。
   try {
     for (const cut of cuts) {
       const destDir = path.join(tmpRoot, cut);
@@ -526,6 +594,13 @@ function causalityCheck(model, cfg = {}) {
         else process.env.LOCAL_HISTORY_DIR = savedDir;
       }
       backtests += 1;
+
+      // 这个截断已经用完，立刻释放（否则 N 个截断的归档会同时占着磁盘，峰值 ≈ N×45MB）
+      try {
+        fs.rmSync(destDir, { recursive: true, force: true });
+      } catch {
+        /* 删不掉不影响结论，最终 tmpRoot 还会兜一次 */
+      }
 
       if (!r.ok) {
         skipped.push({ cut, reason: `${r.stage}: ${r.error}` });
@@ -619,7 +694,13 @@ function causalityCheck(model, cfg = {}) {
      * 🔴 一条值得披露的事实：核心池按**全期**行数（≥ UNIVERSE_MIN_ROWS）选定 ⇒
      *    在 poolStableFrom 之前，as-of 池子只是全集池的真子集（事后选池带来的轻微 as-of 偏差）。
      */
-    pool: { stableFrom: pool.poolStableFrom, stocks: pool.poolStocks, cutSelection: explicit ? 'explicit' : 'after-pool-stable' },
+    pool: {
+      stableFrom: pool.poolStableFrom,
+      stocks: pool.poolStocks,
+      cutSelection: explicitCuts ? 'explicit' : 'after-pool-stable',
+      /** 读归档算 as-of 提示失败时的原因（不影响逐点比对，但不静默） */
+      error: poolError,
+    },
     /** 归档截断概况（证明"数据真的变了"，而不是只传了 endDate） */
     archiveTruncation: archived,
     cuts: segs,
@@ -632,7 +713,9 @@ function causalityCheck(model, cfg = {}) {
       `前缀一致性检验（**物理截断归档**后重跑）：全集 ${fullDaily.series.length} 个交易日 + ` +
       `${segs.length} 个截断点，逐点比对 ${segs.reduce((a, s) => a + s.compared, 0)} 个数据点` +
       `（已剥离期末强平追加点：它与末个交易日同日、值是强平后现金，不是新观测）` +
-      (explicit ? '' : `；截断点取自核心池完整之后（${pool.poolStableFrom || '—'} 起，池子 ${pool.poolStocks} 只）`) +
+      (explicitCuts
+        ? `；截断点由调用方显式指定${pool.poolStableFrom ? `（核心池完整起点 ${pool.poolStableFrom}）` : ''}`
+        : `；截断点取自核心池完整之后（${pool.poolStableFrom || '—'} 起，池子 ${pool.poolStocks} 只）`) +
       `${skipped.length ? `；${skipped.length} 个截断点未评估` : ''}` +
       `；本项共执行 ${backtests} 次回测。` +
       `⚠️ 仅覆盖数据截断型泄露；日内信息泄露需 tick/时间戳数据，本项检不出（见 limitations）`,
@@ -737,6 +820,8 @@ module.exports = {
   writeTruncatedArchive,
   /** 导出以便测试核对"池子完整起点"这条 as-of 事实 */
   computePoolStableFrom,
+  /** 导出以便直接测"外部输入的截断点"这道校验（含路径穿越与上限） */
+  normalizeCuts,
   RULES,
   LIMITATIONS,
 };

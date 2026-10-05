@@ -253,12 +253,18 @@ export default function ValidationPanel({
   canRun,
   spec,
   invalid = false,
+  onReport,
 }: {
   model: ModelSpec;
   canRun: boolean;
   spec: ValidationSpec | null;
   /** 当前草稿存在校验错误 ⇒ 禁用运行（否则要白跑 9 次回测才报「模型校验失败」） */
   invalid?: boolean;
+  /**
+   * 上报本次验证报告（含 null = 清空）。
+   * 用途：研究包要把验证结论**带走**，而报告此前只活在本组件的局部状态里。
+   */
+  onReport?: (r: ValidationReport | null) => void;
 }) {
   const [folds, setFolds] = useState(3);
   const [param, setParam] = useState<'topN' | 'weight'>('topN');
@@ -281,10 +287,12 @@ export default function ValidationPanel({
       const opts: ValidateSuiteOptions = { folds, param, topN: 5, skip };
       const r = await modelsApi.validateSuite(model, opts);
       setReport(r);
+      onReport?.(r);
       if (!r.ok && r.error) setErr(`${r.error.stage}：${r.error.message}`);
     } catch (e) {
       setErr((e as Error).message);
       setReport(null);
+      onReport?.(null);
     } finally {
       setBusy(false);
     }

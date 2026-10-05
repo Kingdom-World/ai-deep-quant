@@ -173,3 +173,26 @@ test('【因子族】反转因子应买最弱标的，方向与动量相反', ()
   assert.ok(rev.totalReturn < 0, `反转应选中下跌的 B，totalReturn=${rev.totalReturn}`);
   assert.equal(mom.benchmarkReturn, rev.benchmarkReturn, '同窗口因子区间相同，基准应一致');
 });
+
+// ── 临时目录清理（自动化补丁：mkdtemp 产物不会被自动回收）──
+//   mkdtemp 建的目录由系统负责创建但**不会自动回收**：不加这一步，每跑一次套件都会
+//   在系统临时目录里留一批（实测累积到 3000+ 个，拖慢目录操作）。只匹配本文件自己的
+//   前缀 + 6 位随机后缀，不碰任何别的东西。
+test.after(() => {
+  const base = os.tmpdir();
+  let names;
+  try {
+    names = fs.readdirSync(base);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (new RegExp("^crossadj-a-[A-Za-z0-9]{6}$ | ^crossadj-b-[A-Za-z0-9]{6}$ | ^crossadj-b2-[A-Za-z0-9]{6}$ | ^crossadj-c-[A-Za-z0-9]{6}$ | ^crossadj-d-[A-Za-z0-9]{6}$ | ^crossadj-e-[A-Za-z0-9]{6}$").test(name)) {
+      try {
+        fs.rmSync(path.join(base, name), { recursive: true, force: true });
+      } catch {
+        /* 清理失败不影响测试结论（系统临时目录会自行回收） */
+      }
+    }
+  }
+});

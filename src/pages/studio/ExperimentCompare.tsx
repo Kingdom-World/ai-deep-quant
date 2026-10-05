@@ -70,9 +70,15 @@ const td: React.CSSProperties = {
 export default function ExperimentCompare({
   refreshToken,
   onLoadModel,
+  onSelectionChange,
 }: {
   refreshToken: number;
   onLoadModel: (model: ModelSpec) => void;
+  /**
+   * 上报当前**已取回完整记录**的实验（取消对比则上报空数组）。
+   * 用途：研究包要把选中的实验记录一并带走（此前它们只活在本组件的局部状态里）。
+   */
+  onSelectionChange?: (docs: ModelExperimentDoc[]) => void;
 }) {
   const [rows, setRows] = useState<ModelExperimentRow[]>([]);
   const [quota, setQuota] = useState({ count: 0, quota: 0 });
@@ -117,6 +123,7 @@ export default function ExperimentCompare({
     try {
       const r = await modelsApi.experiments.compare(selected);
       setDocs(r.items || []);
+      onSelectionChange?.(r.items || []);
       if ((r.items || []).length < r.requested) {
         setMsg({
           kind: 'warn',
@@ -126,6 +133,7 @@ export default function ExperimentCompare({
     } catch (e) {
       setMsg({ kind: 'err', text: `对比失败：${(e as Error).message}` });
       setDocs(null);
+      onSelectionChange?.([]);
     } finally {
       setBusy(false);
     }

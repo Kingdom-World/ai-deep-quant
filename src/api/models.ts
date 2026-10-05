@@ -265,7 +265,13 @@ export interface CausalityResult {
    * 核心池的 as-of 事实：池子按**全期**行数选定 ⇒ `stableFrom` 之前，as-of 池子只是全集池的真子集
    * （事后选池带来的轻微 as-of 偏差）。默认截断点一律取在 `stableFrom` 之后，判读才可能确定。
    */
-  pool: { stableFrom: string | null; stocks: number; cutSelection: 'explicit' | 'after-pool-stable' };
+  pool: {
+    stableFrom: string | null;
+    stocks: number;
+    cutSelection: 'explicit' | 'after-pool-stable';
+    /** 读归档算 as-of 提示失败时的原因（不影响逐点比对，但不静默） */
+    error: string | null;
+  };
   /** 归档截断概况（证明数据真的被改写，而不是只传了 endDate） */
   archiveTruncation: { cuts: number; kept: number; emptied: number; rowsKept: number };
   cuts: CausalityCut[];

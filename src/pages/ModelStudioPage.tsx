@@ -33,12 +33,15 @@ import {
   type ModelTemplate,
   type ModelRunResponse,
   type ValidationIssue,
+  type ValidationReport,
 } from '../api';
 import { theme } from '../lib/theme';
 import ZoneShell from '../components/ZoneShell';
 import PipelineView from './studio/PipelineView';
 import ExperimentCompare from './studio/ExperimentCompare';
 import ValidationPanel from './studio/ValidationPanel';
+// 研究包（纯函数 · 前后端同源）：验证结论与指标此前只活在浏览器里，科研用途必须能带走
+import { buildResearchBundle, renderResearchReport } from '../../shared/research-bundle.mjs';
 import {
   STUDIO_SECTIONS,
   draftToModel,
@@ -144,6 +147,10 @@ export default function ModelStudioPage() {
   /** 递增即让「实验轨」重新拉取列表（跑完回测后留痕才有意义） */
   const [expToken, setExpToken] = useState(0);
   const [flashPath, setFlashPath] = useState<string | null>(null);
+  /** 最近一次验证报告（研究包要把它带走 ⇒ 必须从验证轨提升到页面级） */
+  const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
+  /** 最近一次「已取回完整记录」的实验（同上） */
+  const [expDocs, setExpDocs] = useState<unknown[]>([]);
   const flashTimer = useRef<number | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
 
@@ -370,11 +377,52 @@ export default function ModelStudioPage() {
     a.click();
     URL.revokeObjectURL(a.href);
   };
+
+  /** 任意文本下载（研究报告是 Markdown，不能走 JSON 那条） */
+  const downloadText = (text: string, fileName: string, mime = 'text/markdown;charset=utf-8') => {
+    const blob = new Blob([text], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   const safeName = () => (draft.name || 'model').replace(/[^\w\u4e00-\u9fa5-]/g, '_');
 
   const doExport = () => {
     downloadJson(model, `${safeName()}.json`);
     flash('ok', '已导出 Model JSON（可在本地版本导入执行）');
+  };
+
+  // ── 研究级导出（Phase 2）：把「结论 + 口径 + 局限 + 复现方式」打包带走 ──
+  //   纯前端组装（走 shared/research-bundle.mjs），**公网同样可用** ——
+  //   公网跑不了回测/验证，包里会显式写明缺什么、为什么缺。
+  const buildBundle = () =>
+    buildResearchBundle({
+      model,
+      modelHash,
+      runOpts: { topN: opts.topN, capital: opts.capital, slippage: opts.slippage },
+      run: run ?? null,
+      validation: validationReport ?? null,
+      experiments: expDocs,
+      limitations: schema?.validation?.limitations ?? [],
+      origin: schema ? (schema.canRun ? 'local' : 'vercel') : null,
+    });
+
+  const doExportBundle = () => {
+    const b = buildBundle();
+    downloadJson(b, `${safeName()}-research-bundle.json`);
+    flash(
+      b.missing.length ? 'info' : 'ok',
+      b.missing.length
+        ? `已导出研究包；其中 ${b.missing.length} 项未包含（包内 missing 字段已逐条说明）`
+        : '已导出研究包（含模型定义、回测口径与结果、验证结论、已知局限与复现方式）',
+    );
+  };
+
+  const doExportReport = () => {
+    downloadText(renderResearchReport(buildBundle()), `${safeName()}-research-report.md`);
+    flash('ok', '已导出研究报告（Markdown，可直接贴进笔记/论文附录）');
   };
 
   /** 离线回执附件：模型本体（**纯 Model JSON，可原样导回**）+ 文件名携带哈希与回测参数 */
@@ -702,12 +750,22 @@ export default function ModelStudioPage() {
                     </button>
                     <button type="button" style={btn()} onClick={doExport}>下载（纯模型）</button>
                     <button type="button" style={btn()} onClick={doExportReceiptModel}>下载（文件名含参数）</button>
+                    <button type="button" style={btn(true)} onClick={doExportBundle}>导出研究包（JSON）</button>
+                    <button type="button" style={btn()} onClick={doExportReport}>导出报告（Markdown）</button>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: theme.color.textFaint, marginTop: 6, lineHeight: 1.7 }}>
+                    研究包 = 模型定义 + 回测口径与指标 + <strong style={{ color: theme.color.textMuted }}>验证结论</strong> +
+                    已知局限 + 复现步骤，一份自包含的证据快照；
+                    报告是同一份内容的人可读版（Markdown 表格，可直接贴进笔记/论文附录）。
+                    {!validationReport && '（当前尚无验证结论 ⇒ 包里会显式写明"未包含"及其原因。）'}
+                    {!run && '（当前尚无回测结果 ⇒ 同上。）'}
                   </div>
                 </div>
               ) : track === 'exp' ? (
                 /* 实验轨：不可变留痕 + 对比（载入模型只写草稿，不改动原记录） */
                 <ExperimentCompare
                   refreshToken={expToken}
+                  onSelectionChange={setExpDocs}
                   onLoadModel={(snap) => {
                     setDraft(modelToDraft(snap));
                     setEditingId(null);
@@ -720,7 +778,13 @@ export default function ModelStudioPage() {
                 />
               ) : track === 'verify' ? (
                 /* 验证轨：Phase 2 独立验证套件（只读模型；不回写/不落库/不留痕） */
-                <ValidationPanel model={model} canRun={canRun} spec={schema?.validation ?? null} invalid={errors.length > 0} />
+                <ValidationPanel
+                  model={model}
+                  canRun={canRun}
+                  spec={schema?.validation ?? null}
+                  invalid={errors.length > 0}
+                  onReport={setValidationReport}
+                />
               ) : showGallery ? (
                 /* 冷启动：先给骨架，而不是空白表单 */
                 <div>

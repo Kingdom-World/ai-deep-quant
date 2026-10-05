@@ -266,3 +266,26 @@ test('IC 与分层方向自洽：IC>0 时首层（因子最高）收益应高于
     process.env.LOCAL_HISTORY_DIR = prev;
   }
 });
+
+// ── 临时目录清理（自动化补丁：mkdtemp 产物不会被自动回收）──
+//   mkdtemp 建的目录由系统负责创建但**不会自动回收**：不加这一步，每跑一次套件都会
+//   在系统临时目录里留一批（实测累积到 3000+ 个，拖慢目录操作）。只匹配本文件自己的
+//   前缀 + 6 位随机后缀，不碰任何别的东西。
+test.after(() => {
+  const base = os.tmpdir();
+  let names;
+  try {
+    names = fs.readdirSync(base);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (new RegExp("^cross-[A-Za-z0-9]{6}$ | ^cross-layer-[A-Za-z0-9]{6}$").test(name)) {
+      try {
+        fs.rmSync(path.join(base, name), { recursive: true, force: true });
+      } catch {
+        /* 清理失败不影响测试结论（系统临时目录会自行回收） */
+      }
+    }
+  }
+});

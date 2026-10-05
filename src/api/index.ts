@@ -34,6 +34,8 @@ export type { NewsItem, NewsResponse, NewsHealth } from './news';
 export { newsApi, newsHealthApi, feedApi } from './news';
 export { askAssistant, aiApi } from './assistant';
 export type { ModelSpec, NormalizedModel, ValidationIssue, ModelSchema, ModelBacktestResult, ModelPlan, ModelRunResponse, ModelRunOptions, ModelValidationResponse, ModelLibraryItem, ModelLibraryResponse, ModelSaveResponse, ModelTemplate, ModelExperimentRow, ModelExperimentDoc, ModelExperimentMetrics, ModelExperimentListResponse, ModelExperimentCompareResponse } from './models';
+// 独立验证套件（Phase 2）：阈值/局限规范 + 报告与三项检查的返回类型
+export type { ValidationSpec, ValidationReport, ValidationPower, ValidateSuiteOptions, WalkForwardFold, WalkForwardResult, WalkForwardResponse, PlateauPoint, PlateauResult, PlateauResponse, CausalityCut, CausalityResult, CausalityResponse } from './models';
 export { modelsApi } from './models';
 export * from './backtest';
 export * from './agent';

@@ -336,6 +336,69 @@ test('causalityCheck：可指定截断日期数组；日期非法时该点显式
   assert.strictEqual(r.pool.cutSelection, 'explicit', '显式指定时应如实标注');
 });
 
+// ── 🔴 cuts 是**外部输入**：这一组锁住两道必做的校验 ────────────
+test('🔴 normalizeCuts：拒绝路径穿越形态的"日期"（截断点会被 join 进临时目录）', () => {
+  for (const evil of ['../../etc', '..\\..\\x', '/abs/path', 'C:/win', '2024-01-01/../..', 'a/b']) {
+    const r = V.normalizeCuts([evil]);
+    assert.strictEqual(r.ok, false, `${evil} 必须被拒 —— 否则 writeTruncatedArchive 会写到临时目录之外`);
+    assert.match(r.error, /YYYY-MM-DD/);
+  }
+  // 形态正确但语义非法的日期不在本校验职责内（由"该日无数据 ⇒ skipped"显式回报）
+  assert.strictEqual(V.normalizeCuts(['2024-13-45']).ok, true, '形态合法即通过；语义由回测结果显式回报');
+});
+
+test('🔴 normalizeCuts：非字符串 / 空数组 / 超上限一律显式拒绝（不静默截断）', () => {
+  assert.strictEqual(V.normalizeCuts([20240101]).ok, false, '数字日期不算合法（形态必须严格）');
+  assert.strictEqual(V.normalizeCuts([null]).ok, false);
+  assert.strictEqual(V.normalizeCuts([]).ok, false, '空数组必须拒绝（省略即用默认等分点）');
+  assert.match(V.normalizeCuts([]).error, /不能为空/);
+
+  const many = Array.from({ length: V.RULES.causalityMaxCuts + 3 }, (_, i) => `2024-01-${String((i % 28) + 1).padStart(2, '0')}`);
+  const over = V.normalizeCuts(many);
+  assert.strictEqual(over.ok, false, '超出上限必须拒绝 —— 静默截断会让调用方以为扫过了全部日期');
+  assert.match(over.error, /最多/);
+});
+
+test('normalizeCuts：去重 + 升序（重复日期等于白跑一遍整份归档）', () => {
+  const r = V.normalizeCuts(['2024-05-20', '2023-01-03', '2024-05-20', '2022-12-09']);
+  assert.strictEqual(r.ok, true, r.error);
+  assert.deepStrictEqual(r.cuts, ['2022-12-09', '2023-01-03', '2024-05-20']);
+});
+
+test('causalityCheck：cuts 传非数组非数字 → 显式拒绝（不静默回落到默认值）', () => {
+  const dir = makeArchive();
+  for (const bad of ['2024-01-01', {}, true, 0, -1, NaN]) {
+    const r = withArchive(dir, () => V.causalityCheck(MODEL(), { cuts: bad, opts: { topN: 5 } }));
+    assert.strictEqual(r.ok, false, `cuts=${JSON.stringify(bad)} 应被拒绝`);
+    assert.match(r.error, /只接受/);
+    assert.strictEqual(r.backtests, 0, '输入不合法时不应白跑任何回测');
+  }
+  // 合法的数字形态（自动取 N 个等分点）必须被接受
+  const okNum = withArchive(dir, () => V.causalityCheck(MODEL(), { cuts: 1, opts: { topN: 5 } }));
+  assert.strictEqual(okNum.ok, true, okNum.error);
+  assert.strictEqual(okNum.pool.cutSelection, 'after-pool-stable');
+});
+
+test('causalityCheck：非法 cuts 在**模型也非法**时仍优先报输入问题（且不跑回测）', () => {
+  const dir = makeArchive();
+  const r = withArchive(dir, () =>
+    V.causalityCheck({ schemaVersion: 1, name: '', factors: [], meta: {} }, { cuts: ['../evil'], opts: { topN: 5 } }),
+  );
+  assert.strictEqual(r.ok, false);
+  assert.match(r.error, /YYYY-MM-DD/, '输入校验是纯校验，先于任何执行');
+  assert.strictEqual(r.backtests, 0);
+});
+
+test('causalityCheck：显式 cuts 也会带上 as-of 池子信息（判读 inconclusive 需要它）', () => {
+  const dir = makeArchive();
+  const r = withArchive(dir, () => V.causalityCheck(MODEL(), { cuts: [dstr(400)], opts: { topN: 5 } }));
+  assert.strictEqual(r.ok, true, r.error);
+  assert.strictEqual(r.pool.cutSelection, 'explicit');
+  assert.strictEqual(r.pool.stableFrom, ARCH_POOL_STABLE, '显式指定也应照算池子完整起点');
+  assert.strictEqual(r.pool.error, null);
+  assert.match(r.note, /显式指定/);
+});
+
 test('causalityCheck：全部截断点都无法评估时不得返回"通过"', () => {
   const dir = makeArchive();
   const r = withArchive(dir, () => V.causalityCheck(MODEL(), { cuts: ['1900-01-01'], opts: { topN: 5 } }));

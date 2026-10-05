@@ -229,6 +229,64 @@ export interface ValidationPower {
   note: string;
 }
 
+/** 因果性检验的一个截断点（截断段必须是全集的前缀，逐点比对） */
+export interface CausalityCut {
+  cut: string;
+  /** 逐日点数（已剥离期末强平追加点） */
+  dailyBars: number;
+  terminalPointStripped: boolean;
+  /** 实际比对的数据点数 */
+  compared: number;
+  totalReturn: number;
+  actualRange: { start: string; end: string; bars: number };
+  /** 该截断下的 as-of 池子规模 */
+  universeSize: number;
+  /** 池子是否与全集不同（不同则该点结论不可归因于泄露） */
+  universeShift: boolean;
+  /** 首个不一致点；null = 该截断段与全集逐点一致 */
+  mismatch: {
+    index: number;
+    date: string;
+    fullDate?: string;
+    segValue?: number;
+    fullValue?: number;
+    reason: string;
+  } | null;
+}
+
+export interface CausalityResult {
+  ok: true;
+  fullRange: { start: string; end: string; bars: number };
+  fullPoints: number;
+  fullDailyPoints: number;
+  terminalPointStripped: boolean;
+  fullUniverseSize: number;
+  /**
+   * 核心池的 as-of 事实：池子按**全期**行数选定 ⇒ `stableFrom` 之前，as-of 池子只是全集池的真子集
+   * （事后选池带来的轻微 as-of 偏差）。默认截断点一律取在 `stableFrom` 之后，判读才可能确定。
+   */
+  pool: { stableFrom: string | null; stocks: number; cutSelection: 'explicit' | 'after-pool-stable' };
+  /** 归档截断概况（证明数据真的被改写，而不是只传了 endDate） */
+  archiveTruncation: { cuts: number; kept: number; emptied: number; rowsKept: number };
+  cuts: CausalityCut[];
+  skipped: { cut: string; reason: string }[];
+  /**
+   * `causal` = 全部截断段与全集逐点一致。
+   * `inconclusive` = 历史段不同，但同时股票池也变了（分不清是泄露还是池子缩水）。
+   * `leak` = 池子一致却路径不同 ⇒ 用 t 之前的数据得到的结论被 t 之后的数据改变。
+   * ⚠️ 只覆盖**数据截断型**泄露；日内信息泄露（用当日收盘决定并当日成交）
+   *    需 tick/时间戳数据，日线归档检不出。
+   */
+  verdict: 'causal' | 'inconclusive' | 'leak';
+  flags: string[];
+  rules: Record<string, number>;
+  backtests: number;
+  note: string;
+}
+export type CausalityResponse =
+  | CausalityResult
+  | { ok: false; stage?: string; error: string; issues?: ValidationIssue[] | null; skipped?: { cut: string; reason: string }[]; rules?: Record<string, number>; backtests?: number };
+
 export interface ValidationReport {
   ok: boolean;
   engineVersion: string;
@@ -244,7 +302,7 @@ export interface ValidationReport {
     equityPointsReturned: number;
   } | null;
   power: ValidationPower | null;
-  checks: { walkForward?: WalkForwardResponse; plateau?: PlateauResponse };
+  checks: { walkForward?: WalkForwardResponse; plateau?: PlateauResponse; causality?: CausalityResponse };
   verdict: { pass: boolean | null; flags: string[] };
   /** 本次验证实际执行了多少次回测（界面据此提示耗时/复核"是否真跑过"） */
   cost: { backtests: number };
@@ -260,7 +318,9 @@ export interface ValidateSuiteOptions extends ModelRunOptions {
   folds?: number;
   /** 平原扫描的参数（缺省 topN） */
   param?: 'topN' | 'weight';
-  /** 显式跳过某项检查（'walkForward' | 'plateau'） */
+  /** 因果性检验的截断点数（1~6，缺省 3）或指定的截断日期数组 */
+  cuts?: number | string[];
+  /** 显式跳过某项检查（'walkForward' | 'plateau' | 'causality'） */
   skip?: string[];
 }
 

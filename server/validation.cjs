@@ -7,18 +7,25 @@
 //      一旦验证逻辑能反过来影响模型，它就不再是验证，而是自证。
 //      故本模块只做两件事：① 用现成引擎多次跑同一个模型；② 对结果做统计判定。
 //
-//   提供四项检查：
+//   提供五项检查：
 //     · bhFdr            多重检验 BH-FDR 校正（纯函数；用于"扫一批因子"的场景）
 //     · walkForward      样本外滚动（时间切折，逐折独立跑）—— 防事后诸葛
 //     · plateauScan      参数平原扫描（参数 ±30% 网格）—— 防尖峰过拟合
+//     · causalityCheck   因果性/未来函数（前缀一致性：截断段必须与全集逐点相同）
 //     · runValidation    汇总报告（含**样本量与功效说明**与已知局限）
 //
-//   ⚠️ 因果性/扰动测试（未来数据泄露）不在本文件：它需要**变异数据**（截断或置换
-//      未来行后重跑），与本文件的"只读、零数据变异"边界不同，单独实现以保持边界清晰。
+//   ⚠️ 因果性检验的**覆盖面边界**（必须如实告知）：它检出的是「数据截断型」泄露；
+//      「日内信息泄露」（用当日收盘决定并当日成交）在日线归档上物理不可检——
+//      那需要 tick 与时间戳数据。该风险改由**引擎源码契约测试**锁住
+//      （排名取 T-1 收盘、执行取 T 日开盘），见 test/causality.test.cjs。
 //
 //   强制披露纪律（§5.3 末段）：任何验证结论都必须自带样本量与功效说明；
 //   阈值全部作为具名常量写明并随结果返回，避免"魔法数字"式的不可复核判定。
 // ─────────────────────────────────────────────────────────────
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crosssect = require('./crosssect.cjs');
 const { runModel, ENGINE_VERSION } = require('./modelrun.cjs');
 
 // ── 判定阈值（全部显式；随结果返回，便于复核与争议时追溯）──
@@ -33,6 +40,8 @@ const RULES = {
   walkForwardDispersionPct: 40,
   /** 样本量门槛：IC 期数少于此值时，显著性结论一律标注功效不足 */
   minIcPeriods: 12,
+  /** 因果性检验的默认截断点数（1 个基准 + N 个截断 = N+1 次回测） */
+  causalityCuts: 3,
 };
 
 /** 已知局限（§5.3：必须在报告与 UI 显式标注，防止小样本假信心） */
@@ -40,6 +49,7 @@ const LIMITATIONS = [
   '核心股票池（非全市场）；退市股未入归档 ⇒ 存在幸存者偏差，历史表现偏乐观',
   '撮合成交价做了简化，成本仅含佣金/印花/过户；未建模冲击成本',
   '股票池构成随归档演进，跨期比较时池子本身可能变化',
+  '因果性检验只能验证「历史结论不随未来数据变化」（数据截断型泄露）。日线归档无 tick 与时间戳，**日内**信息泄露物理上检不出——该风险改由引擎源码契约锁住（排名取 T-1 收盘、执行取 T 开盘）',
   '验证结论只反映"在所测区间与参数邻域内"的行为，不构成对未来表现的保证',
 ];
 
@@ -325,12 +335,315 @@ function plateauScan(model, cfg = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 四、汇总报告
+// 四、因果性 / 未来函数检验（§5.3 第 5 项）
+// ─────────────────────────────────────────────────────────────
+/**
+ * 因果性的**可验证表述 = 前缀一致性**：
+ *   用截至 t 的数据跑出的历史净值，不能因为"后来知道了 t 之后的事"而改变。
+ *   ⇒ 跑全归档 + 若干截断，截断段必须与全集**逐点相同**。
+ *
+ * 🔴 关键：必须**真正截断归档文件**，不能只传 `endDate`。
+ *   只传 endDate 时 `universe`（原始 rows）仍是全量 —— 任何"读了窗口外那几行"的泄露
+ *   （下一日收盘、全期统计量、未来值填充）都**完全不可见**，检验会永远返回"通过"。
+ *   实测：用"全样本标准差标准化"的泄露截面做对照，仅传 endDate 时**检不出来**（假阴性），
+ *   改成把 rows 物理裁到 cut 之后，立刻检出。
+ *
+ * 两种泄露向量，本项都能覆盖：
+ *   ① 窗口级：用窗口内的全样本统计量（去极值/标准化/选池）→ 窗口一变就现形
+ *   ② 归档级：读 rows 里超出 cut 的行 → 那些行**物理不存在**了
+ *
+ * ⚠️ 仍检不出的（必须如实告知）：**日内**信息泄露（用当日收盘决定并当日成交）——
+ *   那需要 tick 与时间戳数据。该风险改由引擎源码契约测试锁住（排名取 T-1 收盘、执行取 T 开盘）。
+ *
+ * ⚠️ 判读纪律：截断归档会让"截至 cut 仍不足 minRows 的标的"退出股票池，这同样会造成
+ *   历史段不同 —— 那是**池子变了**，不是泄露。故逐点比对之外还要比 universeSize，
+ *   池子不一致的点标 `universeShift` 并归入 inconclusive，绝不混报成泄露。
+ *
+ * @param {object} model
+ * @param {{cuts?:number|string[], opts?:object}} [cfg]
+ */
+/** 去掉末尾的"期末强平追加点"（与前一交易日**同日**的终值，不是新观测）。
+ *  ⚠️ 为什么必须去掉：引擎在逐日估值循环后追加 `{date: lastDate, value: 强平后现金}`（含卖出费用），
+ *    于是序列末两点同日。若不剥离，截断段自己的强平点会被拿去和全集的**逐日点**比，
+ *    **每一个截断点都会"不一致"**——表现为"全线告警"的假阳性（实测踩过）。
+ *    交易日唯一 ⇒ "末尾连续同日"只可能是这个追加点，判据是确定的。 */
+function stripTerminalArtifact(series) {
+  const s = series.slice();
+  let stripped = false;
+  while (s.length >= 2 && s[s.length - 1].date === s[s.length - 2].date) {
+    s.pop();
+    stripped = true;
+  }
+  return { series: s, stripped };
+}
+
+/**
+ * 算出"核心池从哪一天起才完整"：= 所有入池标的各自第 UNIVERSE_MIN_ROWS 行日期的最大值。
+ *
+ * 🔴 为什么必须算它：池子按**全期**行数选定 ⇒ 任何早于该日的截断，其 as-of 池子都是全集池的
+ *    **真子集**（2026-10 实测：2019 年截断池子 205、2022 年 208、2023-06-30 起才是 209）。
+ *    池子缩水同样会让"历史段不同"，与泄露混在一起无法判读。故默认截断点一律取在该日之后。
+ *    同时这本身是一条值得披露的事实：**核心池是按全期数据事后选定的**（轻微 as-of 偏差）。
+ *
+ * 只读一遍归档、不写文件、不回测（秒级）。
+ */
+function computePoolStableFrom(dir, minRows) {
+  let latest = null;
+  let stocks = 0;
+  for (const fn of fs.readdirSync(dir)) {
+    if (!fn.endsWith('.json')) continue;
+    const doc = JSON.parse(fs.readFileSync(path.join(dir, fn), 'utf8'));
+    const rows = Array.isArray(doc.rows) ? doc.rows : [];
+    if (rows.length < minRows) continue; // 全期都不足门槛 ⇒ 全集里也没有它
+    stocks += 1;
+    const d = String(rows[minRows - 1].date);
+    if (!latest || d > latest) latest = d;
+  }
+  return { poolStableFrom: latest, poolStocks: stocks };
+}
+
+/**
+ * 把归档裁到 `cutDate`（含）为止，写进 destDir —— **只保留 rows，其余字段原样**。
+ * 日期是 YYYY-MM-DD ⇒ 字典序即时序，可直接比较。
+ * 整只标的在 cut 之前无数据时不写文件（等价于"那时它还不存在"）。
+ *
+ * ⚠️ 代价：核心池归档约 90MB，一次截断要重写全部文件（本机约 10s）⇒ 截断点是稀缺资源，
+ *    默认只取 3 个（见 RULES.causalityCuts）。
+ */
+function writeTruncatedArchive(srcDir, destDir, cutDate) {
+  fs.mkdirSync(destDir, { recursive: true });
+  let kept = 0;
+  let emptied = 0;
+  let rowsKept = 0;
+  for (const fn of fs.readdirSync(srcDir)) {
+    if (!fn.endsWith('.json')) continue;
+    const doc = JSON.parse(fs.readFileSync(path.join(srcDir, fn), 'utf8'));
+    const rows = Array.isArray(doc.rows) ? doc.rows.filter((r) => String(r.date) <= cutDate) : [];
+    if (!rows.length) {
+      emptied += 1;
+      continue;
+    }
+    fs.writeFileSync(path.join(destDir, fn), JSON.stringify({ ...doc, rows }));
+    kept += 1;
+    rowsKept += rows.length;
+  }
+  return { kept, emptied, rowsKept };
+}
+
+function causalityCheck(model, cfg = {}) {
+  const opts = { ...(cfg.opts || {}), rawEquity: true };
+  const explicit = Array.isArray(cfg.cuts) ? cfg.cuts.filter((x) => typeof x === 'string') : null;
+  const cutCount = Math.max(1, Math.min(Number(cfg.cuts) || RULES.causalityCuts, 6));
+
+  const srcDir = crosssect.resolveArchiveDir();
+  if (!fs.existsSync(srcDir)) {
+    return { ok: false, error: `归档目录不存在，无法做数据截断型因果性检验：${srcDir}` };
+  }
+
+  let backtests = 0;
+  const full = runModel(model, opts); // 全归档、全窗口
+  backtests += 1;
+  if (!full.ok) {
+    return { ok: false, stage: full.stage, error: full.error, issues: full.issues || null, backtests };
+  }
+  const fullSeries = full.result.equityFull;
+  if (!Array.isArray(fullSeries) || fullSeries.length < 4) {
+    return {
+      ok: false,
+      error: '未能取得未抽稀的完整净值序列（equityFull）——逐点比对无法进行（不接受用抽稀序列近似）',
+      backtests,
+    };
+  }
+  const fullDaily = stripTerminalArtifact(fullSeries);
+  const fullUniverseSize = full.result.universeSize;
+
+  // 池子完整的起点：默认截断点必须晚于它，否则"历史段不同"分不清是泄露还是池子缩水
+  let pool = { poolStableFrom: null, poolStocks: 0 };
+  if (!explicit) {
+    try {
+      pool = computePoolStableFrom(srcDir, crosssect.UNIVERSE_MIN_ROWS);
+    } catch (e) {
+      return { ok: false, error: `读取归档以确定池子完整起点失败：${String(e.message || e).slice(0, 100)}`, backtests };
+    }
+  }
+
+  // 截断点：默认取"池子完整之后"到末尾的等分位置上的**真实交易日**（两端各留出样本）
+  let cuts;
+  if (explicit) {
+    cuts = explicit;
+  } else {
+    const firstIdx = pool.poolStableFrom
+      ? fullDaily.series.findIndex((p) => p.date >= pool.poolStableFrom)
+      : 0;
+    const lo = firstIdx < 0 ? 0 : firstIdx;
+    const hi = fullDaily.series.length - 1;
+    if (hi - lo < cutCount) {
+      return {
+        ok: false,
+        error:
+          `池子完整起点（${pool.poolStableFrom || '—'}）之后只剩 ${Math.max(0, hi - lo)} 个交易日，` +
+          `不足以安排 ${cutCount} 个截断点——请放宽区间，或显式传 cuts 指定截断日期`,
+        poolStableFrom: pool.poolStableFrom,
+        rules: RULES,
+        backtests,
+      };
+    }
+    cuts = Array.from({ length: cutCount }, (_, i) => {
+      const idx = Math.floor(lo + ((hi - lo) * (i + 1)) / (cutCount + 1));
+      return fullDaily.series[Math.max(lo, Math.min(hi, idx))].date;
+    });
+  }
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'quant-causality-'));
+  const savedDir = process.env.LOCAL_HISTORY_DIR;
+  const segs = [];
+  const skipped = [];
+  /** 归档截断概况（**累计**，证明"数据真的变了"，而不是只传了 endDate） */
+  const archived = { cuts: 0, kept: 0, emptied: 0, rowsKept: 0 };
+  try {
+    for (const cut of cuts) {
+      const destDir = path.join(tmpRoot, cut);
+      let built;
+      try {
+        built = writeTruncatedArchive(srcDir, destDir, cut);
+      } catch (e) {
+        skipped.push({ cut, reason: `截断归档写入失败：${String(e.message || e).slice(0, 80)}` });
+        continue;
+      }
+      archived.cuts += 1;
+      archived.kept += built.kept;
+      archived.emptied += built.emptied;
+      archived.rowsKept += built.rowsKept;
+
+      process.env.LOCAL_HISTORY_DIR = destDir;
+      let r;
+      try {
+        r = runModel(model, { ...opts, endDate: cut });
+      } finally {
+        if (savedDir === undefined) delete process.env.LOCAL_HISTORY_DIR;
+        else process.env.LOCAL_HISTORY_DIR = savedDir;
+      }
+      backtests += 1;
+
+      if (!r.ok) {
+        skipped.push({ cut, reason: `${r.stage}: ${r.error}` });
+        continue;
+      }
+      const raw = r.result.equityFull;
+      if (!Array.isArray(raw)) {
+        skipped.push({ cut, reason: '分段未返回完整净值序列' });
+        continue;
+      }
+      const segDaily = stripTerminalArtifact(raw);
+
+      let firstDiff = null;
+      let compared = 0;
+      for (let i = 0; i < segDaily.series.length; i += 1) {
+        const a = fullDaily.series[i];
+        const b = segDaily.series[i];
+        if (!a) {
+          firstDiff = { index: i, date: b.date, reason: '截断段比全集还长（前缀关系不成立）' };
+          break;
+        }
+        compared += 1;
+        if (a.date !== b.date) {
+          firstDiff = { index: i, date: b.date, fullDate: a.date, reason: '日期序列错位' };
+          break;
+        }
+        if (a.value !== b.value) {
+          firstDiff = { index: i, date: b.date, segValue: b.value, fullValue: a.value, reason: '同一日净值不同' };
+          break;
+        }
+      }
+
+      const universeSize = r.result.universeSize;
+      segs.push({
+        cut,
+        dailyBars: segDaily.series.length,
+        terminalPointStripped: segDaily.stripped,
+        compared,
+        totalReturn: r.result.totalReturn,
+        actualRange: r.result.range,
+        universeSize,
+        universeShift: universeSize !== fullUniverseSize,
+        mismatch: firstDiff,
+      });
+    }
+  } finally {
+    if (savedDir === undefined) delete process.env.LOCAL_HISTORY_DIR;
+    else process.env.LOCAL_HISTORY_DIR = savedDir;
+    try {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    } catch {
+      /* 临时目录清理失败不影响结论（系统临时目录会自行回收） */
+    }
+  }
+
+  if (!segs.length) {
+    return {
+      ok: false,
+      error: '所有截断点都因样本不足或归档截断失败而无法回测——请放宽区间或减少截断数',
+      skipped,
+      rules: RULES,
+      backtests,
+    };
+  }
+
+  // 🔴 判读纪律：池子变了的点不能当"泄露"报
+  const realLeaks = segs.filter((s) => s.mismatch && !s.universeShift);
+  const shifted = segs.filter((s) => s.mismatch && s.universeShift);
+  const flags = [
+    ...realLeaks.map(
+      (s) =>
+        `截断到 ${s.cut} 时，其历史段在 ${s.mismatch.date} 出现与全集不同的净值` +
+        (s.mismatch.segValue !== undefined ? `（截断 ${s.mismatch.segValue} vs 全集 ${s.mismatch.fullValue}）` : '') +
+        ` ⇒ 用 t 之前的数据得到的结论**被 t 之后的数据改变了**：疑似未来函数/数据泄露`,
+    ),
+    ...shifted.map(
+      (s) =>
+        `截断到 ${s.cut} 时历史段不同，但同时**股票池变化**（${s.universeSize} vs 全集 ${fullUniverseSize}）——` +
+        `很可能是"截至该日仍不足样本门槛的标的被剔除"，而非泄露：本点结论不确定（inconclusive）`,
+    ),
+  ];
+
+  return {
+    ok: true,
+    fullRange: full.result.range,
+    fullPoints: fullSeries.length,
+    fullDailyPoints: fullDaily.series.length,
+    terminalPointStripped: fullDaily.stripped,
+    fullUniverseSize,
+    /**
+     * 🔴 一条值得披露的事实：核心池按**全期**行数（≥ UNIVERSE_MIN_ROWS）选定 ⇒
+     *    在 poolStableFrom 之前，as-of 池子只是全集池的真子集（事后选池带来的轻微 as-of 偏差）。
+     */
+    pool: { stableFrom: pool.poolStableFrom, stocks: pool.poolStocks, cutSelection: explicit ? 'explicit' : 'after-pool-stable' },
+    /** 归档截断概况（证明"数据真的变了"，而不是只传了 endDate） */
+    archiveTruncation: archived,
+    cuts: segs,
+    skipped,
+    verdict: realLeaks.length ? 'leak' : shifted.length ? 'inconclusive' : 'causal',
+    flags,
+    rules: RULES,
+    backtests,
+    note:
+      `前缀一致性检验（**物理截断归档**后重跑）：全集 ${fullDaily.series.length} 个交易日 + ` +
+      `${segs.length} 个截断点，逐点比对 ${segs.reduce((a, s) => a + s.compared, 0)} 个数据点` +
+      `（已剥离期末强平追加点：它与末个交易日同日、值是强平后现金，不是新观测）` +
+      (explicit ? '' : `；截断点取自核心池完整之后（${pool.poolStableFrom || '—'} 起，池子 ${pool.poolStocks} 只）`) +
+      `${skipped.length ? `；${skipped.length} 个截断点未评估` : ''}` +
+      `；本项共执行 ${backtests} 次回测。` +
+      `⚠️ 仅覆盖数据截断型泄露；日内信息泄露需 tick/时间戳数据，本项检不出（见 limitations）`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 五、汇总报告
 // ─────────────────────────────────────────────────────────────
 /**
  * 组装完整验证报告。任何一项失败都**如实带出**，不用"通过"掩盖未跑项。
  * @param {object} model
- * @param {{opts?:object, folds?:number, param?:string, skip?:string[]}} [cfg]
+ * @param {{opts?:object, folds?:number, param?:string, cuts?:number|string[], skip?:string[]}} [cfg]
  */
 function runValidation(model, cfg = {}) {
   const opts = cfg.opts || {};
@@ -397,6 +710,13 @@ function runValidation(model, cfg = {}) {
     if (!pl.ok) report.verdict.flags.push(`参数平原扫描未能完成：${pl.error}`);
     else report.verdict.flags.push(...pl.flags);
   }
+  if (!skip.has('causality')) {
+    report.checks.causality = causalityCheck(model, { cuts: cfg.cuts, opts });
+    const cs = report.checks.causality;
+    backtests += cs.backtests || 0;
+    if (!cs.ok) report.verdict.flags.push(`因果性检验未能完成：${cs.error}`);
+    else report.verdict.flags.push(...cs.flags);
+  }
 
   report.cost.backtests = backtests;
   report.verdict.pass = report.verdict.flags.length === 0;
@@ -407,7 +727,14 @@ module.exports = {
   bhFdr,
   walkForward,
   plateauScan,
+  causalityCheck,
   runValidation,
+  /** 导出以便测试用**同一条规则**做前缀比对（避免测试里另写一份、日后分叉） */
+  stripTerminalArtifact,
+  /** 导出以便测试构造"泄露对照样本"（证明本检验真的能抓到泄露，而不是永远绿） */
+  writeTruncatedArchive,
+  /** 导出以便测试核对"池子完整起点"这条 as-of 事实 */
+  computePoolStableFrom,
   RULES,
   LIMITATIONS,
 };

@@ -21,6 +21,7 @@ import type {
   WalkForwardResult,
   PlateauResult,
   PlateauPoint,
+  CausalityResult,
 } from '../../api/models';
 
 const MONO = 'var(--zone-mono, Consolas, monospace)';
@@ -174,6 +175,79 @@ function PlateauBars({ pl }: { pl: PlateauResult }) {
   );
 }
 
+/** 因果性检验：截断段与全集逐点比对结果表 */
+function CausalityTable({ cs }: { cs: CausalityResult }) {
+  return (
+    <div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead>
+            <tr style={{ color: theme.color.textFaint, fontSize: 11 }}>
+              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500 }}>截断日</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>交易日</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>比对点</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>该段收益</th>
+              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>池子</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500 }}>结论</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cs.cuts.map((c) => (
+              <tr key={c.cut} style={{ borderTop: `1px solid ${LINE}` }}>
+                <td style={{ padding: '4px 8px', fontSize: 11, color: theme.color.textFaint, fontFamily: MONO, whiteSpace: 'nowrap' }}>{c.cut}</td>
+                <Td v={c.dailyBars} />
+                <Td v={c.compared} />
+                <Td v={fmtPct(c.totalReturn)} color={pctColor(c.totalReturn)} />
+                <Td
+                  v={c.universeShift ? `${c.universeSize}（← ${cs.fullUniverseSize}）` : c.universeSize}
+                  color={c.universeShift ? theme.color.warn : undefined}
+                />
+                <td
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: 11.5,
+                    whiteSpace: 'nowrap',
+                    color: c.mismatch ? (c.universeShift ? theme.color.warn : theme.color.up) : theme.color.down,
+                  }}
+                >
+                  {!c.mismatch ? '✓ 逐点一致' : c.universeShift ? `⚠ ${c.mismatch.date} 不一致（池子也变了）` : `✗ ${c.mismatch.date} 起不一致`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 11.5, color: theme.color.textFaint, lineHeight: 1.7 }}>
+        判据：把归档**物理截断**到截断日再跑一遍，其历史净值必须与全区间跑的**同一段逐点相同**——
+        不同则说明 t 之前的结论被 t 之后的数据改变了。
+        <span style={{ color: theme.color.warn }}>只传日期窗口是不够的</span>
+        （原始数据仍在内存里，读了窗口外那几行的泄露看不出来）。
+        <br />
+        {cs.pool.stableFrom && (
+          <>
+            核心池按**全期**行数选定 ⇒ <span style={{ fontFamily: MONO, color: theme.color.textMuted }}>{cs.pool.stableFrom}</span> 之前
+            as-of 池子只是全集池的子集（事后选池带来的轻微 as-of 偏差）；故默认截断点一律取在该日之后，
+            池子同时变化的截断点只报「无法归因」而不报泄露。池子 {cs.pool.stocks} 只。
+            <br />
+          </>
+        )}
+        {cs.note}
+        <br />
+        <span style={{ color: theme.color.warn }}>
+          ⚠️ 本项只能检出「数据截断型」泄露（全样本统计量、按全期最优参数、未来值填充等）。
+          日内信息泄露（用当日收盘决定并当日成交）需要 tick 与时间戳数据，日线归档**物理上检不出**，
+        </span>
+        该风险改由引擎源码契约锁住：排名取 T-1 收盘、执行取 T 日开盘。
+      </div>
+      {cs.skipped.length > 0 && (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: theme.color.warn, lineHeight: 1.7 }}>
+          {cs.skipped.length} 个截断点未评估：{cs.skipped.map((s) => `${s.cut}（${s.reason}）`).join('；')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ValidationPanel({
   model,
   canRun,
@@ -189,18 +263,22 @@ export default function ValidationPanel({
   const [folds, setFolds] = useState(3);
   const [param, setParam] = useState<'topN' | 'weight'>('topN');
   const [skipPlateau, setSkipPlateau] = useState(false);
+  const [skipCausality, setSkipCausality] = useState(false);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // 预算：1 次基准 + folds 次折 + 5 个参数点（（±30% 五档））。取整合并后会略少。
-  const estBacktests = 1 + folds + (skipPlateau ? 0 : 5);
+  // 预算：1 基准 + folds 折 + 5 参数点 + (1 基准 + 3 截断) 因果性。取整合并后会略少。
+  const estBacktests = 1 + folds + (skipPlateau ? 0 : 5) + (skipCausality ? 0 : 4);
 
   const runNow = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const opts: ValidateSuiteOptions = { folds, param, topN: 5, skip: skipPlateau ? ['plateau'] : [] };
+      const skip: string[] = [];
+      if (skipPlateau) skip.push('plateau');
+      if (skipCausality) skip.push('causality');
+      const opts: ValidateSuiteOptions = { folds, param, topN: 5, skip };
       const r = await modelsApi.validateSuite(model, opts);
       setReport(r);
       if (!r.ok && r.error) setErr(`${r.error.stage}：${r.error.message}`);
@@ -216,9 +294,10 @@ export default function ValidationPanel({
   if (!canRun) {
     return (
       <div>
-        <Card title="独立验证套件" hint="样本外滚动 · 参数平原 · 样本量与功效披露">
+        <Card title="独立验证套件" hint="样本外滚动 · 参数平原 · 因果性 · 样本量与功效披露">
           <div style={{ fontSize: 12.5, color: theme.color.textMuted, lineHeight: 1.75 }}>
-            验证需要**多次重跑回测**（默认约 9 次），依赖本地数据归档，公网演示版不提供执行。
+            验证需要**多次重跑回测**（默认约 13 次）并且要为每个截断点**物理截断归档**（约 90MB/次），
+            依赖本地数据归档，公网演示版不提供执行。
             <br />
             请在本地版本中运行，或用「导出模型 JSON → 本地导入」的方式执行。
           </div>
@@ -238,6 +317,7 @@ export default function ValidationPanel({
 
   const wf = report?.checks.walkForward;
   const pl = report?.checks.plateau;
+  const cs = report?.checks.causality;
   const pass = report?.verdict.pass;
 
   return (
@@ -259,6 +339,10 @@ export default function ValidationPanel({
           <input type="checkbox" checked={skipPlateau} onChange={(e) => setSkipPlateau(e.target.checked)} />
           跳过参数平原
         </label>
+        <label style={{ fontSize: 12, color: theme.color.textMuted, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          <input type="checkbox" checked={skipCausality} onChange={(e) => setSkipCausality(e.target.checked)} />
+          跳过因果性
+        </label>
         <button type="button" style={btn(true, busy || invalid)} disabled={busy || invalid} onClick={() => void runNow()}>
           {busy ? '验证中…' : `运行验证（约 ${estBacktests} 次回测）`}
         </button>
@@ -272,7 +356,9 @@ export default function ValidationPanel({
 
       {busy && (
         <div style={{ fontSize: 12, color: theme.color.textMuted, marginBottom: 10 }}>
-          正在执行约 {estBacktests} 次回测，通常需要十几秒…
+          正在执行约 {estBacktests} 次回测
+          {skipCausality ? '' : '，并对每一截断点物理截断归档（约 90MB，本机每次约 10 秒）'}
+          ，整体约需 {skipCausality ? '十多秒' : '30–60 秒'}…
         </div>
       )}
       {err && (
@@ -290,6 +376,7 @@ export default function ValidationPanel({
               <li>整段收益很好，但拆成几折后有一折方向相反（可能是某一段行情的偶然）</li>
               <li>参数只在某个恰好调到的取值上有效，邻域一动就崩（过拟合的典型形状）</li>
               <li>IC 期数太少，显著性结论其实功效不足（小样本假信心）</li>
+              <li>用了未来才知道的信息（未来函数）—— 用 t 之前的数据得到的结论被 t 之后的数据改变</li>
             </ul>
           </div>
         </Card>
@@ -387,9 +474,36 @@ export default function ValidationPanel({
             </Card>
           )}
 
-          {report.checks.walkForward === undefined && report.checks.plateau === undefined && (
+          {/* ── 因果性 / 未来函数 ── */}
+          {cs && (
+            <Card
+              title="因果性（前缀一致性）"
+              hint={
+                cs.ok
+                  ? cs.verdict === 'causal'
+                    ? '历史结论不随未来数据变化'
+                    : cs.verdict === 'inconclusive'
+                      ? '历史段不同，但股票池也变了 —— 无法归因'
+                      : '发现历史结论被未来数据改变'
+                  : '未能完成'
+              }
+            >
+              {cs.ok ? (
+                <CausalityTable cs={cs} />
+              ) : (
+                <div style={{ fontSize: 12, color: theme.color.warn, lineHeight: 1.7 }}>
+                  {cs.error}
+                  {(cs.issues || []).map((e, i) => (
+                    <div key={i} style={{ color: theme.color.textFaint }}>· {e.message}</div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {report.checks.walkForward === undefined && report.checks.plateau === undefined && report.checks.causality === undefined && (
             <div style={{ fontSize: 11.5, color: theme.color.warn, marginBottom: 10 }}>
-              两项检查均未执行（或未返回）——本次除样本与功效外无其他结论。
+              三项检查均未执行（或未返回）——本次除样本与功效外无其他结论。
             </div>
           )}
 
@@ -399,7 +513,7 @@ export default function ValidationPanel({
               {(report.limitations.length ? report.limitations : spec?.limitations || []).map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
-              <li>本套件**不覆盖**：未来函数/数据泄露（需变异数据另测）、因子有效性的统计显著性（见上方功效）、真实冲击成本</li>
+              <li>本套件**不覆盖**：<strong>日内</strong>信息泄露（用当日收盘决定并当日成交——需 tick 与时间戳，日线归档不可检）、因子有效性的统计显著性（见上方功效）、真实冲击成本</li>
             </ul>
           </Card>
 

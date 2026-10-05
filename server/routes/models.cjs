@@ -174,11 +174,12 @@ function registerModelRoutes(app, deps) {
     }
   });
 
-  // ── 独立验证套件（Phase 2：walk-forward + 参数平原 + 样本量/功效披露）──
+  // ── 独立验证套件（Phase 2：walk-forward + 参数平原 + 因果性 + 样本量/功效披露）──
   //   🔴 独立性：本路由**只读**模型、不写模型库、不触发实验留痕，也不回写入参模型。
   //      一旦验证能反过来影响被验证对象，它就不再是验证而是自证（validation.cjs 的定义）。
-  //   ⚠️ 代价：默认一次跑 1(基准) + 3(折) + 5(参数点) = 9 次回测，故响应带 cost.backtests，
-  //      调用方（界面）据此提示耗时。
+  //   ⚠️ 代价：默认约 13 次回测（1 基准 + 3 折 + 4~5 参数点 + 1 全集 + 3 截断），
+  //      且因果性检验要为每个截断点**物理截断一遍归档**（约 90MB/次，本机约 10s/次）
+  //      ⇒ 整体 30–60 秒。故响应带 cost.backtests，调用方（界面）据此提示耗时。
   //   ⚠️ 只接受**包装形态** `{ model, … }`：控制字段与模型必须分层，裸对象形态没地方放参数。
   app.post('/api/models/validate-suite', async (req, res) => {
     if (IS_VERCEL) {
@@ -201,6 +202,7 @@ function registerModelRoutes(app, deps) {
       const report = validation.runValidation(body.model, {
         folds: body.folds,
         param: body.param,
+        cuts: body.cuts,
         skip: Array.isArray(body.skip) ? body.skip : undefined,
         opts: {
           topN: body.topN,

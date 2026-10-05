@@ -676,7 +676,7 @@ export default function ModelStudioPage() {
                 {track === 'exp'
                   ? '每次回测自动留痕 · 可勾选对比'
                   : track === 'verify'
-                    ? '只读、不回写 · 样本外滚动 + 参数平原'
+                    ? '只读、不回写 · 样本外滚动 + 参数平原 + 因果性'
                     : '同一份 Model JSON · 两轨等价'}
               </span>
             </div>

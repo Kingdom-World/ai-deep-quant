@@ -106,6 +106,24 @@ function loadUniverse(dir, minRows) {
 const CACHE_TTL_MS = 10 * 60 * 1000;
 let _universeCache = null; // { dir, at, universe }
 
+/**
+ * 归档目录的**唯一来源**（`LOCAL_HISTORY_DIR` 可覆盖，测试/因果性检验靠它切换数据源）。
+ * 任何需要读写归档的地方都从这里取，不要在别处重写这段路径拼接。
+ */
+function resolveArchiveDir() {
+  return process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
+}
+
+/**
+ * 入池门槛：标的需在归档中至少有这么多行才被载入核心池。
+ *
+ * ⚠️ 这个门槛按**全期行数**判定 ⇒ 池子构成含未来信息：一只在 t 之后才上市的标的，
+ *    只要最终行数够，从回测起点起就已在池中。这就是"事后选池"带来的轻微 as-of 偏差
+ *    （因果性检验里体现为"as-of 池子比全集小"，见 validation.computePoolStableFrom）。
+ *    改它会改变全部历史回测结果与指纹，属重大口径变更 —— 故具名、单一源、不随手动。
+ */
+const UNIVERSE_MIN_ROWS = 80;
+
 function loadUniverseCached(dir, minRows) {
   const now = Date.now();
   if (
@@ -317,8 +335,8 @@ function archiveError(universeSize) {
  * @param opts { factor='mom20', topN=5, rebalanceEvery=20, capital=1000000, slippage=0.001 }
  */
 function runCrossBacktest(opts = {}) {
-  const dirAbs = process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
-  const universe = loadUniverseCached(dirAbs, 80);
+  const dirAbs = resolveArchiveDir();
+  const universe = loadUniverseCached(dirAbs, UNIVERSE_MIN_ROWS);
   if (universe.size < 2) {
     return { error: archiveError(universe.size) };
   }
@@ -371,6 +389,10 @@ function simulateWithCrossSection(cfg) {
   const {
     ctx, universe, crossSection, isRevFactor, factorWin, topN, rebalanceEvery, capital, slippage,
     factorLabel, factorKind, factorExprMeta, emptyGuard,
+    /** 额外返回**未抽稀**的完整净值序列（`equityFull`）。
+     *  ⚠️ 默认 false：抽稀是给前端的，完整序列点数约 5 倍，只该被「需要逐点比对」的场景按需索取
+     *  （因果性检验必须逐点可比，抽稀网格会随截断点错位，造成"看起来缺了点"的假象）。 */
+    rawEquity,
   } = cfg;
   const { dates, rowIndex, priceAt, startDate, lastDate } = ctx;
 
@@ -577,6 +599,8 @@ function simulateWithCrossSection(cfg) {
     benchmarkUniverse: benchState.size,
     benchmark: benchmark.filter((_, i) => i % 5 === 0 || i === benchmark.length - 1),
     equity: finalEquity.filter((_, i) => i % 5 === 0 || i === finalEquity.length - 1), // 抽稀返回
+    // 完整（未抽稀）序列：仅按需返回。用途见 cfg.rawEquity 注释（因果性检验的逐点比对）。
+    ...(rawEquity ? { equityFull: finalEquity } : {}),
     // ── 因子有效性（Rank IC 序列 + Newey-West 显著性）──
     //   说明：IC 衡量「因子排序」与「下期收益排序」的一致性，与上面的净值表现互为印证。
     //        净值好但 IC 不显著 = 收益可能来自少数标的的运气；IC 显著但净值差 = 执行/成本拖累。
@@ -609,8 +633,8 @@ function simulateWithCrossSection(cfg) {
  * @param opts { factor='mom20', layers=5, rebalanceEvery=20, startDate, endDate }
  */
 function layerAnalysis(opts = {}) {
-  const dirAbs = process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
-  const universe = loadUniverseCached(dirAbs, 80);
+  const dirAbs = resolveArchiveDir();
+  const universe = loadUniverseCached(dirAbs, UNIVERSE_MIN_ROWS);
   if (universe.size < 2) {
     return { error: archiveError(universe.size) };
   }
@@ -772,8 +796,8 @@ function layerAnalysis(opts = {}) {
  */
 function runWithCrossSection(crossSection, opts = {}) {
   if (typeof crossSection !== 'function') return { error: 'runWithCrossSection 需要截面函数' };
-  const dirAbs = process.env.LOCAL_HISTORY_DIR || path.join(__dirname, '..', 'data', 'history', 'kline');
-  const universe = loadUniverseCached(dirAbs, 80);
+  const dirAbs = resolveArchiveDir();
+  const universe = loadUniverseCached(dirAbs, UNIVERSE_MIN_ROWS);
   if (universe.size < 2) return { error: archiveError(universe.size) };
 
   const factorWin = Math.max(1, Math.min(Number(opts.factorWin) || 1, 250));
@@ -801,6 +825,7 @@ function runWithCrossSection(crossSection, opts = {}) {
     factorKind: 'composite',
     factorExprMeta: opts.factorExprMeta ?? null,
     emptyGuard,
+    rawEquity: opts.rawEquity === true,
   });
 }
 
@@ -809,6 +834,8 @@ module.exports = {
   runWithCrossSection,
   layerAnalysis,
   resolveFactor,
+  resolveArchiveDir,
+  UNIVERSE_MIN_ROWS,
   FACTOR_WINDOWS,
   REVERSAL_FACTORS,
 };

@@ -8,6 +8,10 @@
 //   bhFdr 是唯一不依赖归档的纯函数，因此它的**统计不变式**必须被完整锁住：
 //     ① 调整 p 按 p 升序单调不减  ② adjusted ≥ p  ③ rejected ≡ (adjusted ≤ q)
 //   这三条是 BH 的正确性定义，写死它们才能在将来重写算法时立刻发现口径漂移。
+//
+//   ⚠️ 本文件所有 runValidation 调用一律 `skip: ['causality']`：因果性检验要为每个截断点
+//      物理截断一遍归档（真实归档约 90MB/次），会把本文件从 5 秒拖到 4 分钟以上（实测 276s）。
+//      它的行为与独立性由 test/causality.test.cjs 用合成归档全面覆盖（毫秒级，CI 也真跑）。
 // ─────────────────────────────────────────────────────────────
 const test = require('node:test');
 const assert = require('node:assert');
@@ -279,13 +283,14 @@ test('runValidation：阈值必须具名且随报告返回（拒绝魔法数字�
 
 test('runValidation：完整报告的形状与样本量/功效披露', (t) => {
   if (skip(t)) return;
-  const r = V.runValidation(MODEL(), { folds: 2, opts: { topN: 5 } });
+  const r = V.runValidation(MODEL(), { folds: 2, skip: ['causality'], opts: { topN: 5 } });
   assert.strictEqual(r.ok, true, r.error);
   assert.strictEqual(typeof r.fingerprint, 'string');
   assert.ok(r.sample && typeof r.sample.bars === 'number' && r.sample.equityPointsReturned > 0);
   assert.ok(r.power && typeof r.power.icPeriods === 'number' && typeof r.power.sufficient === 'boolean');
   assert.match(r.power.note, /门槛|功效不足/, '功效说明必须写明判据');
-  assert.ok(r.checks.walkForward && r.checks.plateau, '默认应包含两项检查');
+  assert.ok(r.checks.walkForward && r.checks.plateau, '默认应包含这两项检查');
+  assert.strictEqual(r.checks.causality, undefined, '本文件显式跳过因果性（见文件头说明）');
   assert.strictEqual(typeof r.verdict.pass, 'boolean');
   assert.ok(Array.isArray(r.verdict.flags));
   assert.ok(Array.isArray(r.limitations) && r.limitations.length > 0, '报告必须自带局限披露');
@@ -293,22 +298,29 @@ test('runValidation：完整报告的形状与样本量/功效披露', (t) => {
 
 test('runValidation：skip 生效（显式跳过，而不是"结果里悄悄没有"）', (t) => {
   if (skip(t)) return;
-  const r = V.runValidation(MODEL(), { folds: 2, skip: ['walkForward', 'plateau'], opts: { topN: 5 } });
+  const r = V.runValidation(MODEL(), { folds: 2, skip: ['walkForward', 'plateau', 'causality'], opts: { topN: 5 } });
   assert.strictEqual(r.ok, true, r.error);
   assert.strictEqual(r.checks.walkForward, undefined);
   assert.strictEqual(r.checks.plateau, undefined);
+  assert.strictEqual(r.checks.causality, undefined);
   assert.ok(r.sample && r.power, '跳过检查不应影响样本与功效披露');
 });
 
 // ═══ 五、🔴 独立性原则（本模块的定义）════════════════════════
+//
+//   🔴 本文件里**所有 runValidation 调用都显式 skip:'causality'**，原因不是它不重要，
+//      而是它太重：因果性检验要为每个截断点**物理截断一遍归档**（真实归档约 90MB/次），
+//      单个 runValidation 就要重写 3 遍 ⇒ 本文件会从 5 秒涨到 4 分钟以上（实测 276s）。
+//      因果性的行为与独立性由 test/causality.test.cjs 用**合成归档**全面覆盖
+//      （毫秒级，且 CI 无归档时也真跑）。
 
-test('🔴 独立性：三项检查都不得修改传入的 model（否则验证就成了自证）', (t) => {
+test('🔴 独立性：各检查都不得修改传入的 model（否则验证就成了自证）', (t) => {
   const m = MODEL();
   const snapshot = JSON.parse(JSON.stringify(m));
   V.bhFdr([0.01, 0.2]);
   V.walkForward(m, { folds: 2, opts: { topN: 5 } });
   V.plateauScan(m, { param: 'weight', opts: { topN: 5 } });
-  V.runValidation(m, { folds: 2, opts: { topN: 5 } });
+  V.runValidation(m, { folds: 2, skip: ['causality'], opts: { topN: 5 } });
   assert.deepStrictEqual(
     m,
     snapshot,
@@ -326,8 +338,8 @@ test('独立性：runModel 本身也不得回写调用方传入的模型（验�
 
 test('独立性：验证结论必须随引擎版本与指纹一起交付（无版本即不可复现）', (t) => {
   if (skip(t)) return;
-  const a = V.runValidation(MODEL(), { folds: 2, skip: ['plateau'], opts: { topN: 5 } });
-  const b = V.runValidation(MODEL(), { folds: 2, skip: ['plateau'], opts: { topN: 5 } });
+  const a = V.runValidation(MODEL(), { folds: 2, skip: ['plateau', 'causality'], opts: { topN: 5 } });
+  const b = V.runValidation(MODEL(), { folds: 2, skip: ['plateau', 'causality'], opts: { topN: 5 } });
   assert.strictEqual(a.fingerprint, b.fingerprint, '同一模型同窗口 → 指纹必须一致');
   assert.strictEqual(a.engineVersion, b.engineVersion);
   assert.strictEqual(

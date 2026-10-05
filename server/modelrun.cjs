@@ -201,6 +201,8 @@ function runModel(inputModel, opts = {}) {
     slippage: opts.slippage,
     startDate: opts.startDate,
     endDate: opts.endDate,
+    /** 按需索取未抽稀的完整净值（因果性检验要逐点可比；默认不返回，避免响应体膨胀 5 倍） */
+    rawEquity: opts.rawEquity === true,
   });
   if (result.error) return { ok: false, stage: 'engine', error: result.error };
 

@@ -102,8 +102,10 @@ test('契约 validate-suite：报告字段齐全、独立性可验证（只读�
     meta: { author: 'x' },
   };
   const frozen = JSON.parse(JSON.stringify(model));
+  // ⚠️ 必须 skip causality：它要为每个截断点物理截断一遍归档（约 90MB/次），
+  //    默认 3 个截断点会让本契约测试多花 30 秒以上。它的字段契约见下一条用例（cuts:1）。
   const r = await call(app(), 'POST /api/models/validate-suite', {
-    model, folds: 2, topN: 5, skip: ['plateau'],
+    model, folds: 2, topN: 5, skip: ['plateau', 'causality'],
   });
   assert.strictEqual(r.body.ok, true, r.body.error);
   assertHasKeys(
@@ -120,8 +122,31 @@ test('契约 validate-suite：报告字段齐全、独立性可验证（只读�
   assert.ok(Array.isArray(r.body.limitations) && r.body.limitations.length > 0, '报告必须自带已知局限');
   assert.ok(r.body.cost.backtests >= 3, 'cost.backtests 必须如实反映实跑次数');
   assert.strictEqual(r.body.checks.plateau, undefined, 'skip 生效：被跳过的检查不得出现');
+  assert.strictEqual(r.body.checks.causality, undefined, 'skip 生效：被跳过的检查不得出现');
   // 🔴 独立性：验证不得回写入参模型
   assert.deepStrictEqual(model, frozen, '验证路由回写了入参模型 ⇒ 它已能影响被验证对象');
+});
+
+test('契约 validate-suite：因果性检查的字段（前端表格逐列读取）', async (t) => {
+  if (!hasRealArchive) return console.log(`  [skip] 真实归档不存在（${REAL_DIR}）`);
+  // 只取 1 个截断点：一次归档截断（约 90MB）＋ 两次回测，控制在十几秒内
+  const r = await call(app(), 'POST /api/models/validate-suite', {
+    model: {
+      schemaVersion: 1, name: '因果性契约', factors: [{ id: 'f1', expr: 'mom20', weight: 1, direction: 1 }], meta: { author: 'x' },
+    },
+    folds: 2, cuts: 1, topN: 5, skip: ['walkForward', 'plateau'],
+  });
+  assert.strictEqual(r.body.ok, true, r.body.error);
+  const cs = r.body.checks.causality;
+  assertHasKeys(cs, ['ok', 'fullRange', 'fullPoints', 'fullDailyPoints', 'terminalPointStripped', 'fullUniverseSize', 'pool', 'archiveTruncation', 'cuts', 'skipped', 'verdict', 'flags', 'rules', 'backtests', 'note'], 'suite.checks.causality');
+  assertHasKeys(cs.pool, ['stableFrom', 'stocks', 'cutSelection'], 'causality.pool');
+  assertHasKeys(cs.archiveTruncation, ['cuts', 'kept', 'emptied', 'rowsKept'], 'causality.archiveTruncation');
+  assert.strictEqual(cs.cuts.length, 1);
+  assertHasKeys(cs.cuts[0], ['cut', 'dailyBars', 'terminalPointStripped', 'compared', 'totalReturn', 'actualRange', 'universeSize', 'universeShift', 'mismatch'], 'causality.cuts[0]');
+  assert.ok(['causal', 'inconclusive', 'leak'].includes(cs.verdict), `verdict 三态，实际 ${cs.verdict}`);
+  assert.strictEqual(cs.verdict, 'causal', `默认截断点在池子完整之后，应判 causal（flags：${JSON.stringify(cs.flags)}）`);
+  assert.match(cs.note, /物理截断/, 'note 必须写明"物理截断归档"（否则读者会以为是窗口截断）');
+  assert.match(cs.note, /日内信息泄露/, '必须披露"检不出什么"');
 });
 
 test('契约 validate-suite：裸模型形态被显式拒绝（控制字段必须与模型分层）', async () => {

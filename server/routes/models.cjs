@@ -8,6 +8,7 @@
 //   · GET    /api/models/:id       取单个模型（所有权校验）
 //   · DELETE /api/models/:id       删除模型（所有权校验）
 //   · POST   /api/models/run       执行回测（本地版；公网 503 显式拒绝）
+//   · POST   /api/models/validate-suite  独立验证套件（本地版；公网 503；只读、不落库）
 //
 //   🔴 路由注册顺序：/schema 必须在 /:id 之前，否则 'schema' 会被当成 id 吃掉。
 //
@@ -18,7 +19,7 @@
 
 /** 注册模型工坊路由 */
 function registerModelRoutes(app, deps) {
-  const { modelrun, modelspec, modelstore, modelexp, uidOf, IS_VERCEL } = deps;
+  const { modelrun, modelspec, modelstore, modelexp, validation, uidOf, IS_VERCEL } = deps;
   const fe = require('../factorexpr.cjs'); // 服务端权威表达式校验（白名单 AST）
   const { MAX_COMPARE } = require('../../shared/experiments.cjs'); // 对比上限单一源（⚠️ 必须 .cjs）
 
@@ -44,6 +45,13 @@ function registerModelRoutes(app, deps) {
       templates: modelspec.MODEL_TEMPLATES,
       /** 公网是否可执行（false=仅可配置/导出；前端据此禁用「运行」按钮并给出说明） */
       canRun: !IS_VERCEL,
+      /**
+       * 验证套件的阈值与已知局限（单一源在 server/validation.cjs）。
+       * 界面直接渲染这两项，不再各写一份 → 阈值改了界面自动跟随，不会分叉。
+       */
+      validation: validation
+        ? { rules: validation.RULES, limitations: validation.LIMITATIONS, canRun: !IS_VERCEL }
+        : null,
     });
   });
 
@@ -163,6 +171,48 @@ function registerModelRoutes(app, deps) {
       res.json({ ok: true, removed: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: `删除失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ── 独立验证套件（Phase 2：walk-forward + 参数平原 + 样本量/功效披露）──
+  //   🔴 独立性：本路由**只读**模型、不写模型库、不触发实验留痕，也不回写入参模型。
+  //      一旦验证能反过来影响被验证对象，它就不再是验证而是自证（validation.cjs 的定义）。
+  //   ⚠️ 代价：默认一次跑 1(基准) + 3(折) + 5(参数点) = 9 次回测，故响应带 cost.backtests，
+  //      调用方（界面）据此提示耗时。
+  //   ⚠️ 只接受**包装形态** `{ model, … }`：控制字段与模型必须分层，裸对象形态没地方放参数。
+  app.post('/api/models/validate-suite', async (req, res) => {
+    if (IS_VERCEL) {
+      return res.status(503).json({
+        ok: false,
+        stage: 'env',
+        error:
+          '独立验证套件需要多次重跑回测（依赖本地数据归档），公网演示版不提供执行。' +
+          '请把模型 JSON 导出到本地版本运行验证。',
+      });
+    }
+    try {
+      const body = req.body || {};
+      if (body.model === undefined) {
+        return res.status(400).json({
+          ok: false,
+          error: '请用包装形态提交：{ model, folds?, param?, skip?, topN?, capital?, slippage?, startDate?, endDate? }',
+        });
+      }
+      const report = validation.runValidation(body.model, {
+        folds: body.folds,
+        param: body.param,
+        skip: Array.isArray(body.skip) ? body.skip : undefined,
+        opts: {
+          topN: body.topN,
+          capital: body.capital,
+          slippage: body.slippage,
+          startDate: body.startDate,
+          endDate: body.endDate,
+        },
+      });
+      res.json(report);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `验证失败: ${String(e.message || e).slice(0, 160)}` });
     }
   });
 

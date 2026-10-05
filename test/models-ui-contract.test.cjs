@@ -24,6 +24,7 @@ const { registerModelRoutes } = require('../server/routes/models.cjs');
 const modelrun = require('../server/modelrun.cjs');
 const modelspec = require('../shared/modelspec.cjs');
 const modelstore = require('../server/modelstore.cjs');
+const validation = require('../server/validation.cjs');
 
 const REAL_DIR = path.join(__dirname, '..', 'data', 'history', 'kline');
 const hasRealArchive = fs.existsSync(REAL_DIR);
@@ -61,6 +62,7 @@ const app = () => {
     modelrun,
     modelspec,
     modelstore,
+    validation,
     uidOf: (req) => req?.user?.username || 'anon',
     IS_VERCEL: false,
   });
@@ -85,6 +87,56 @@ test('契约 schema：页面渲染表单所需的全部字段', async () => {
     r.body.templates.every((t) => t.key && t.label && t.desc && Array.isArray(t.tags) && t.model),
     'templates 每项需含 key/label/desc/tags/model',
   );
+  // 验证套件的阈值与局限随 schema 下发（单一源在 server/validation.cjs，界面不再各写一份）
+  assertHasKeys(r.body.validation, ['rules', 'limitations', 'canRun'], 'schema.validation');
+  assert.ok(typeof r.body.validation.rules.minIcPeriods === 'number', '阈值必须随 schema 下发');
+  assert.ok(Array.isArray(r.body.validation.limitations) && r.body.validation.limitations.length > 0, '已知局限必须随 schema 下发');
+});
+
+test('契约 validate-suite：报告字段齐全、独立性可验证（只读）', async (t) => {
+  if (!hasRealArchive) return console.log(`  [skip] 真实归档不存在（${REAL_DIR}）`);
+  const model = {
+    schemaVersion: 1,
+    name: '验证契约',
+    factors: [{ id: 'f1', expr: 'mom20', weight: 1, direction: 1 }],
+    meta: { author: 'x' },
+  };
+  const frozen = JSON.parse(JSON.stringify(model));
+  const r = await call(app(), 'POST /api/models/validate-suite', {
+    model, folds: 2, topN: 5, skip: ['plateau'],
+  });
+  assert.strictEqual(r.body.ok, true, r.body.error);
+  assertHasKeys(
+    r.body,
+    ['ok', 'engineVersion', 'generatedAt', 'fingerprint', 'model', 'sample', 'power', 'checks', 'verdict', 'cost', 'rules', 'limitations'],
+    'validate-suite',
+  );
+  assertHasKeys(r.body.sample, ['range', 'bars', 'universeSize', 'benchmarkUniverse', 'rebalances', 'equityPointsReturned'], 'suite.sample');
+  assertHasKeys(r.body.power, ['icPeriods', 'rebalances', 'sufficient', 'note'], 'suite.power');
+  assertHasKeys(r.body.verdict, ['pass', 'flags'], 'suite.verdict');
+  assertHasKeys(r.body.checks.walkForward, ['ok', 'folds', 'skipped', 'overall', 'dispersion', 'verdict', 'flags', 'rules', 'backtests', 'note'], 'suite.checks.walkForward');
+  assert.ok(r.body.checks.walkForward.folds.length > 0);
+  assertHasKeys(r.body.checks.walkForward.folds[0], ['fold', 'startDate', 'endDate', 'actualRange', 'bars', 'totalReturn', 'maxDrawdownPct', 'sharpe', 'benchmarkReturn', 'excessReturn', 'icMean', 'icN', 'rebalances'], 'suite.checks.walkForward.folds[0]');
+  assert.ok(Array.isArray(r.body.limitations) && r.body.limitations.length > 0, '报告必须自带已知局限');
+  assert.ok(r.body.cost.backtests >= 3, 'cost.backtests 必须如实反映实跑次数');
+  assert.strictEqual(r.body.checks.plateau, undefined, 'skip 生效：被跳过的检查不得出现');
+  // 🔴 独立性：验证不得回写入参模型
+  assert.deepStrictEqual(model, frozen, '验证路由回写了入参模型 ⇒ 它已能影响被验证对象');
+});
+
+test('契约 validate-suite：裸模型形态被显式拒绝（控制字段必须与模型分层）', async () => {
+  const r = await call(app(), 'POST /api/models/validate-suite', {
+    schemaVersion: 1, name: 'x', factors: [{ id: 'f1', expr: 'mom20' }], meta: { author: 'x' },
+  });
+  assert.strictEqual(r.body.ok, false, '裸对象形态没地方放 folds/skip 等控制字段，必须显式拒绝');
+  assert.match(String(r.body.error), /model/);
+});
+
+test('契约 validate-suite：回测失败时仍返回完整报告骨架且 pass=false', async () => {
+  const r = await call(app(), 'POST /api/models/validate-suite', { model: { schemaVersion: 1, name: '', factors: [], meta: {} } });
+  assert.strictEqual(r.body.ok, false);
+  assert.strictEqual(r.body.verdict.pass, false);
+  assert.ok(r.body.rules && r.body.limitations, '失败也要带上阈值与局限（可复核）');
 });
 
 test('契约 validate：ok / errors[] / warnings[] / model / modelHash', async () => {

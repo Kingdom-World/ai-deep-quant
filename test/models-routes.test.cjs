@@ -21,6 +21,7 @@ const modelrun = require('../server/modelrun.cjs');
 const modelspec = require('../shared/modelspec.cjs');
 const modelstore = require('../server/modelstore.cjs');
 const modelexp = require('../server/modelexperiments.cjs');
+const validation = require('../server/validation.cjs');
 
 const REAL_DIR = path.join(__dirname, '..', 'data', 'history', 'kline');
 const hasRealArchive = fs.existsSync(REAL_DIR);
@@ -70,6 +71,7 @@ const appFor = (IS_VERCEL = false) => {
     modelspec,
     modelstore,
     modelexp,
+    validation,
     uidOf: (req) => req?.user?.username || 'anon',
     IS_VERCEL,
   });
@@ -83,7 +85,7 @@ const validModel = (name = '路由测试') => ({
   meta: { author: 'tester' },
 });
 
-test('路由注册：十一条，且 /schema、/api/model-experiments 必须排在各自 /:id 之前', () => {
+test('路由注册：十二条，且 /schema、/api/model-experiments 必须排在各自 /:id 之前', () => {
   const app = appFor();
   const keys = [...app.routes.keys()]; // 保持注册顺序
   assert.deepStrictEqual([...keys].sort(), [
@@ -98,6 +100,7 @@ test('路由注册：十一条，且 /schema、/api/model-experiments 必须排�
     'POST /api/models',
     'POST /api/models/run',
     'POST /api/models/validate',
+    'POST /api/models/validate-suite',
   ].sort()); // 注意：用副本排序，避免污染下面要用注册顺序的 keys
   assert.ok(
     keys.indexOf('GET /api/models/schema') < keys.indexOf('GET /api/models/:id'),
@@ -181,6 +184,13 @@ test('POST run：Vercel → 503 且提示公网可配置/导出', async () => {
   assert.strictEqual(res.statusCode, 503);
   assert.strictEqual(res.body.stage, 'env');
   assert.match(res.body.error, /配置|导出/);
+});
+
+test('POST validate-suite：Vercel → 503（多次重计算不放到公网）', async () => {
+  const res = await call(appFor(true), 'POST /api/models/validate-suite', { model: validModel() });
+  assert.strictEqual(res.statusCode, 503, '公网不得承担 9 次回测的重计算');
+  assert.strictEqual(res.body.stage, 'env');
+  assert.match(res.body.error, /本地/);
 });
 
 test('POST run：本地 + 非法模型 → 400 + stage=validate', async () => {

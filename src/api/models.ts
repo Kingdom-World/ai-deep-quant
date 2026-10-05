@@ -37,6 +37,19 @@ export interface ModelSchema {
   templates: ModelTemplate[];
   /** 当前环境是否支持执行回测（公网 false：仅可配置/校验/保存/导出） */
   canRun: boolean;
+  /**
+   * 验证套件的阈值与已知局限（单一源在 server/validation.cjs → 服务端下发）。
+   * 界面直接渲染，不再各抄一份；阈值改了界面自动跟随。
+   */
+  validation: ValidationSpec | null;
+}
+
+/** 验证套件规范（阈值 + 强制披露的已知局限） */
+export interface ValidationSpec {
+  rules: Record<string, number>;
+  limitations: string[];
+  /** 验证同样需要重跑回测 ⇒ 与 canRun 同门禁 */
+  canRun: boolean;
 }
 
 /** 模型回测结果（字段名以服务端实际返回为准，勿臆造） */
@@ -123,6 +136,126 @@ export interface ModelRunOptions {
   slippage?: number;
   startDate?: string;
   endDate?: string;
+}
+
+// ── 独立验证套件（Phase 2：walk-forward + 参数平原 + 强制披露）────────
+//   🔴 独立性：验证**只读**模型与产物，不回写模型、不落库、不留实验痕。
+//   ⚠️ 字段名以服务端实际返回为准（server/validation.cjs），勿臆造。
+
+/** 样本外滚动的一折（逐折**独立**重跑，不共享仓位与费用） */
+export interface WalkForwardFold {
+  fold: number;
+  startDate: string;
+  endDate: string;
+  actualRange: { start: string; end: string; bars: number };
+  bars: number;
+  totalReturn: number;
+  maxDrawdownPct: number;
+  sharpe: number;
+  benchmarkReturn: number | null;
+  /** 总收益 − 基准（百分点） */
+  excessReturn: number | null;
+  icMean: number | null;
+  icN: number;
+  rebalances: number;
+}
+
+export interface WalkForwardResult {
+  ok: true;
+  folds: WalkForwardFold[];
+  /** 因样本不足未能评估的折（**显式**列出，不是静默跳过） */
+  skipped: { fold: number; startDate: string; endDate: string; reason: string }[];
+  overall: { totalReturn: number; maxDrawdownPct: number; sharpe: number };
+  dispersion: { mean: number; min: number; max: number; spread: number };
+  verdict: 'stable' | 'unstable';
+  flags: string[];
+  rules: Record<string, number>;
+  backtests: number;
+  note: string;
+}
+export type WalkForwardResponse =
+  | WalkForwardResult
+  | { ok: false; stage?: string; error: string; issues?: ValidationIssue[] | null; backtests?: number };
+
+/** 参数平原扫描的一个网格点 */
+export interface PlateauPoint {
+  value: number;
+  /** 该点所保留的比例（最接近基准的那个；被合并的比例见 mergedRatios） */
+  ratio: number;
+  /** 合并到该点的全部比例（取整后重复的已合并，如实记录不假装扫过） */
+  mergedRatios: number[];
+  ok: boolean;
+  reason?: string;
+  totalReturn?: number;
+  maxDrawdownPct?: number;
+  sharpe?: number;
+  icMean?: number | null;
+  icN?: number;
+  /** 相对基准点的收益变化（百分点）；基准点为 0 */
+  deltaPct?: number | null;
+  /** 相对基准点的跌幅（正数=变差，百分比） */
+  dropPct?: number | null;
+}
+
+export interface PlateauResult {
+  ok: true;
+  param: 'topN' | 'weight';
+  baseValue: number;
+  points: PlateauPoint[];
+  distinctPoints: number;
+  requestedRatios: number;
+  mergedPoints: { value: number; keptRatio: number; mergedRatios: number[] }[];
+  verdict: 'spike' | 'plateau';
+  flags: string[];
+  rules: Record<string, number>;
+  backtests: number;
+  note: string;
+}
+export type PlateauResponse =
+  | PlateauResult
+  | { ok: false; error: string; points?: PlateauPoint[]; rules?: Record<string, number> };
+
+/** 样本量与功效披露（§5.3 强制：结论必须自带"有多少样本"） */
+export interface ValidationPower {
+  icPeriods: number;
+  rebalances: number;
+  sufficient: boolean;
+  note: string;
+}
+
+export interface ValidationReport {
+  ok: boolean;
+  engineVersion: string;
+  generatedAt: string;
+  fingerprint: string | null;
+  model: { name: string; factors: number };
+  sample: {
+    range: { start: string; end: string; bars: number };
+    bars: number;
+    universeSize: number;
+    benchmarkUniverse: number;
+    rebalances: number;
+    equityPointsReturned: number;
+  } | null;
+  power: ValidationPower | null;
+  checks: { walkForward?: WalkForwardResponse; plateau?: PlateauResponse };
+  verdict: { pass: boolean | null; flags: string[] };
+  /** 本次验证实际执行了多少次回测（界面据此提示耗时/复核"是否真跑过"） */
+  cost: { backtests: number };
+  rules: Record<string, number>;
+  /** 强制披露纪律：任何结论都必须自带已知局限 */
+  limitations: string[];
+  /** 仅当基准回测就失败时出现 */
+  error?: { stage: string; message: string; issues: ValidationIssue[] | null };
+}
+
+export interface ValidateSuiteOptions extends ModelRunOptions {
+  /** 样本外折数（2~8，缺省 3） */
+  folds?: number;
+  /** 平原扫描的参数（缺省 topN） */
+  param?: 'topN' | 'weight';
+  /** 显式跳过某项检查（'walkForward' | 'plateau'） */
+  skip?: string[];
 }
 
 /** 模型库条目（列表用，仅元信息） */
@@ -243,6 +376,13 @@ export const modelsApi = {
   /** 执行回测（本地版可用；公网返回 stage='env' 的 503 显式拒绝） */
   run: (model: ModelSpec, opts?: ModelRunOptions) =>
     apiPost<ModelRunResponse>('/models/run', opts ? { model, ...opts } : { model }),
+  /**
+   * 独立验证套件（walk-forward + 参数平原 + 样本量/功效披露）。
+   * ⚠️ 默认一次跑 9 回测（1 基准 + 3 折 + 5 参数点），响应的 cost.backtests 即实跑次数。
+   * 公网 503 显式拒绝（需本地数据归档）。
+   */
+  validateSuite: (model: ModelSpec, opts?: ValidateSuiteOptions) =>
+    apiPost<ValidationReport>('/models/validate-suite', opts ? { model, ...opts } : { model }),
 
   // ── 实验记录（不可变留痕；per-uid 隔离，越权一律 404）──
   experiments: {

@@ -260,6 +260,22 @@ test('causalityCheck：非法模型 → 显式失败并透传 stage（不返回"
   assert.ok(r.issues && r.issues.length > 0);
 });
 
+test('🔴 顺序约定：归档不存在时，**模型非法**仍必须报 stage=validate（不得被"归档不存在"遮住）', () => {
+  // 这正是 CI 环境（无 data/history）暴露出来的一个真缺陷：原实现先查归档再跑模型，
+  // 于是"模型写错了"被"归档不存在"顶掉，报错指向错误的方向。
+  const saved = process.env.LOCAL_HISTORY_DIR;
+  process.env.LOCAL_HISTORY_DIR = path.join(os.tmpdir(), 'no-such-archive-xyz');
+  try {
+    const r = V.causalityCheck({ schemaVersion: 1, name: '', factors: [], meta: {} });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.stage, 'validate', '模型非法必须优先于归档可用性报出来');
+    assert.ok(r.issues && r.issues.length > 0);
+  } finally {
+    if (saved === undefined) delete process.env.LOCAL_HISTORY_DIR;
+    else process.env.LOCAL_HISTORY_DIR = saved;
+  }
+});
+
 test('causalityCheck：默认截断点一律取在池子完整之后 ⇒ 池子不缩水、判读确定', () => {
   const dir = makeArchive();
   const r = withArchive(dir, () => V.causalityCheck(MODEL(), { cuts: 1, opts: { topN: 5 } }));

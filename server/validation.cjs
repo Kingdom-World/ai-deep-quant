@@ -435,11 +435,8 @@ function causalityCheck(model, cfg = {}) {
   const explicit = Array.isArray(cfg.cuts) ? cfg.cuts.filter((x) => typeof x === 'string') : null;
   const cutCount = Math.max(1, Math.min(Number(cfg.cuts) || RULES.causalityCuts, 6));
 
-  const srcDir = crosssect.resolveArchiveDir();
-  if (!fs.existsSync(srcDir)) {
-    return { ok: false, error: `归档目录不存在，无法做数据截断型因果性检验：${srcDir}` };
-  }
-
+  // 🔴 顺序：先跑模型（模型非法就该报 stage=validate），再检查归档是否可用于截断。
+  //    反过来写会让"模型写错了"被"归档不存在"遮住 —— CI（无归档）里就是这么暴露出来的。
   let backtests = 0;
   const full = runModel(model, opts); // 全归档、全窗口
   backtests += 1;
@@ -453,6 +450,11 @@ function causalityCheck(model, cfg = {}) {
       error: '未能取得未抽稀的完整净值序列（equityFull）——逐点比对无法进行（不接受用抽稀序列近似）',
       backtests,
     };
+  }
+
+  const srcDir = crosssect.resolveArchiveDir();
+  if (!fs.existsSync(srcDir)) {
+    return { ok: false, error: `归档目录不存在，无法做数据截断型因果性检验：${srcDir}`, backtests };
   }
   const fullDaily = stripTerminalArtifact(fullSeries);
   const fullUniverseSize = full.result.universeSize;

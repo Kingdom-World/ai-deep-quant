@@ -2,6 +2,10 @@
 
 export const SCHEMA_VERSION: 1;
 export const PRESET_FACTORS: readonly string[];
+/** 反转预置名（值越大越不看好）；与 server/crosssect.cjs 的 REVERSAL_FACTORS 有等价锁 */
+export const REVERSAL_PRESETS: readonly string[];
+/** 因子名的默认方向：反转预置 -1，其余 1（direction 缺省时由规范化器使用） */
+export function defaultDirection(expr: string): 1 | -1;
 export const TRANSFORM_TYPES: Record<string, { args: Record<string, readonly string[] | { type: 'number'; min: number; max: number }> }>;
 export const FILTER_FIELDS: readonly string[];
 export const FILTER_OPS: readonly string[];

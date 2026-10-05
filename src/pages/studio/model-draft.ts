@@ -7,13 +7,41 @@
 // ─────────────────────────────────────────────────────────────
 import type { ModelSpec, ValidationIssue } from '../../api';
 import { theme } from '../../lib/theme';
+// 值导入（经 .mjs 转发壳 → .cjs）：方向默认值必须与规范层同源
+import { defaultDirection } from '../../../shared/modelspec.mjs';
+
+/**
+ * 编辑器里的方向是**三态**：
+ *   'auto' → 不写进 JSON，由规范层按因子名推导（`rev*` 反转，其余正向）
+ *    1 / -1 → 用户**显式**指定，写进 JSON 覆盖推导值
+ * 🔴 两态（1|-1）是不够的：草稿一旦落成 1，规范层的"缺省即反转"就永远到不了，
+ *    用户在 `expr` 里把 `mom20` 改成 `rev20` 会得到"名字反转、行为动量"的模型。
+ */
+export type DraftDirection = 1 | -1 | 'auto';
 
 export interface DraftFactor {
   id: string;
   expr: string;
   weight: string;
-  direction: 1 | -1;
+  direction: DraftDirection;
 }
+
+/** 草稿方向 → 生效方向（'auto' 时按因子名推导；与规范层同源，不另立一套规则） */
+export const effectiveDirection = (f: { expr: string; direction: DraftDirection }): 1 | -1 =>
+  f.direction === 'auto' ? defaultDirection(f.expr) : f.direction;
+
+/** 三态循环：自动 → 正向 → 反向 → 自动 */
+export const nextDirection = (d: DraftDirection): DraftDirection =>
+  d === 'auto' ? 1 : d === 1 ? -1 : 'auto';
+
+/**
+ * 提交态的方向字段：`'auto'` **一律省略**，显式才写出。
+ * 🔴 不能写成 `direction: effectiveDirection(f)`：那等于把"此刻的推导结果"固化进 JSON，
+ *    此后无论因子名怎么改都不再跟随，且会触发规范层"显式 1 + rev 预置名"的警告噪声。
+ *    省略才是"缺省语义"，规范层才拿得到推导的机会。
+ */
+export const directionField = (d: DraftDirection): { direction?: 1 | -1 } =>
+  d === 'auto' ? {} : { direction: d };
 export interface DraftTransform {
   type: string;
   method?: string;
@@ -39,7 +67,7 @@ export interface Draft {
 export const emptyDraft = (): Draft => ({
   name: '',
   hypothesis: '',
-  factors: [{ id: 'f1', expr: 'mom20', weight: '1', direction: 1 }],
+  factors: [{ id: 'f1', expr: 'mom20', weight: '1', direction: 'auto' }],
   transforms: [],
   filters: [],
   rebalance: 'monthly',
@@ -54,11 +82,14 @@ export function draftToModel(d: Draft): ModelSpec {
     schemaVersion: 1,
     name: d.name.trim(),
     ...(d.hypothesis.trim() ? { hypothesis: d.hypothesis.trim() } : {}),
+    // 🔴 'auto' 必须**省略** direction 字段（见 directionField），不能写成推导值：
+    //    写死等于把「此刻的推导结果」固化进 JSON；此后无论因子名怎么改都不会再跟随，
+    //    且会触发规范层"显式 direction=1 + rev 预置名"的警告噪声。省略才是"缺省语义"。
     factors: d.factors.map((f, i) => ({
       id: f.id.trim() || `f${i + 1}`,
       expr: f.expr.trim(),
       weight: f.weight.trim() === '' ? 1 : Number(f.weight),
-      direction: f.direction,
+      ...directionField(f.direction),
     })),
     ...(d.transforms.length
       ? {
@@ -96,7 +127,9 @@ export function modelToDraft(m: ModelSpec & { meta?: { author?: string } }): Dra
       id: f.id || `f${i + 1}`,
       expr: f.expr,
       weight: String(f.weight ?? 1),
-      direction: (f.direction === -1 ? -1 : 1) as 1 | -1,
+      // 🔴 direction 缺省映射为 'auto'（不是 1）：保持"缺省"这一信息不丢失，
+      //    否则导入 `{expr:'rev20'}` 会被固化成 `direction:1`，得到"名字反转、行为动量"的模型。
+      direction: f.direction === undefined ? 'auto' : f.direction === -1 ? -1 : 1,
     })),
     transforms: (m.transforms || []).map((t) => {
       const args = (t.args || {}) as { method?: string; n?: number };

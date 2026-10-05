@@ -11,6 +11,9 @@
 // ─────────────────────────────────────────────────────────────
 import type { ModelSpec } from '../../api';
 import { theme } from '../../lib/theme';
+// 🔴 方向必须与规范层同源推导：模型 JSON 可以**没有** direction 字段（省略 = 由因子名推导），
+//    这里若写 `f.direction === -1 ? 反向 : 正向`，`rev20` 会被显示成「正向」而实际按反向执行。
+import { defaultDirection } from '../../../shared/modelspec.mjs';
 
 const MONO = 'var(--zone-mono, Consolas, monospace)';
 
@@ -79,23 +82,29 @@ export default function PipelineView({ model, topN }: { model: ModelSpec; topN: 
     <div style={{ paddingTop: 2 }}>
       <Stage title="因子层" count={`${factors.length} 个 · 权重合计 ${Number.isFinite(totalWeight) ? totalWeight.toFixed(2) : '—'}`}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {factors.map((f, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={chip}>{f.expr || '(空)'}</span>
-              <span style={{ fontSize: 11.5, color: theme.color.textFaint, fontFamily: MONO }}>
-                w={Number.isFinite(Number(f.weight)) ? Number(f.weight) : 1}
-              </span>
-              <span
-                style={{
-                  fontSize: 11.5,
-                  color: f.direction === -1 ? theme.color.down : theme.color.up,
-                  fontFamily: MONO,
-                }}
-              >
-                {f.direction === -1 ? '↓ 反向' : '↑ 正向'}
-              </span>
-            </div>
-          ))}
+          {factors.map((f, i) => {
+            const explicit = f.direction !== undefined;
+            const dir = explicit ? (f.direction === -1 ? -1 : 1) : defaultDirection(f.expr);
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={chip}>{f.expr || '(空)'}</span>
+                <span style={{ fontSize: 11.5, color: theme.color.textFaint, fontFamily: MONO }}>
+                  w={Number.isFinite(Number(f.weight)) ? Number(f.weight) : 1}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    color: dir === -1 ? theme.color.down : theme.color.up,
+                    fontFamily: MONO,
+                  }}
+                  title={explicit ? '方向已显式写死在模型里' : '方向由因子名推导（未写死在模型里）'}
+                >
+                  {dir === -1 ? '↓ 反向' : '↑ 正向'}
+                  {!explicit && <span style={{ color: theme.color.textFaint }}> ·自动</span>}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </Stage>
 

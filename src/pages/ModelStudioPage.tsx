@@ -41,11 +41,13 @@ import ExperimentCompare from './studio/ExperimentCompare';
 import {
   STUDIO_SECTIONS,
   draftToModel,
+  effectiveDirection,
   emptyDraft,
   fmtNum,
   fmtPct,
   issuesFor,
   modelToDraft,
+  nextDirection,
   pctColor,
   sectionOfIssuePath,
   type Draft,
@@ -784,7 +786,7 @@ export default function ModelStudioPage() {
                           type="button"
                           style={btn(false, !!schema && draft.factors.length >= schema.limits.maxFactors)}
                           disabled={!!schema && draft.factors.length >= schema.limits.maxFactors}
-                          onClick={() => patch({ factors: [...draft.factors, { id: `f${draft.factors.length + 1}`, expr: 'mom20', weight: '1', direction: 1 }] })}
+                          onClick={() => patch({ factors: [...draft.factors, { id: `f${draft.factors.length + 1}`, expr: 'mom20', weight: '1', direction: 'auto' }] })}
                         >
                           + 添加因子
                         </button>
@@ -812,8 +814,26 @@ export default function ModelStudioPage() {
                               />
                               <span style={{ color: theme.color.textFaint, fontSize: 12 }}>权重</span>
                               <input value={f.weight} onChange={(e) => setFactor(i, { weight: e.target.value })} style={{ ...theme.input, width: 72 }} />
-                              <button type="button" style={btn()} onClick={() => setFactor(i, { direction: f.direction === 1 ? -1 : 1 })}>
-                                {f.direction === 1 ? '正向 ↑' : '反向 ↓'}
+                              <button
+                                type="button"
+                                title={
+                                  f.direction === 'auto'
+                                    ? '方向由因子名自动推导（rev* 为反向），点击可改为显式指定'
+                                    : '已显式指定方向（不会再随因子名变化），点击继续循环 → 自动'
+                                }
+                                style={{
+                                  ...btn(),
+                                  ...(f.direction === 'auto'
+                                    ? { borderStyle: 'dashed', color: theme.color.textFaint }
+                                    : {}),
+                                }}
+                                onClick={() => setFactor(i, { direction: nextDirection(f.direction) })}
+                              >
+                                {f.direction === 'auto'
+                                  ? `自动·${effectiveDirection(f) === -1 ? '反 ↓' : '正 ↑'}`
+                                  : f.direction === 1
+                                    ? '正向 ↑'
+                                    : '反向 ↓'}
                               </button>
                               <button type="button" style={btn(false, draft.factors.length <= 1)} disabled={draft.factors.length <= 1} onClick={() => patch({ factors: draft.factors.filter((_, k) => k !== i) })}>
                                 删除
@@ -830,6 +850,10 @@ export default function ModelStudioPage() {
                       </datalist>
                       <div style={{ color: theme.color.textFaint, fontSize: 12, lineHeight: 1.7 }}>
                         权重为负即做空该因子暴露；方向正/负表示「因子值越大越看好 / 越不看好」。综合分越高越强。
+                        <br />
+                        <strong style={{ color: theme.color.textMuted }}>自动</strong>
+                        表示不在模型里写死方向，由因子名推导（<code style={{ fontFamily: MONO }}>rev*</code> 反转、其余正向）——
+                        改因子名时方向会跟着变；点一下即改为显式指定（边框变实线），此后不再随名字变化。
                       </div>
                     </div>
                   )}

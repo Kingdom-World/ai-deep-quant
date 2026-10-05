@@ -28,6 +28,25 @@ const SCHEMA_VERSION = 1;
 /** 预置因子名（必须与 server/crosssect.cjs 的 FACTOR_WINDOWS 键一致——测试有等价锁） */
 const PRESET_FACTORS = ['mom20', 'mom60', 'mom120', 'rev20', 'rev60', 'rev120'];
 
+/**
+ * **反转**预置名（值越大越不看好）。
+ *
+ *   🔴 为什么必须在这里显式声明（2026-10-05 修的一个真缺陷）：
+ *     单因子路径（crosssect.runCrossBacktest）靠 `resolved.isReversal` 决定升/降序，
+ *     而模型路径（modelrun 复合截面）明确「方向只由 direction 表达、不再二次反转」。
+ *     两条路各按自己的规则走，结果是**同一个名字 `rev20` 有两种口径**：
+ *       · 单因子：买低动量（反转）
+ *       · 模型（direction 缺省=1）：与 mom20 完全等价（实测 totalReturn 一模一样）
+ *     用户从下拉框选 `rev20` 期望抄底，实际在追涨，且界面无任何提示。
+ *     ⇒ 修法：**方向归一到一个字段**。`direction` 缺省时由因子名推导（rev* → -1），
+ *       用户显式指定则尊重其选择。两条路径由此口径一致。
+ *   ⚠️ 与 server/crosssect.cjs 的 REVERSAL_FACTORS 必须一致——测试有等价锁。
+ */
+const REVERSAL_PRESETS = ['rev20', 'rev60', 'rev120'];
+
+/** 因子名的**默认方向**：反转预置为 -1，其余为 1 */
+const defaultDirection = (expr) => (REVERSAL_PRESETS.includes(String(expr ?? '').trim()) ? -1 : 1);
+
 /** 截面预处理算子白名单（首批四种）。args 为各算子的参数规格。 */
 const TRANSFORM_TYPES = {
   /** 去极值：mad=按中位数绝对偏差的 n 倍截尾；pct=按分位数 n% 截尾 */
@@ -131,7 +150,10 @@ const MODEL_TEMPLATES = [
       hypothesis: '中期动量与短期反转的相关性低，组合后截面区分度更稳',
       factors: [
         { id: 'mom60', expr: 'mom60', weight: 1, direction: 1 },
-        { id: 'rev20', expr: 'rev20', weight: 0.8, direction: 1 },
+        // ⚠️ direction 必须为 -1：rev20 默认即 -1（反转=买跌幅最大者）。
+        //    写成 1 会让它等价于又一份 mom20，与本模板「反转做辅」的描述不符
+        //    （2026-10-05 修正：此前误写为 1）。
+        { id: 'rev20', expr: 'rev20', weight: 0.8, direction: -1 },
       ],
       transforms: [
         { type: 'winsorize', args: { method: 'mad', n: 3 } },
@@ -269,9 +291,16 @@ function validateModel(input, opts = {}) {
         else if (Math.abs(f.weight) > LIMITS.maxWeight) errors.push({ path: `${p}.weight`, message: `|weight| 上限 ${LIMITS.maxWeight}` });
       }
 
-      // direction
+      // direction —— 显式指定为 1 且因子本身是反转预置时**必须提示**：
+      //   这不是错误（用户可能就是想把它当动量用），但它是"名字与行为不一致"的组合，
+      //   静默通过会让用户以为选了反转、实际追涨。披露而不篡改用户的选择。
       if (f.direction !== undefined && f.direction !== 1 && f.direction !== -1) {
         errors.push({ path: `${p}.direction`, message: 'direction 只能是 1 或 -1' });
+      } else if (f.direction === 1 && REVERSAL_PRESETS.includes(String(f.expr ?? '').trim())) {
+        warnings.push({
+          path: `${p}.direction`,
+          message: `「${f.expr}」是反转因子（默认 direction=-1，买过去跌幅最大的）；此处显式设为 1 表示**当动量用**——若非本意请改为 -1`,
+        });
       }
     });
 
@@ -431,7 +460,8 @@ function normalizeModel(input, opts = {}) {
     id: f.id || `f${i + 1}`,
     expr: f.expr.trim(),
     weight: f.weight === undefined ? 1 : f.weight,
-    direction: f.direction === undefined ? 1 : f.direction,
+    // 缺省方向由因子名推导（rev* → -1），使模型路径与单因子路径口径一致（见 REVERSAL_PRESETS 注释）
+    direction: f.direction === undefined ? defaultDirection(f.expr) : f.direction,
   }));
 
   const model = {
@@ -481,6 +511,8 @@ function canonicalJSON(model) {
 module.exports = {
   SCHEMA_VERSION,
   PRESET_FACTORS,
+  REVERSAL_PRESETS,
+  defaultDirection,
   TRANSFORM_TYPES,
   FILTER_FIELDS,
   FILTER_OPS,

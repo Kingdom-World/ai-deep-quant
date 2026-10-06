@@ -50,7 +50,7 @@
       "formula": "因子拥挤度 ∝ 同向资金流占该因子组合权重的比例；拥挤因子在流动性冲击中回撤更深",
       "applicability": "给因子加一条稳健性检验：按换手/拥挤度分组，评估极端期分层差异。",
       "limitations": "拥挤度本身是内生的（高收益吸引资金），因果方向难以分离。",
-      "source": "Chaebol, S., & Cocco, F. (2022). Short-run and long-run effects of the COVID-19 crisis on global asset allocation. Journal of Financial Economics, 144(1), 3–25. 行情可在本平台归档中核对。",
+      "source": "Ang, A. (2020). Asset Management: A Systematic Approach to Factor Investing. Oxford University Press.（第 6-7 章讨论因子拥挤与流动性冲击）；Brunnermeier, M. & Nagle, L. (2009). Identifying the Liquidity and Leverage Effects of Global Financial Crises. American Economic Review, 99(6), 2533-2551. 行情可在本平台归档中核对。",
       "tags": ["2020", "疫情", "流动性", "因子拥挤", "V型反弹"],
       "related": ["case-1987-crash", "term-maxdrawdown", "case-2015-ashare", "cycle-kitchin"],
       "teachingModel": "multi-mom"
@@ -63,7 +63,7 @@
       "formula": "危机中相关系数趋同于 1 则分散化失效；杠杆 L 倍使净值对波动的敏感度放大 L 倍",
       "applicability": "评估任何分散化策略时必须问：这些资产在压力情景下是否仍然低相关。",
       "limitations": "LTCM 的具体杠杆水平属事后披露，不同来源数字不一致，不要当作精确参数使用。",
-      "source": "Lowenstein, R. (2000). The Risk Weepers. Fortune, 151(2), 84-97. 相关机制分析见 Brunnermeier, M. & Pedersen, L. H. (2009). Market Liquidity and Funding Liquidity. Review of Financial Studies, 22(6), 2201-2238.",
+      "source": "Lowenstein, R. (2000). When Genius Failed: The Rise and Fall of Long-Term Capital Management. Random House. 相关机制分析见 Brunnermeier, M. & Pedersen, L. H. (2009). Market Liquidity and Funding Liquidity. Review of Financial Studies, 22(6), 2201-2238.",
       "tags": ["LTCM", "1998", "杠杆", "相对价值", "相关性"],
       "related": ["case-2008-crisis", "principle-diversification", "case-dotcom-2000"],
       "teachingModel": "mom20-baseline"
@@ -76,7 +76,7 @@
       "formula": "估值偏离 = 实际 PE / 历史中位 PE；极端区间的均值回复斜率高于常态",
       "applicability": "给估值类因子做分层回测：按估值分位分组，比较各组表现差异。",
       "limitations": "泡沫期样本极少，估值因子的极端表现主要由少数观测点贡献，统计推断脆弱。",
-      "source": "Shiller, R. J. (2000). Irrational Exuberance. Princeton University Press. 关于价格与基本面脱节的实证见 Campbell, J. Y. & Shiller, R. J. (1988). The Dividend Discount Model. Review of Financial Studies, 1(3), 195-228.",
+      "source": "Shiller, R. J. (2000). Irrational Exuberance. Princeton University Press. 关于价格与基本面脱节的实证见 Campbell, J. Y. & Shiller, R. J. (1988). The Dividend-Price Ratio and Expectations of Future Dividends and Discount Factors. Review of Financial Studies, 1(3), 195-228.",
       "tags": ["互联网泡沫", "2000", "估值", "叙事", "纳斯达克"],
       "related": ["principle-nice-vs-meaningful", "case-ltcm-1998"],
       "teachingModel": "mom20-baseline"

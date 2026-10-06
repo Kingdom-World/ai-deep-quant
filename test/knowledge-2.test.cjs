@@ -49,11 +49,17 @@ test('① 每个教学层都有内容（空层 = 学习路径会出现空章节�
 
 // ═══ 二、发布门 ══════════════════════════════════════════════
 
-test('② 全库草稿数为 0（存量 withSource 100%，新条目必须都带出处）', () => {
+test('② 已发布条目必须都带 source（发布门真正要保证的东西）', () => {
   const s = kb.stats();
-  assert.strictEqual(s.draft, 0, `存在未过审条目：${kb.search('', { includeDraft: true, limit: 999 }).items.filter((e) => e.draft).map((e) => e.id).join(', ')}`);
-  assert.strictEqual(s.published, s.total, '已发布数应等于总数（无草稿时）');
-  assert.strictEqual(s.withSource, s.total, '每条都必须有 source');
+  // 🔴 **不**把 draft === 0 写成断言。独立审查的结论：计划书的流程是
+  //    「AI 生成初稿 → 人工审核补出处 → 发布」⇒ 草稿必须能先存在。
+  //    把它断言成 0 等于宣布「本仓库永远不许有草稿」，与发布门的用途直接对立。
+  //    正确分工：已发布条目的出处是**门禁**（行为断言）；草稿数是**待办量**（页面展示）。
+  const published = kb.search('', { limit: 9999 }).items;
+  const miss = published.filter((e) => !e.source || e.source.length < 10);
+  assert.strictEqual(miss.length, 0, `已发布条目缺出处：${miss.map((e) => e.id).join(', ')}`);
+  assert.strictEqual(s.published, published.length, 'search 返回的应全部是已发布条目');
+  assert.ok(s.draft >= 0 && s.published > 0, `draft=${s.draft} published=${s.published}`);
 });
 
 test('② 发布门行为：无 source ⇒ draft=true 且不进默认检索', () => {

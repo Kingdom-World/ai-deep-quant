@@ -8,7 +8,7 @@
       "title": "有效市场假说（EMH）",
       "summary": "价格已反映全部可用信息 ⇒ 任何基于公开信息的超额收益都不可持续。",
       "body": "Fama(1970) 把市场有效性分为三档：弱式（价格反映历史成交信息，技术分析无效）、半强式（反映全部公开信息，基本面分析无效）、强式（反映全部信息含内幕信息）。三档是递进的强假设，实证上只有弱式获得较广泛支持。量化投资与 EMH 的关系是张力而非对立：EMH 解释「为什么超额收益难以持续」，而策略的核心工作恰恰是找出 EMH 不成立的条件（信息不对称、行为偏差、流动性分割、风险暴露未定价）。因此评价一个因子的正统标准不是「收益高不高」，而是「在控制常见风险暴露后是否仍有增量解释力」。",
-      "formula": "弱式：E[P_{t+1}] = P_t；等价于「收益率序列不可预测」",
+      "formula": "弱式（鞅条件）：E[P_{t+1} | P_t] = P_t；即当前价格是下一期价格的条件期望，等价于「历史价格不含对超额收益的预测信息」",
       "applicability": "设计因子时先问：信号是否只是某个已知风险暴露的代理？控制暴露后的 alpha 是否仍显著。",
       "limitations": "EMH 无法被直接检验（信息集不可观测）；强式版本在定义上不可证伪。把它当定律使用会否证研究本身。",
       "source": "Fama, E. F. (1970). Efficient Capital Markets: A Review of Theory and Empirical Work. Journal of Finance, 25(2), 383–417.",
@@ -71,7 +71,7 @@
       "formula": "RC_i = σ_i · ∂σ_p/∂σ_i；令 RC_i = σ_p / n 即为风险平价",
       "applicability": "给因子组合做风险预算：与其均衡资金，不如均衡因子风险贡献。",
       "limitations": "对协方差估计敏感；危机中相关性上升会削弱分散化收益；隐含杠杆需求可能超出实际承受力。",
-      "source": "Asness, C., Frazzini, A., & Pedersen, L. (2017). Leverage Aversion and Risk Parity. Financial Analysts Journal, 73(1), 30-52.",
+      "source": "Asness, C., Frazzini, A., & Pedersen, L. (2017). Leverage Aversion and Risk Parity. Financial Analysts Journal, 68(1), 47-59.",
       "tags": ["风险平价", "风险贡献", "风险预算", "分散化", "杠杆"],
       "related": ["principle-diversification", "case-2008-crisis"]
     },

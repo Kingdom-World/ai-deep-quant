@@ -42,6 +42,7 @@ import PipelineView from './studio/PipelineView';
 import ExperimentCompare from './studio/ExperimentCompare';
 import ValidationPanel from './studio/ValidationPanel';
 import { VisibilityBadge, ShareControls } from './studio/ShareControls';
+import ModelDagEditor from './studio/ModelDagEditor';
 // 研究包（纯函数 · 前后端同源）：验证结论与指标此前只活在浏览器里，科研用途必须能带走
 import { buildResearchBundle, renderResearchReport } from '../../shared/research-bundle.mjs';
 import {
@@ -145,7 +146,7 @@ export default function ModelStudioPage() {
   // 工作台状态
   const [touched, setTouched] = useState(false); // 是否已开始编辑（决定是否显示模板墙）
   const [section, setSection] = useState<StudioSection>('factors');
-  const [track, setTrack] = useState<'form' | 'json' | 'exp' | 'verify'>('form');
+  const [track, setTrack] = useState<'form' | 'json' | 'dag' | 'exp' | 'verify'>('form');
   /** 递增即让「实验轨」重新拉取列表（跑完回测后留痕才有意义） */
   const [expToken, setExpToken] = useState(0);
   const [flashPath, setFlashPath] = useState<string | null>(null);
@@ -721,7 +722,7 @@ export default function ModelStudioPage() {
           <div className="zw-editor" style={panel}>
             <div style={panelHead}>
               <div style={{ display: 'flex', gap: 6 }}>
-                {(['form', 'json', 'exp', 'verify'] as const).map((k) => (
+                {(['form', 'json', 'dag', 'exp', 'verify'] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
@@ -733,7 +734,7 @@ export default function ModelStudioPage() {
                       borderColor: track === k ? theme.color.primary : LINE,
                     }}
                   >
-                    {k === 'form' ? '表单轨' : k === 'json' ? 'JSON 轨（只读）' : k === 'exp' ? '实验轨' : '验证轨'}
+                    {k === 'form' ? '表单轨' : k === 'json' ? 'JSON 轨（只读）' : k === 'dag' ? 'DAG 轨' : k === 'exp' ? '实验轨' : '验证轨'}
                   </button>
                 ))}
               </div>
@@ -742,7 +743,9 @@ export default function ModelStudioPage() {
                   ? '每次回测自动留痕 · 可勾选对比'
                   : track === 'verify'
                     ? '只读、不回写 · 样本外滚动 + 参数平原 + 因果性'
-                    : '同一份 Model JSON · 两轨等价'}
+                    : track === 'dag'
+                      ? '可视化编辑 · 产物仍是声明式 Model JSON · 与表单轨等价'
+                      : '同一份 Model JSON · 两轨等价'}
               </span>
             </div>
 
@@ -778,6 +781,16 @@ export default function ModelStudioPage() {
                     {!run && '（当前尚无回测结果 ⇒ 同上。）'}
                   </div>
                 </div>
+              ) : track === 'dag' ? (
+                /* DAG 轨：Model JSON 的可视化编辑面。
+                   🔴 与表单轨**共用同一份 draft** —— 任一侧编辑另一侧立即反映，
+                      不做两套状态（否则必然分叉）。产物仍是声明式 Model JSON，
+                      保存/校验走既有路径，本轨零新增后端契约。 */
+                <ModelDagEditor
+                  model={model}
+                  disabled={busyish}
+                  onChange={(next) => setDraft(modelToDraft(next as unknown as ModelSpec))}
+                />
               ) : track === 'exp' ? (
                 /* 实验轨：不可变留痕 + 对比（载入模型只写草稿，不改动原记录） */
                 <ExperimentCompare

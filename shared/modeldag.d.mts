@@ -37,6 +37,8 @@ export interface DagStats {
   rebalance: string;
   /** 组合权重是否全为 1（提示"当前等权"） */
   equalWeight: boolean;
+  /** 已占用的预置因子（UI 据此算"还能加哪些"，不在组件里重算） */
+  usedExprs: string[];
 }
 
 export interface DagGraph {
@@ -48,11 +50,13 @@ export interface DagGraph {
 export type DagEdit =
   | { type: 'addFactor'; expr: string }
   | { type: 'removeFactor'; id: string }
-  | { type: 'setFactorWeight'; id: string; value: number }
+  | { type: 'setFactorWeight'; id: string; value: number | string }
   | { type: 'setFactorDirection'; id: string; value: 'auto' | 1 | -1 }
   | { type: 'removeTransform'; index: number }
   | { type: 'removeFilter'; index: number }
   | { type: 'setBacktest'; key: 'rebalance' | 'groups' | 'fees'; value: string | number | boolean };
+//   注：权重/组数接受 string —— input 元素天然给字符串，而 `applyEdit` 内部
+//   会 `Number()` 并拒绝非数值（清空输入会被拒，而不是静默变成 0）。
 
 export type DagEditResult = { ok: true; model: Record<string, unknown> } | { ok: false; error: string };
 

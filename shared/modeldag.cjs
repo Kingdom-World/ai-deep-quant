@@ -156,6 +156,8 @@ function buildDag(model) {
       groups: num(backtest.groups, 5),
       rebalance: String(backtest.rebalance ?? 'monthly'),
       equalWeight: weights.length > 0 && weights.every((w) => w === weights[0]),
+      // 已占用的预置因子：供 UI 算"还能加哪些"，**不在组件里重算**（单一源）
+      usedExprs: factors.map((f) => String(f.expr)),
     },
   };
 }

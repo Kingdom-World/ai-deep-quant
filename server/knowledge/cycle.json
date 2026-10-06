@@ -14,7 +14,8 @@
       "source": "Kitchin, J. (1923). Cycles and Trends in Economic Factors. Review of Economics and Statistics, 5(2), 85–102. 中国库存周期数据的发布与修订时点可参见国家统计局官方说明。",
       "tags": ["基钦", "库存周期", "短周期", "补库", "去库"],
       "related": ["cycle-juglar", "case-2020-liquidity", "cycle-merrill-clock"],
-      "teachingModel": "flow-cleaned-mom"
+      "teachingModel": "flow-cleaned-mom",
+      "teachingNote": "该模板按周频调仓、按分位排名合成，节奏与 40 个月短周期匹配：把样本按补库/去库状态分组跑，对比同一因子在两组的超额收益差异——验证「周期不是预测工具，而是分组变量」这个教学要点。"
     },
     {
       "id": "cycle-juglar",
@@ -27,7 +28,8 @@
       "source": "Juglar, C. (1867). La crise économique. 相关长周期讨论参见 Kitchin(1923) 与 Kuznets(1930) 对投资周期的经典刻画。",
       "tags": ["朱格拉", "设备周期", "中周期", "资本开支", "产能"],
       "related": ["cycle-kitchin", "principle-capm"],
-      "teachingModel": "mom20-baseline"
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "🔴 注意语义边界：7-11 年周期**远超本平台归档的 11 年样本**，所以这里挂模型不是让学生「验证周期存在」（样本根本不够），而是让学生亲眼看到「数据长度不足以判定 7-11 年周期性」这一事实本身——按 CAPM 暴露分组看有效区间随宏观状态漂移。"
     },
     {
       "id": "cycle-merrill-clock",
@@ -40,7 +42,8 @@
       "source": "Merrill Lynch Investment Managers. (2004). The Investment Clock（Grahame 与 Hartnett 基于 1973-04 至 2004-07 美股数据提出）。注意：该框架为业界通行说法，非学术共识，使用时应自行验证。",
       "tags": ["美林时钟", "四象限", "增长", "通胀", "资产配置"],
       "related": ["cycle-kitchin", "case-2015-ashare"],
-      "teachingModel": "multi-mom"
+      "teachingModel": "multi-mom",
+      "teachingNote": "多周期动量叠加正对应「不同周期长度的动量在四象限中表现存在系统性差异」：把四象限当分组变量，分别跑 120 日与 20 日动量，观察同一因子在不同宏观状态下占优方向如何翻转。"
     },
     {
       "id": "cycle-a-share-style",
@@ -53,7 +56,8 @@
       "source": "风格轮动的实证研究可参见 Liu, Stambaugh & Yuan(2019, JFE) 关于 A 股规模与价值溢价的研究，以及 Moskowitz, Ooi & Pedersen(2012, JFE) 关于时间序列动量的经典文献。A 股行情可在本平台归档中核对。",
       "tags": ["A股", "风格轮动", "动量", "反转", "大小盘"],
       "related": ["case-2015-ashare", "term-momentum-factor", "case-2022-rate-hike"],
-      "teachingModel": "mom-rev-combo"
+      "teachingModel": "mom-rev-combo",
+      "teachingNote": "动量+反转的权重就是风格配比：把 2014-2015（动量占优）与 2016-2017（反转占优）两段分别跑同一模型，只换权重参数，观察回撤与收益特征如何随风格状态反向变化——对应「稳健性来自结构而非参数调优」。"
     }
   ]
 }

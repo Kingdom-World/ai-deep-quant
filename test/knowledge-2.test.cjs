@@ -209,7 +209,7 @@ test('真实内容库：过滤器 count 与实际可检索条数逐类对齐（�
 test('③ 存量 49 条全部仍在且 id 唯一（新增层不得挤掉旧内容）', () => {
   const s = kb.stats();
   assert.strictEqual(s.byCategory.term, 15, 'term 应仍为 15');
-  assert.strictEqual(s.byCategory.method, 14, 'method 应仍为 14');
+  assert.strictEqual(s.byCategory.method, 16, 'method 应为 16（14 存量 + 2 从 principle 移入）');
   assert.strictEqual(s.byCategory.basis, 10, 'basis 应仍为 10');
   assert.strictEqual(s.byCategory.paper, 10, 'paper 应仍为 10');
   const all = kb.search('', { limit: 9999 }).items;
@@ -218,6 +218,28 @@ test('③ 存量 49 条全部仍在且 id 唯一（新增层不得挤掉旧内�
   // 存量 id 前缀不变
   for (const p of ['term-', 'method-', 'basis-', 'paper-']) {
     assert.ok(ids.some((i) => i.startsWith(p)), `存量前缀 ${p} 丢失`);
+  }
+});
+
+// 🔴 分类归属回归（#69）：两条内容属统计检验/因子构造方法论，此前误放在 principle 层。
+//   锁 id 前缀 = 层的归属约定：改了前缀而忘了改文件，读起来会像"内容层与 id 层打架"。
+test('③ 分类归属与 id 前缀一致（#69：2 条从 principle 移入 method）', () => {
+  for (const id of ['method-nice-vs-meaningful', 'method-time-series-momentum']) {
+    const e = kb.search('', { limit: 9999 }).items.find((x) => x.id === id);
+    assert.ok(e, `${id} 应存在`);
+    assert.strictEqual(e.category, 'method', `${id} 应归 method 层`);
+  }
+  // 旧 id 不得残留（残留 = 同一条内容有两个身份，related 会出现幽灵引用）
+  const ids = new Set(kb.search('', { limit: 9999 }).items.map((e) => e.id));
+  for (const dead of ['principle-nice-vs-meaningful', 'principle-time-series-momentum']) {
+    assert.ok(!ids.has(dead), `旧 id ${dead} 仍存在（移动应改 id，不是复制）`);
+  }
+  // 跨层移动后 related 必须双向闭合（不能只改一半）
+  for (const e of kb.search('', { limit: 9999 }).items) {
+    for (const rid of e.related || []) {
+      const t = kb.byIds([rid])[0];
+      assert.ok(t, `断链：${e.id} → ${rid}（#69 移动时漏改引用）`);
+    }
   }
 });
 
@@ -276,11 +298,51 @@ test('🔴 teachingModel 必须是真实存在的预置模板 key（防编造模
   }
 });
 
-test('🔴 每个 cycle/case 条目都挂了教学模型（§11.1「每个 cycle/case 可挂教学用模型」）', () => {
+// ⚠️ 原「每个 cycle/case 条目都挂了教学模型」已删除：它要求 100% 覆盖率，
+//   与「模板不适用时应显式置 null」直接对立 —— 那条断言会逼着人给每条硬凑一个
+//   语义不匹配的模板，正是独立审查发现的假通过根源。
+//   替代物：下面两条 —— 有模型必须写清观察什么 / 无模型必须说明为何不挂。
+
+// 🔴 独立审查的判定：旧那条「每个条目都挂了模型」是**假通过**。
+//   它只校验 key 存在，区分不了"语义贴切"与"随便挑一个存在的 key" ——
+//   4 条 case 讲崩盘机制/杠杆/估值重定价却全挂 mom20-baseline，照样全绿。
+//   下面两条把它升级为真验证。
+test('🔴 teachingModel 必须有教学说明，且所有说明互不相同（防"随便挑一个 key"）', () => {
+  const linked = kb.search('', { limit: 9999 }).items.filter((e) => e.teachingModel);
+  const seen = new Map();
+  for (const e of linked) {
+    const note = e.teachingNote || '';
+    assert.ok(note.length >= 20, `${e.id} 挂了模型却没写教学说明（学生到底观察什么？）—— 这正是假通过的入口`);
+    if (seen.has(note)) {
+      assert.fail(`🔴 ${e.id} 的 teachingNote 与 ${seen.get(note)} 完全相同：模板可复用，**观察说明**不能复制`);
+    }
+    seen.set(note, e.id);
+  }
+  assert.strictEqual(seen.size, linked.length, '每条挂模型的条目都应有独一无二的观察说明');
+});
+
+test('🔴 教学模型不适用的条目必须显式置 null 并说明理由（宁缺勿硬凑）', () => {
+  // case-ltcm-1998 是跨资产相对价值 + 高杠杆，而本平台 4 个模板全是 A 股单资产动量族，
+  // 挂任何一个都是教错 ⇒ 正确做法是置 null 并在 note 里讲清为什么。
+  const ltcm = kb.search('', { limit: 9999 }).items.find((e) => e.id === 'case-ltcm-1998');
+  assert.ok(ltcm, 'case-ltcm-1998 应存在');
+  assert.strictEqual(ltcm.teachingModel, null, '🔴 语义不适配却挂了模板 —— 比不挂更糟（学生会跑出错误结论）');
+  const note = ltcm.teachingNote || '';
+  assert.ok(note.length >= 20 && note.includes('不挂'), '置 null 时必须在 teachingNote 说明为何不挂，否则只是"忘了填"');
+});
+
+test('🔴 cycle/case 每条要么挂真实模板+说明，要么置 null+理由（不许糊弄条目）', () => {
   for (const layer of ['cycle', 'case']) {
     const items = kb.listByLayer(layer);
-    const missing = items.filter((e) => !e.teachingModel).map((e) => e.id);
-    assert.strictEqual(missing.length, 0, `${layer} 层有条目未挂教学模型：${missing.join(', ')}`);
+    assert.ok(items.length > 0, `${layer} 应有条目`);
+    for (const e of items) {
+      if (e.teachingModel) {
+        assert.ok(templateKeys.has(e.teachingModel), `${e.id} 指向不存在的模板`);
+        assert.ok((e.teachingNote || '').length >= 20, `${e.id} 缺教学说明`);
+      } else {
+        assert.ok((e.teachingNote || '').length >= 20, `${e.id} 既无教学模型也无说明理由`);
+      }
+    }
   }
 });
 

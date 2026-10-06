@@ -33,7 +33,7 @@
       "body": "在 5% 显著性水平下，单独检验一个假设有 5% 概率误报。若同时检验 100 个因子，即使它们全都毫无预测能力，期望仍有约 5 个看起来显著。这就是多重比较（数据窥探）问题。缓解手段：① 提高门槛——Harvey, Liu & Zhu (2016) 建议截面研究中用 |t| > 3；② 控制错误发现率（FDR）——Benjamini-Hochberg 方法；③ 样本外验证与真实交易成本校验；④ 记录所有尝试（含失败的），避免只报告幸存者。本平台的参数稳健性三防（孤峰判据/样本外/成本敏感度）即是该原则在参数层面的落地。",
       "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
       "tags": ["多重比较", "数据窥探", "p-hacking", "显著性", "FDR"],
-      "related": ["term-stats-significance", "method-parameter-robust", "paper-lopez-de-prado-2018", "paper-harvey-liu-zhu-2016", "paper-benjamini-hochberg-1995", "term-ic", "term-newey-west", "method-benchmark-overfit", "paper-newey-west-1987", "paper-bailey-lopez-2014", "principle-nice-vs-meaningful"]
+      "related": ["term-stats-significance", "method-parameter-robust", "paper-lopez-de-prado-2018", "paper-harvey-liu-zhu-2016", "paper-benjamini-hochberg-1995", "term-ic", "term-newey-west", "method-benchmark-overfit", "paper-newey-west-1987", "paper-bailey-lopez-2014", "method-nice-vs-meaningful"]
     },
     {
       "id": "method-parameter-robust",
@@ -41,7 +41,7 @@
       "body": "参数优化的最大风险是把噪声当成规律。本项目以三项检验构成防线：① 孤峰判据——最优参数是否被邻域参数包围（若邻域表现骤降，说明是尖峰噪声，不可信）；② 样本外验证——用样本内挑出的最优参数在样本外检验（差距过大即过拟合）；③ 成本敏感度——提高费率/滑点后策略是否仍成立（高换手策略常在加成本后转负）。三项全过才认为参数稳健。注意：即使全过也不等于未来有效，只是排除了最粗糙的过拟合形态。",
       "source": "教材：Pardo, R.《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008) 关于 walk-forward 分析与参数曲面稳健性的方法；工程实现：本项目 server/paramscan.cjs（孤峰判据与样本外对比的落地）。",
       "tags": ["参数稳健", "过拟合", "孤峰", "样本外", "walk-forward"],
-      "related": ["method-multiple-testing", "method-cost-sensitivity", "method-benchmark-overfit", "paper-bailey-lopez-2014", "principle-nice-vs-meaningful"]
+      "related": ["method-multiple-testing", "method-cost-sensitivity", "method-benchmark-overfit", "paper-bailey-lopez-2014", "method-nice-vs-meaningful"]
     },
     {
       "id": "method-cost-sensitivity",
@@ -57,7 +57,7 @@
       "body": "把每个横截面日的股票按因子值排序分为 5 层（或 10 层），各层等权构建组合并逐期计算收益。判读方式：① 若因子有效，层收益应呈现单调递增或递减；② 多空组合（最高层减最低层）的收益差是最直接的因子强度度量；③ 若只有最高层或最低层有收益、中间层无序，说明有效性来自局部（可能是极小市值或不可交易样本），需剔除后重验；④ 按年切分观察单调性是否稳定，避免被单一年份主导。单调性强度可用层序与层收益的 Spearman 秩相关量化。",
       "source": "教材：Grinold & Kahn《Active Portfolio Management》第 6-7 章因子组合构建与分层分析；论文：Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56（分层组合法构造因子的经典做法）。",
       "tags": ["分层回测", "单调性", "多空组合", "Spearman", "因子检验"],
-      "related": ["term-spearman", "term-ic", "method-cross-section", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-volatility", "term-momentum-factor", "paper-jegadeesh-titman-1993"]
+      "related": ["term-spearman", "term-ic", "method-cross-section", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-volatility", "term-momentum-factor", "paper-jegadeesh-titman-1993", "method-time-series-momentum"]
     },
     {
       "id": "method-cross-section",
@@ -65,7 +65,7 @@
       "body": "横截面因子研究的核心是时间对齐，错一步就产生前视偏差。本项目采用的标准流程：在 T-1 日收盘后用当日（及更早）数据计算因子值并排名，在 T 日开盘按排名构建/调整组合。这样做的理由：T-1 收盘数据在 T 日开盘前已确定可得，不存在信息泄露；若改为 T 日收盘排名、T 日收盘成交，则隐含了瞬间完成全市场交易的假设，不可实现。同时需处理的细节：停牌股（无 T 日开盘价）须剔除或顺延、涨跌停股（T 日无法成交）须按守卫规则处理、新股（数据不足）须排除。",
       "source": "教材：Grinold & Kahn《Active Portfolio Management》第 7 章；方法讨论：Fama & French (1993) 分层组合构建的时间对齐处理；工程实现：本项目 server/crosssect.cjs（T-1 收盘排名、T 开盘成交、整手与同费率口径）。",
       "tags": ["横截面", "时间对齐", "T-1", "无前视", "因子排名"],
-      "related": ["method-lookahead", "term-momentum-factor", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-equal-weight", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "principle-time-series-momentum"]
+      "related": ["method-lookahead", "term-momentum-factor", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-equal-weight", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "method-time-series-momentum"]
     },
     {
       "id": "method-benchmark-choice",
@@ -113,7 +113,31 @@
       "body": "识别策略过拟合的六条经验：① 参数曲面上只有一个孤峰（邻域骤降）；② 样本外表现远差于样本内；③ 换手率极高且收益主要来自微小价差；④ 加入成本后收益归零；⑤ 收益集中在少数几笔交易或少数时间段；⑥ 逻辑上说不清为什么有效（无经济解释）。六条中命中两条以上，应视为不可信。真正的稳健策略通常表现为：参数平原、样本内外接近、逻辑清晰、对成本有一定容忍度、收益分散在多期。本平台的参数扫描与因子评估输出都围绕这些征兆设计判据。",
       "source": "教材：Pardo《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008)；论文：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5)；Bailey & López de Prado (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5)。",
       "tags": ["过拟合", "回测", "孤峰", "样本外", "经济解释"],
-      "related": ["method-parameter-robust", "method-multiple-testing", "paper-bailey-lopez-2014"]
+      "related": ["method-parameter-robust", "method-multiple-testing", "paper-bailey-lopez-2014", "method-nice-vs-meaningful"]
+    },
+    {
+      "id": "method-nice-vs-meaningful",
+      "title": "统计显著不等于经济显著",
+      "summary": "因子的价值取决于超额收益相对波动的比例与可交易性，而非单看 t 值。",
+      "body": "Harvey, Liu & Zhu(2016) 指出已发表金融因子中 t 值超过 3.0 的比例异常高，提示多重检验与发表偏差；他们主张新的因子研究门槛应更高。更根本的问题是经济意义：一个 t 等于 3 但年化超额仅 0.3 百分比、换手 300 百分比的因子，扣除成本后可能毫无价值。正确评估顺序应是：先看效应量（年化超额、回撤），再看稳定性（滚动窗口、不同市场状态），然后看考虑多重检验后的显著性，最后看可交易性（换手、容量、涨跌停约束）。本平台把验证门放在回测之后，目的正是让研究者在看 t 值之前先看稳定性。",
+      "formula": "经济显著性 ≈ 年化超额 / 年化跟踪误差（信息比率），并需再扣交易成本",
+      "applicability": "评估新因子的第一道关：把 t 值换算成年化超额对成本与换手的量级。",
+      "limitations": "没有普适的 t 值门槛（取决于样本期、市场数、检验次数）；事后设定门槛同样存在选择性偏差。",
+      "source": "Harvey, C. R., Liu, Y., & Zhu, H. (2016). The Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. 另见 Bailey, Borwein, Lopez de Prado & Zhu (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5), 94-101.",
+      "tags": ["多重检验", "t值", "经济显著性", "发表偏差", "Deflated Sharpe"],
+      "related": ["principle-emh", "method-multiple-testing", "method-parameter-robust", "method-benchmark-overfit", "case-dotcom-2000"]
+    },
+    {
+      "id": "method-time-series-momentum",
+      "title": "时间序列动量与横截面动量是两种因子",
+      "summary": "前者是单个资产自身方向的延续，后者是同一时点横截面的排序；机制与文献不可混用。",
+      "body": "Jegadeesh & Titman(1993) 证明横截面动量：买过去赢的、卖过去输的。Moskowitz, Ooi & Pedersen(2012) 则证明时间序列动量：单个资产过去 12 个月收益为正则持有、为负则做空，跨 58 个期货品种稳健。两者常被混称为动量，但机制不同：横截面动量可由信息迟滞与反应不足解释，时间序列动量更多与风险溢价相关。研究上的意义是：评价动量因子必须说清是哪一种——本平台 mom20 这类表达式是横截面动量（同一时点排序），不能直接拿时间序列动量的文献为它背书。",
+      "formula": "时间序列动量：sign(r_{t-12,t})·r_{t+1}；横截面动量：按 r_{t-12,t} 排序做多前 decile、做空后 decile",
+      "applicability": "写研究报告时必须明确动量的横截面或时间序列口径，回测实现要与所引文献一致。",
+      "limitations": "动量在部分市场表现为短期反转，命名需谨慎；危机中动量可能瞬时崩溃（见 case-1987-crash）。",
+      "source": "Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers. Journal of Finance, 48(1), 65-91. 时间序列动量：Moskowitz, T., Ooi, Y. H., & Pedersen, L. H. (2012). Time Series Momentum. Journal of Financial Economics, 104(2), 228-250.",
+      "tags": ["动量", "时间序列动量", "横截面动量", "趋势", "反转"],
+      "related": ["principle-disposition", "term-momentum-factor", "method-cross-section", "method-layer-monotonic"]
     }
   ]
 }

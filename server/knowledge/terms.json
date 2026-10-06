@@ -105,7 +105,7 @@
       "body": "动量因子指过去一段时间收益率较高的股票在未来一段时间继续表现较好（或反之，视市场与周期而定），源于 Jegadeesh & Titman (1993) 的经典发现（美股 3~12 个月形成期、持有期策略显著）。常见构造：mom{n} = 过去 n 个交易日累计收益（或对数收益）。重要提示：动量在中国 A 股市场并不稳定，短期（数日至数周）常表现为反转（reverse）；本项目实测 mom 因子在所选样本上呈现高分组收益低于低分组，即动量失效/反转特征——这是数据结论，不是模型错误，须如实呈现。",
       "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。",
       "tags": ["动量", "momentum", "反转", "因子", "Jegadeesh"],
-      "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993", "principle-disposition", "cycle-a-share-style", "principle-time-series-momentum"]
+      "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993", "principle-disposition", "cycle-a-share-style", "method-time-series-momentum"]
     },
     {
       "id": "term-limit-up-down",

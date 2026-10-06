@@ -13,7 +13,7 @@
       "limitations": "EMH 无法被直接检验（信息集不可观测）；强式版本在定义上不可证伪。把它当定律使用会否证研究本身。",
       "source": "Fama, E. F. (1970). Efficient Capital Markets: A Review of Theory and Empirical Work. Journal of Finance, 25(2), 383–417.",
       "tags": ["EMH", "有效市场", "半强式", "信息效率", "alpha"],
-      "related": ["principle-capm", "principle-apt", "principle-disposition", "principle-nice-vs-meaningful"]
+      "related": ["principle-capm", "principle-apt", "principle-disposition", "method-nice-vs-meaningful"]
     },
     {
       "id": "principle-capm",
@@ -49,7 +49,7 @@
       "limitations": "行为解释与风险补偿难以分离——同一现象既可解读为偏差，也可解读为未被定价的风险。",
       "source": "Shefrin, I., & Statman, M. (1985). The Disposition to Sell Winners Too Early and Ride Losers Too Long. Journal of Finance, 40(3), 793–807.",
       "tags": ["行为金融", "处置效应", "损失厌恶", "反转", "前景理论"],
-      "related": ["principle-emh", "term-momentum-factor", "principle-time-series-momentum"]
+      "related": ["principle-emh", "term-momentum-factor", "method-time-series-momentum"]
     },
     {
       "id": "principle-diversification",
@@ -86,30 +86,6 @@
       "source": "Amihud, Y. (2002). Illiquidity and Stock Returns. Journal of Financial Markets, 5(1), 31-56. 另见 Amihud, Y. & Mendelson, H. (1986). Asset Pricing and the Bid-Ask Spread. Journal of Financial Economics, 17(2), 223-249.",
       "tags": ["流动性", "Amihud", "换手", "冲击成本", "规模因子"],
       "related": ["basis-slippage", "case-2015-ashare", "case-2013-funding-squeeze"]
-    },
-    {
-      "id": "principle-time-series-momentum",
-      "title": "时间序列动量与横截面动量是两种效应",
-      "summary": "前者是单个资产自身方向的延续，后者是同一时点横截面的排序；机制与文献不可混用。",
-      "body": "Jegadeesh & Titman(1993) 证明横截面动量：买过去赢的、卖过去输的。Moskowitz, Ooi & Pedersen(2012) 则证明时间序列动量：单个资产过去 12 个月收益为正则持有、为负则做空，跨 58 个期货品种稳健。两者常被混称为动量，但机制不同：横截面动量可由信息迟滞与反应不足解释，时间序列动量更多与风险溢价相关。研究上的意义是：评价动量因子必须说清是哪一种——本平台 mom20 这类表达式是横截面动量（同一时点排序），不能直接拿时间序列动量的文献为它背书。",
-      "formula": "时间序列动量：sign(r_{t-12,t})·r_{t+1}；横截面动量：按 r_{t-12,t} 排序做多前 decile、做空后 decile",
-      "applicability": "写研究报告时必须明确动量的横截面或时间序列口径，回测实现要与所引文献一致。",
-      "limitations": "动量在部分市场表现为短期反转，命名需谨慎；危机中动量可能瞬时崩溃（见 case-1987-crash）。",
-      "source": "Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers. Journal of Finance, 48(1), 65-91. 时间序列动量：Moskowitz, T., Ooi, Y. H., & Pedersen, L. H. (2012). Time Series Momentum. Journal of Financial Economics, 104(2), 228-250.",
-      "tags": ["动量", "时间序列动量", "横截面动量", "趋势", "反转"],
-      "related": ["principle-disposition", "term-momentum-factor", "method-cross-section"]
-    },
-    {
-      "id": "principle-nice-vs-meaningful",
-      "title": "统计显著不等于经济显著",
-      "summary": "因子的价值取决于超额收益相对波动的比例与可交易性，而非单看 t 值。",
-      "body": "Harvey, Liu & Zhu(2016) 指出已发表金融因子中 t 值超过 3.0 的比例异常高，提示多重检验与发表偏差；他们主张新的因子研究门槛应更高。更根本的问题是经济意义：一个 t 等于 3 但年化超额仅 0.3 百分比、换手 300 百分比的因子，扣除成本后可能毫无价值。正确评估顺序应是：先看效应量（年化超额、回撤），再看稳定性（滚动窗口、不同市场状态），然后看考虑多重检验后的显著性，最后看可交易性（换手、容量、涨跌停约束）。本平台把验证门放在回测之后，目的正是让研究者在看 t 值之前先看稳定性。",
-      "formula": "经济显著性 ≈ 年化超额 / 年化跟踪误差（信息比率），并需再扣交易成本",
-      "applicability": "评估新因子的第一道关：把 t 值换算成年化超额对成本与换手的量级。",
-      "limitations": "没有普适的 t 值门槛（取决于样本期、市场数、检验次数）；事后设定门槛同样存在选择性偏差。",
-      "source": "Harvey, C. R., Liu, Y., & Zhu, H. (2016). The Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. 另见 Bailey, Borwein, Lopez de Prado & Zhu (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5), 94-101.",
-      "tags": ["多重检验", "t值", "经济显著性", "发表偏差", "Deflated Sharpe"],
-      "related": ["principle-emh", "method-multiple-testing", "method-parameter-robust", "case-dotcom-2000"]
     }
   ]
 }

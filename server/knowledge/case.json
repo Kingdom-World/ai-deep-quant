@@ -11,10 +11,11 @@
       "formula": "危机中相关性趋同：ρ → 1 ⇒ 组合方差跳升，等于杠杆被瞬间放大",
       "applicability": "压力测试：把历史极端跳空日（1987-10-19、2015-08-24、2020-02-24）作为回测外的情景注入。",
       "limitations": "单次事件的因果链难以确证，事后叙事容易过度拟合；不可据此推断此类事件的可重复概率。",
-      "source": "Salomon, S. (1987). When the Wall Street Crash of 1987 Became a Global Crash. Federal Reserve Bank of New York Economic Policy Review. 相关市场数据可参见本平台行情归档的同日 K 线。",
+      "source": "Brady, N. F. (1990). Report of the Presidential Task Force on Market Mechanisms（主席 Nicholas F. Brady 时任美国财政部长，该委员会专为此事设立）. U.S. Department of the Treasury. 一手资料，可在美国财政部官网与 FRASER（Fed Reserve Association St. Louis）检索。机制层面的补充分析见:Shiller, R. J. (1987). Portfolio Insurance and Other Investor Fads as Factors in the 1987 Stock Market Crash. NBER Working Paper No. 2816. 相关市场数据可参见本平台行情归档的同日 K 线。",
       "tags": ["黑色星期一", "1987", "尾部风险", "相关性", "流动性"],
       "related": ["case-2020-liquidity", "term-maxdrawdown", "basis-limit-guard", "case-2008-crisis"],
-      "teachingModel": "mom20-baseline"
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "用最小单因子模型跑 1987-10-19 前后：观察组合当日回撤与「若按收盘价成交」假设的偏差——本条要证的是止损类规则在日线口径下无法假设成交价等于收盘价，波动率与相关性在跳空日跳升、模型来不及反应。"
     },
     {
       "id": "case-2008-crisis",
@@ -24,10 +25,11 @@
       "formula": "波动率偏斜：下行时 σ 跳升远快于上行时回落 ⇒ 风险模型在事前系统性低估",
       "applicability": "任何以历史协方差驱动的风险预算/配权，都应补充「相关性→1」的极端情景。",
       "limitations": "危机样本极少，统计上无法给出可靠频率；强行拟合历史崩盘样本会引入选择偏差。",
-      "source": "Gorton, G. B. (2010). The Slump and the Crash. Oxford University Press. 关于危机中波动率与相关性的实证可参见 Brunnermeier & Nagle(2009).",
+      "source": "Gorton, G. B. (2010). The Slump and the Crash. Oxford University Press. 危机中波动率与相关性的实证（完整出处：Brunnermeier, M. K. & Nagle, L. H. (2009). Identifying the Liquidity and Leverage Effects of Global Financial Crises. American Economic Review, 99(6), 2533-2551）另见 case-2020-liquidity 的出处栏。",
       "tags": ["2008", "金融危机", "杠杆", "波动率偏斜", "相关性"],
       "related": ["case-1987-crash", "basis-slippage", "principle-risk-parity", "case-ltcm-1998"],
-      "teachingModel": "mom20-baseline"
+      "teachingModel": "mom-rev-combo",
+      "teachingNote": "动量与反转方向相反、互相对冲，本条观察的是「对冲掉了什么、没对冲掉什么」：2008 年两类因子同向失效时互不抵消，说明相关性上升会同时击穿多空两侧——这正是分散化在最需要它的时刻失效的实证。"
     },
     {
       "id": "case-2015-ashare",
@@ -40,7 +42,8 @@
       "source": "上海证券交易所与深圳证券交易所 2015 年 7-8 月关于临时停市与交易异常的公告；中国证券监督管理委员会 2015 年 7 月 4 日关于暂缓首次公开发行股票并重启核查的公告。行情可在本平台归档中核对。",
       "tags": ["A股", "2015", "涨跌停", "停市", "成交约束"],
       "related": ["basis-limit-guard", "basis-limit-guard-depth", "case-2020-liquidity", "cycle-merrill-clock", "cycle-a-share-style", "principle-illiquidity", "case-2013-funding-squeeze"],
-      "teachingModel": "mom20-baseline"
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "本条要检验的是**回测成交假设是否现实**：把 2015 年样本跑出来，看涨停守卫/跌停守卫触发了几次被拒成交。对照「假设收盘价可成交」的版本，两者收益差即为行政化出清被忽略的金额。"
     },
     {
       "id": "case-2020-liquidity",
@@ -53,7 +56,8 @@
       "source": "Ang, A. (2020). Asset Management: A Systematic Approach to Factor Investing. Oxford University Press.（第 6-7 章讨论因子拥挤与流动性冲击）；Brunnermeier, M. & Nagle, L. (2009). Identifying the Liquidity and Leverage Effects of Global Financial Crises. American Economic Review, 99(6), 2533-2551. 行情可在本平台归档中核对。",
       "tags": ["2020", "疫情", "流动性", "因子拥挤", "V型反弹"],
       "related": ["case-1987-crash", "term-maxdrawdown", "case-2015-ashare", "cycle-kitchin"],
-      "teachingModel": "multi-mom"
+      "teachingModel": "multi-mom",
+      "teachingNote": "多周期动量在 2020 年 2-3 月的表现：观察不同周期长度的动量是否**同向下跌**。正文说危机定价主导变量是「谁能先撤出」而非基本面预测误差——若多档动量回撤深度呈现系统性差异而非随机，正说明拥挤度而非因子逻辑在起作用。"
     },
     {
       "id": "case-ltcm-1998",
@@ -66,7 +70,8 @@
       "source": "Lowenstein, R. (2000). When Genius Failed: The Rise and Fall of Long-Term Capital Management. Random House. 相关机制分析见 Brunnermeier, M. & Pedersen, L. H. (2009). Market Liquidity and Funding Liquidity. Review of Financial Studies, 22(6), 2201-2238.",
       "tags": ["LTCM", "1998", "杠杆", "相对价值", "相关性"],
       "related": ["case-2008-crisis", "principle-diversification", "case-dotcom-2000"],
-      "teachingModel": "mom20-baseline"
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：LTCM 的核心是**跨资产相对价值 + 高杠杆**（债券利差、波动率、并购套利同时做空），而本平台 4 个预置模板全是 A 股单资产动量族，既无跨品种构造也无杠杆维度。挂任何一个都会教错——学生跑出来的是动量因子，不是相对价值策略。补齐跨资产相对价值模板后再挂。"
     },
     {
       "id": "case-dotcom-2000",
@@ -78,8 +83,9 @@
       "limitations": "泡沫期样本极少，估值因子的极端表现主要由少数观测点贡献，统计推断脆弱。",
       "source": "Shiller, R. J. (2000). Irrational Exuberance. Princeton University Press. 关于价格与基本面脱节的实证见 Campbell, J. Y. & Shiller, R. J. (1988). The Dividend-Price Ratio and Expectations of Future Dividends and Discount Factors. Review of Financial Studies, 1(3), 195-228.",
       "tags": ["互联网泡沫", "2000", "估值", "叙事", "纳斯达克"],
-      "related": ["principle-nice-vs-meaningful", "case-ltcm-1998"],
-      "teachingModel": "mom20-baseline"
+      "related": ["method-nice-vs-meaningful", "case-ltcm-1998"],
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "用单因子动量跑 2000 年前后：观察泡沫破裂后「趋势策略在底部反复止损」——正文第 3 点说的隐性磨损就在这里可见。参数改短窗口可加剧反复止损，改长窗口可缓解，对照跑即理解动量在估值重定价期的表现差异。"
     },
     {
       "id": "case-2013-funding-squeeze",
@@ -92,7 +98,8 @@
       "source": "中国人民银行 2013 年 6 月金融统计数据与公开市场操作公告；相关市场数据可在本平台归档的行情序列中核对。",
       "tags": ["A股", "2013", "钱荒", "资金面", "杠杆"],
       "related": ["case-2015-ashare", "principle-illiquidity"],
-      "teachingModel": "flow-cleaned-mom"
+      "teachingModel": "flow-cleaned-mom",
+      "teachingNote": "该模板先用成交量过滤器剔除成交额缺失样本，正好对上本条「资金面冲击时依赖融资的策略回撤被放大」：把过滤器开关对比着跑，观察 2013 年 6 月那几日的收益差——资金面维度加进选股口径能吸收多少尾部。"
     },
     {
       "id": "case-2022-rate-hike",
@@ -105,7 +112,8 @@
       "source": "美国联邦储备委员会 2022 年公开市场操作声明（FOMC statements, 2022）；关于利率与长期收益率的实证可参见 Campbell, J. Y. (2011). Estimating the Macroeconomic Determinants of Long-Term Yields. Journal of Finance, 66(6), 2253-2291.",
       "tags": ["2022", "加息", "成长", "价值", "久期"],
       "related": ["cycle-a-share-style", "principle-capm"],
-      "teachingModel": "mom-rev-combo"
+      "teachingModel": "mom-rev-combo",
+      "teachingNote": "动量+反转的权重直接对应「成长 vs 价值」：跑 2022 年样本并逐月调权重，观察固定权重组合在加息周期里如何系统性跑输。权重固定等于假设风格状态不变——这是本条与 cycle-a-share-style 共享的教学装置，但观察对象是宏观利率而非 A 股自身风格。"
     }
   ]
 }

@@ -97,8 +97,18 @@ function readAll() {
           formula: typeof e.formula === 'string' ? e.formula : '',
           applicability: typeof e.applicability === 'string' ? e.applicability : '',
           limitations: typeof e.limitations === 'string' ? e.limitations : '',
-          /** 教学用模型（Phase 1 Model JSON 的 id）：cycle/case 条目可挂教学实验 */
+          /** 教学用模型（Phase 1 Model JSON 的 key）：cycle/case 条目可挂教学实验 */
           teachingModel: e.teachingModel || null,
+          /**
+           * 教学说明：挂着这个模型，学生**具体观察什么**（2026-10-07 补）。
+           * 🔴 为什么必需：独立审查发现 4 条 case 的 teachingModel 全指向
+           *   `mom20-baseline`，而条目讲的是崩盘机制/杠杆相关性/估值重定价 ——
+           *   看着像"随便挑了个存在的模板"。原先那条测试只校验 key 存在，
+           *   区分不了"语义贴切"与"碰巧合法"，属**假通过**。
+           *   有了 note，链接就从断言变成了可核查的教学设计；
+           *   模板确实不适用时置 teachingModel: null 并在 note 里说明理由（不硬凑）。
+           */
+          teachingNote: typeof e.teachingNote === 'string' ? e.teachingNote : '',
           source,
           /**
            * 🔴 发布门（§11.1「无出处的条目不发布」）：

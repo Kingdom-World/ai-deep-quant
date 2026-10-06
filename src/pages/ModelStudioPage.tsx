@@ -203,6 +203,42 @@ export default function ModelStudioPage() {
     })();
   }, [loadLibrary]);
 
+  /**
+   * 知识库 → 模型工坊的模板直通车（§11.1「学生一键复现」，#70）。
+   *
+   *   为什么必须在这里消费 URL 参数：知识库侧只负责跳过来（它不该直接改本组件的
+   *   draft —— 那是跨页面的状态篡改）。若本页不读参数，那个按钮就是个**死链**：
+   *   跳过来还是空白工作台，用户必须自己在模板墙里再找一遍。
+   *
+   *   ⚠️ 两道防错：
+   *   ① 必须等 schema 到位才能套用（模板清单随 /api/models/schema 下发，是单一源）；
+   *      schema 未到就找不到模板，只能报错而不能静默什么都不做。
+   *   ② key 不存在时**显式报错**并报出可用清单 —— 静默失败会让人以为是按钮坏了。
+   *   ⚠️ 用 replace 而非 push：套用模板不是"一次导航"，不该在历史里留一个空工作台。
+   */
+  const appliedFromUrl = useRef(false);
+  useEffect(() => {
+    if (!schema || appliedFromUrl.current) return;
+    const key = new URLSearchParams(window.location.search).get('template');
+    if (!key) return;
+    appliedFromUrl.current = true; // 只消费一次（避免用户改 draft 后被参数回卷）
+    const tpl = (schema.templates || []).find((t) => t.key === key);
+    if (!tpl) {
+      flash('err', `知识库指定的模板「${key}」不存在。可用：${(schema.templates || []).map((t) => t.key).join('、') || '（无）'}`);
+      return;
+    }
+    const from = new URLSearchParams(window.location.search).get('from');
+    applyTemplate(tpl);
+    if (from === 'knowledge') {
+      flash('info', `已按知识库条目套用「${tpl.label}」——按该条目的「教学说明」观察你要检验的现象`);
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('template');
+    url.searchParams.delete('from');
+    url.searchParams.delete('title');
+    window.history.replaceState(null, '', url.toString());
+  }, [schema]);
+
   // ── 实时校验（防抖 350ms；权威结论仍在服务端）──
   useEffect(() => {
     const t = setTimeout(() => {

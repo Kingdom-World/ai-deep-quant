@@ -35,7 +35,7 @@ const DIR = process.env.KNOWLEDGE_DIR || path.join(__dirname, 'knowledge');
 /**
  * 🔴 知识库 2.0 的**两个维度**（计划书 §11.1）：
  *   ① 教学五层（LAYERS）—— 学科知识，是 Learn 学习路径的编排依据；
- *   ② 平台辅助类（AUX）—— 平台自身的计算口径与权威文献，**不是教学层**。
+ *  ② 平台辅助类（AUX）—— 平台自身的计算口径与权威文献，**不是教学层**。
  *
  *   为什么必须分维：存量 `basis`（"本平台每一项计算所采用的具体口径与依据"）
  *   是**平台特有**的，既不是术语也不是方法。硬塞进五层会让学习路径混入
@@ -43,24 +43,12 @@ const DIR = process.env.KNOWLEDGE_DIR || path.join(__dirname, 'knowledge');
  *
  *   ⚠️ 存量 label 刻意**不改**（方法论/口径/文献），避免影响前端既有显示；
  *      新增三层才用计划书措辞（原理/案例/周期专题）。
+ *
+ *   ⚠️ 下面的常量**不在本文件定义**（#70）：单一源在 shared/knowledge-layers.cjs，
+ *      前端也从那里 import —— 否则前端那份联合类型会缺 3 个层而后端加层时静默失效。
+ *      本文件继续 re-export（既有 require 方零变化）。
  */
-const LAYERS = {
-  term: '术语',
-  method: '方法论',
-  principle: '原理',
-  case: '案例',
-  cycle: '周期专题',
-};
-const AUX = {
-  basis: '口径',
-  paper: '文献',
-};
-const CATEGORIES = { ...LAYERS, ...AUX };
-
-/** 教学五层的 key（顺序 = 学习路径的自然顺序：术语→方法→原理→案例→周期） */
-const LAYER_KEYS = Object.keys(LAYERS);
-/** 是否教学层（Learn 路径只消费教学层） */
-const isTeachingLayer = (c) => Object.prototype.hasOwnProperty.call(LAYERS, c);
+const { LAYERS, AUX, CATEGORIES, LAYER_KEYS, isTeachingLayer } = require('../shared/knowledge-layers.cjs');
 
 /** 命中位置权重（标题最重，出处最轻） */
 const WEIGHT = { title: 10, tags: 6, body: 3, source: 2 };

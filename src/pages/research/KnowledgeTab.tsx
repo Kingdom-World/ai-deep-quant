@@ -13,23 +13,42 @@
 //     · 关联口径点击后**就地展开**目标条目而非跳页——研究场景下跳页会打断思路。
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { knowledgeApi, type KnowledgeEntry, type KnowledgeSearchMode } from '../../api';
+import { useNavigate } from 'react-router-dom';
+import { knowledgeApi, type KnowledgeEntry, type KnowledgeSearchMode, type KnowledgeStats, type KnowledgeCategoryCount } from '../../api';
 import { card, sectionTitle, sectionSub, input, btnGhost } from './shared';
 
+// 🔴 #70：分类色板此前只有 4 个键，知识库 2.0 新增的 principle/case/cycle
+//   一律落到兜底灰 #94a3b8 —— 三层内容在 UI 上完全无区分度（不是"配色偏好"，是信息丢失）。
+//   灰底白字的三层挤在一起，学生看不出这是"原理"还是"案例"。
 const CATEGORY_COLOR: Record<string, string> = {
-  term: '#60a5fa',
+  // 教学五层：冷→暖渐变，暗示学习路径的自然推进
+  term: '#60a5fa', // 术语   · 蓝
+  method: '#22c55e', // 方法论 · 绿
+  principle: '#c084fc', // 原理   · 紫（新增）
+  case: '#fb923c', // 案例   · 橙（新增）
+  cycle: '#f472b6', // 周期   · 粉（新增）
+  // 平台辅助类：中性偏灰蓝，视觉上与教学层区分（"这是平台口径，不是学科内容"）
   basis: '#f59e0b',
-  method: '#22c55e',
   paper: '#a78bfa',
 };
 
+/** 教学层徽标（区别于平台辅助类 basis/paper） */
+const LAYER_BADGE: Record<string, string> = {
+  term: '术语',
+  method: '方法',
+  principle: '原理',
+  case: '案例',
+  cycle: '周期',
+};
+
 export default function KnowledgeTab() {
+  const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [items, setItems] = useState<KnowledgeEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [stats, setStats] = useState<{ total: number; withSource: number } | null>(null);
-  const [cats, setCats] = useState<{ key: string; label: string; count: number }[]>([]);
+  const [stats, setStats] = useState<KnowledgeStats | null>(null);
+  const [cats, setCats] = useState<KnowledgeCategoryCount[]>([]);
   const [mode, setMode] = useState<KnowledgeSearchMode>('browse');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -110,9 +129,27 @@ export default function KnowledgeTab() {
   const isFiltered = q.trim() !== '' || category !== '';
   const statLine = useMemo(() => {
     if (!stats) return '';
-    const src = `全部带出处（${stats.withSource}/${stats.total}）`;
-    return isFiltered ? `命中 ${total} 条 · ${src}` : `共 ${stats.total} 条 · ${src}`;
+    // 草稿数显式外露：内容欠账有多少条是"看得见的待办量"，不该只藏在后端 stats 里
+    const src = `已发布 ${stats.published}/${stats.total} 条均带出处`;
+    const todo = stats.draft > 0 ? ` · 草稿待审 ${stats.draft} 条` : '';
+    return isFiltered ? `命中 ${total} 条 · ${src}${todo}` : `共 ${stats.published} 条 · ${src}${todo}`;
   }, [stats, total, isFiltered]);
+
+  /**
+   * 教学模型联动（§11.1「学生一键复现」）：跳模型工坊并带上模板 key。
+   *
+   * ⚠️ 为什么不自动落库：模板不是已存模型，直接塞进 draft 会绕过用户的建模意图
+   *   （等于替他决定"新建一个叫 XX 的模型"）。故只带 key 过去，工坊侧按 key 选中模板，
+   *   由用户确认后再落地。
+   * ⚠️ 模板 key 与 shared/modelspec 的 MODEL_TEMPLATES 一致（测试锁着这条），
+   *   所以这里不需要再做映射表 —— 多一张映射表就多一处会漂移的地方。
+   */
+  const openTeachingModel = useCallback(
+    (tm: string, title: string) => {
+      navigate(`/models?template=${encodeURIComponent(tm)}&from=knowledge&title=${encodeURIComponent(title)}`);
+    },
+    [navigate],
+  );
 
   return (
     <div>
@@ -136,11 +173,22 @@ export default function KnowledgeTab() {
           </button>
         </div>
 
-        {/* 分类过滤 */}
+        {/* 分类过滤
+            🔴 数字用 c.count（已发布），与 search 严格一致（#68）。
+               另把 draft 作为淡显后缀：既点得出来，也把待办量摆在明面上，
+               而不是让"数字偏大"或"完全看不见草稿"二选一。 */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <CatChip active={category === ''} onClick={() => setCategory('')} color="#94a3b8" label="全部" count={stats?.total} />
+          <CatChip active={category === ''} onClick={() => setCategory('')} color="#94a3b8" label="全部" count={stats?.published} />
           {cats.map((c) => (
-            <CatChip key={c.key} active={category === c.key} onClick={() => setCategory(c.key)} color={CATEGORY_COLOR[c.key] || '#94a3b8'} label={c.label} count={c.count} />
+            <CatChip
+              key={c.key}
+              active={category === c.key}
+              onClick={() => setCategory(c.key)}
+              color={CATEGORY_COLOR[c.key] || '#94a3b8'}
+              label={c.label}
+              count={c.count}
+              draft={c.draft}
+            />
           ))}
         </div>
       </div>
@@ -188,6 +236,7 @@ export default function KnowledgeTab() {
           relatedErr={relatedErr}
           onToggleRelated={() => openRelated(e.id, e.related)}
           onOpenRelated={(ids) => openRelated(e.id, ids)}
+          onOpenTeachingModel={openTeachingModel}
         />
       ))}
 
@@ -200,7 +249,7 @@ export default function KnowledgeTab() {
   );
 }
 
-function CatChip({ active, onClick, label, count, color }: { active: boolean; onClick: () => void; label: string; count?: number; color: string }) {
+function CatChip({ active, onClick, label, count, color, draft }: { active: boolean; onClick: () => void; label: string; count?: number; color: string; draft?: number }) {
   return (
     <button
       onClick={onClick}
@@ -217,6 +266,12 @@ function CatChip({ active, onClick, label, count, color }: { active: boolean; on
     >
       {label}
       {count !== undefined && <span style={{ opacity: 0.75, marginLeft: 4 }}>{count}</span>}
+      {/* 草稿后缀：淡显，不喧宾夺主，但点得出来的数字永远只算已发布 */}
+      {!!draft && draft > 0 && (
+        <span style={{ opacity: 0.6, marginLeft: 3, fontSize: 10 }} title={`另有 ${draft} 条草稿待补出处，暂不进入检索`}>
+          +{draft}稿
+        </span>
+      )}
     </button>
   );
 }
@@ -228,6 +283,7 @@ function EntryCard({
   relatedErr,
   onToggleRelated,
   onOpenRelated,
+  onOpenTeachingModel,
 }: {
   entry: KnowledgeEntry;
   relatedMap: Record<string, KnowledgeEntry>;
@@ -235,11 +291,16 @@ function EntryCard({
   relatedErr?: string;
   onToggleRelated: () => void;
   onOpenRelated: (ids: string[]) => void;
+  onOpenTeachingModel?: (templateKey: string, title: string) => void;
 }) {
   const color = CATEGORY_COLOR[entry.category] || '#94a3b8';
   // 展开态按**卡片自身 id** 读（与 openRelated 的写入键一致，2026-09-19 修正错位）
   const showRelated = !!expandedMap[entry.id];
   const rel = entry.related.map((id) => relatedMap[id]).filter(Boolean);
+
+  // ⚠️ 后端对缺失字段给的是**空串**而不是 undefined，所以下面的判空一律用 truthiness，
+  //   写成 `!== undefined` 会让存量条目的空 div 全部渲染出来。
+  //   存量 49 条只有 body —— 它们会只渲染正文，结构化区块整段消失（这才是正确的降级）。
 
   return (
     <div style={card}>
@@ -247,6 +308,12 @@ function EntryCard({
         <span style={{ fontSize: 11, color, border: `1px solid ${color}55`, backgroundColor: `${color}18`, borderRadius: 4, padding: '1px 6px' }}>
           {entry.categoryLabel}
         </span>
+        {/* 教学层徽标：让"这是 Learn 路径的一环"与"这是平台口径/文献"在视觉上分开 */}
+        {entry.isTeachingLayer && LAYER_BADGE[entry.category] && (
+          <span style={{ fontSize: 10, color: '#94a3b8', border: '1px dashed #334155', borderRadius: 4, padding: '1px 6px' }}>
+            教学层 · {LAYER_BADGE[entry.category]}
+          </span>
+        )}
         <span style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9' }}>{entry.title}</span>
         {entry.score > 0 && (
           <span style={{ fontSize: 10, color: '#475569', marginLeft: 'auto' }}>
@@ -255,7 +322,106 @@ function EntryCard({
         )}
       </div>
 
+      {/* 摘要：结构化条目的导语（比正文更短、更像"一句话结论"） */}
+      {entry.summary && (
+        <div style={{ fontSize: 13, color: '#e2e8f0', lineHeight: 1.85, fontWeight: 600, marginBottom: 10, paddingLeft: 9, borderLeft: `2px solid ${color}` }}>
+          {entry.summary}
+        </div>
+      )}
+
+      {/* 正文：无摘要的存量条目直接起排（不出现"只有导语没内容"的空档） */}
       <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.9, whiteSpace: 'pre-wrap' }}>{entry.body}</div>
+
+      {/* 公式：等宽块 + 左侧刻线，视觉上与散文正文区分（这是可复算的东西，不是叙述） */}
+      {entry.formula && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '9px 12px',
+            backgroundColor: 'rgba(15,23,42,0.75)',
+            border: '1px solid rgba(51,65,85,0.7)',
+            borderLeft: '3px solid #22c55e',
+            borderRadius: 6,
+            fontSize: 12,
+            color: '#86efac',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+            lineHeight: 1.8,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          <span style={{ color: '#475569', fontFamily: 'inherit', marginRight: 6 }}>公式</span>
+          {entry.formula}
+        </div>
+      )}
+
+      {/* 适用场景 + 局限：两者成对出现，因为"什么时候能用"和"什么时候不能用"必须一起看 */}
+      {(entry.applicability || entry.limitations) && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {entry.applicability && (
+            <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.8 }}>
+              <span style={{ color: '#60a5fa', fontWeight: 700, marginRight: 6 }}>适用</span>
+              {entry.applicability}
+            </div>
+          )}
+          {/* 局限用警示色：本平台口径是「降级/边界必须显式」，局限属于同一类信息 */}
+          {entry.limitations && (
+            <div
+              style={{
+                fontSize: 12,
+                color: '#fcd34d',
+                lineHeight: 1.8,
+                padding: '7px 10px',
+                backgroundColor: 'rgba(245,158,11,0.07)',
+                border: '1px solid rgba(245,158,11,0.24)',
+                borderRadius: 6,
+              }}
+            >
+              <span style={{ fontWeight: 700, marginRight: 6 }}>局限</span>
+              {entry.limitations}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 教学模型入口（§11.1「学生一键复现」）
+          🔴 teachingNote 必须与 teachingModel 同时渲染：只给一个按钮而不说"观察什么"，
+             等于把一个语义不明的黑箱丢给学生 —— 这正是 #69 清理掉的假链接。 */}
+      {(entry.teachingModel || entry.teachingNote) && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '9px 12px',
+            backgroundColor: entry.teachingModel ? 'rgba(34,197,94,0.07)' : 'rgba(148,163,184,0.06)',
+            border: `1px solid ${entry.teachingModel ? 'rgba(34,197,94,0.26)' : 'rgba(100,116,139,0.3)'}`,
+            borderRadius: 8,
+            fontSize: 12,
+            lineHeight: 1.8,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: entry.teachingNote ? 6 : 0 }}>
+            <span style={{ color: entry.teachingModel ? '#4ade80' : '#94a3b8', fontWeight: 700 }}>
+              {entry.teachingModel ? '教学模型' : '教学说明'}
+            </span>
+            {entry.teachingModel && (
+              <>
+                <code style={{ fontSize: 11, color: '#86efac', backgroundColor: 'rgba(34,197,94,0.12)', borderRadius: 4, padding: '1px 6px' }}>
+                  {entry.teachingModel}
+                </code>
+                {onOpenTeachingModel && (
+                  <button
+                    onClick={() => onOpenTeachingModel(entry.teachingModel as string, entry.title)}
+                    style={{ ...btnGhost, padding: '3px 10px', fontSize: 11, marginLeft: 'auto' }}
+                  >
+                    在模型工坊打开 ▸
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+          {entry.teachingNote && <div style={{ color: '#cbd5e1' }}>{entry.teachingNote}</div>}
+        </div>
+      )}
 
       {/* 出处：与正文同等显眼——这是本平台的知识库与"随便写个说明"的区别 */}
       <div

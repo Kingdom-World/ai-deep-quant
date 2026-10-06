@@ -236,8 +236,15 @@ app.use(express.json({ limit: '100kb' }));
 //   无 Cookie 请求可被 Vercel CDN 边缘缓存（20 人轮询在边缘合并，不触发函数调用、
 //   不烧 Active CPU）。爬虫风险由 API_RATE_LIMIT（按 IP）兜底。
 //   ⚠️ 白名单端点不得引用 req.user（当前均不引用），也不得返回任何个体数据。
+//   🔴 白名单纪律：进入这里的端点，其响应**必须与访问者身份无关**。
+//      原因：本分支会打上 `Cache-Control: public, s-maxage=20` 走 CDN 边缘缓存，
+//      而边缘缓存**不区分身份**（不因 Cookie 不同而分流）——
+//      所以只要响应因人而异（哪怕只是"登录才可见"），就**绝不能**进白名单。
+//      前例（反面教材）：/api/models/shared/:id 的内容随可见性变化 ⇒ 只能走正常鉴权、不入白名单。
+//      ✅ 公开广场 /api/models/public（及 /api/models/public/:id）满足"与身份无关"，可入。
 const PUBLIC_API_PREFIXES = [
   '/api/indices', '/api/mood', '/api/quote/', '/api/minute/', '/api/sectors/', '/api/news',
+  '/api/models/public',
 ];
 app.use((req, res, next) => {
   if (!AUTH_ENABLED || req.method === 'OPTIONS') return next();
@@ -1578,6 +1585,7 @@ try {
     modelexp: require('./modelexperiments.cjs'), // 实验留痕（不可变；与可变的 model_store 分工）
     validation: require('./validation.cjs'), // 独立验证套件（Phase 2；只读、不落库）
     uidOf: broker.uidOf, // 与模拟盘/自选池同一套分账（登录用户名，未开鉴权时按 IP）
+    isAdmin: (req) => isAdminReq(req), // 分享审核闸门（复用 6c 段的单一实现）
     IS_VERCEL,
   });
 } catch (e) {

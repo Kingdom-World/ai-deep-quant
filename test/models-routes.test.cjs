@@ -64,7 +64,7 @@ const callId = async (app, key, id, user) => {
   await h({ params: { id }, query: {}, body: {}, user: user ? { username: user } : undefined }, res);
   return res;
 };
-const appFor = (IS_VERCEL = false) => {
+const appFor = (IS_VERCEL = false, isAdmin = () => false) => {
   const app = fakeApp();
   registerModelRoutes(app, {
     modelrun,
@@ -73,6 +73,7 @@ const appFor = (IS_VERCEL = false) => {
     modelexp,
     validation,
     uidOf: (req) => req?.user?.username || 'anon',
+    isAdmin, // 分享审核闸门（新增 deps；缺了会让分享路由 500 —— 刻意不给默认值，避免静默失效）
     IS_VERCEL,
   });
   return app;
@@ -85,7 +86,7 @@ const validModel = (name = '路由测试') => ({
   meta: { author: 'tester' },
 });
 
-test('路由注册：十二条，且 /schema、/api/model-experiments 必须排在各自 /:id 之前', () => {
+test('路由注册：十九条，且所有单段字面量路径必须排在 /:id 之前', () => {
   const app = appFor();
   const keys = [...app.routes.keys()]; // 保持注册顺序
   assert.deepStrictEqual([...keys].sort(), [
@@ -95,17 +96,36 @@ test('路由注册：十二条，且 /schema、/api/model-experiments 必须排�
     'GET /api/model-experiments/:id',
     'GET /api/models',
     'GET /api/models/:id',
+    'GET /api/models/circle',
+    'GET /api/models/public',
+    'GET /api/models/public/:id',
+    'GET /api/models/review-queue',
     'GET /api/models/schema',
+    'GET /api/models/shared/:id',
     'POST /api/model-experiments/compare',
     'POST /api/models',
+    'POST /api/models/:id/review',
+    'POST /api/models/:id/share',
     'POST /api/models/run',
     'POST /api/models/validate',
     'POST /api/models/validate-suite',
   ].sort()); // 注意：用副本排序，避免污染下面要用注册顺序的 keys
-  assert.ok(
-    keys.indexOf('GET /api/models/schema') < keys.indexOf('GET /api/models/:id'),
-    '/schema 必须先注册，否则会被 :id 吃掉',
-  );
+
+  // 🔴 所有**单段字面量**路径都必须排在 GET /:id 之前 —— 这是真实踩过的坑
+  //    （/schema 曾因此被当成 id 吃掉；分享域的 /public、/circle、/review-queue 同理）。
+  //    数据驱动：以后新增单段路由，只要写进这个数组就自动纳入守卫。
+  const idIdx = keys.indexOf('GET /api/models/:id');
+  assert.ok(idIdx >= 0, '应存在 GET /api/models/:id');
+  for (const k of [
+    'GET /api/models/schema',
+    'GET /api/models/public',
+    'GET /api/models/circle',
+    'GET /api/models/review-queue',
+  ]) {
+    const i = keys.indexOf(k);
+    assert.ok(i >= 0, `路由未注册：${k}`);
+    assert.ok(i < idIdx, `${k} 必须先于 GET /api/models/:id 注册，否则会被 :id 吃掉`);
+  }
   assert.ok(
     keys.indexOf('GET /api/model-experiments') < keys.indexOf('GET /api/model-experiments/:id'),
     '/api/model-experiments 必须先于 /:id 注册，否则列表会被当成 id 吃掉',

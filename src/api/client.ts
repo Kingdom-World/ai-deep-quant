@@ -63,8 +63,14 @@ const inFlight = new Map<string, Promise<unknown>>();
 
 /** 公共行情端点前缀（与后端 PUBLIC_API_PREFIXES 白名单一致）：不带 Cookie 发送，
  *  无 Cookie 请求才能吃到 Vercel CDN 边缘缓存（s-maxage），20 人轮询在边缘合并、不烧函数 CPU。
- *  这些端点返回公开市场数据、无个体差异，omit 凭证无任何功能影响。 */
-export const PUBLIC_PATH_PREFIXES = ['/indices', '/mood', '/quote/', '/quotes?', '/minute/', '/sectors/', '/news?'];
+ *  这些端点返回公开市场数据、无个体差异，omit 凭证无任何功能影响。
+ *  🔴 纪律：能进这个列表的端点，其响应必须**与访问者身份无关** —— 否则边缘缓存会把
+ *     有权限者的响应喂给无权限者（模型分享的 /shared/ 就因此绝不能进白名单）。 */
+export const PUBLIC_PATH_PREFIXES = [
+  '/indices', '/mood', '/quote/', '/quotes?', '/minute/', '/sectors/', '/news?',
+  // 模型公开广场（只列已过审的公开示例；内容与身份无关）
+  '/models/public',
+];
 export function isPublicPath(path: string): boolean {
   return PUBLIC_PATH_PREFIXES.some((p) => path.startsWith(p));
 }

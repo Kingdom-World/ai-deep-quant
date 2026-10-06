@@ -21,6 +21,7 @@ import NewsPage from './pages/NewsPage';
 import LoginPage from './pages/LoginPage';
 import LegalPage from './pages/LegalPage';
 import ModelStudioPage from './pages/ModelStudioPage';
+import ModelPlazaPage from './pages/ModelPlazaPage';
 import DataQualityPage from './pages/DataQualityPage';
 import AppFooter from './components/AppFooter';
 import { zoneOfPath } from './lib/zones';
@@ -117,6 +118,8 @@ function App() {
             <Route path="/analyze" element={<AnalyzePage />} />
             <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/models" element={<ModelStudioPage />} />
+            {/* 模型广场（Phase 2 分享）：公开示例 / 圈内共享 / 待审核 */}
+            <Route path="/models/plaza" element={<ModelPlazaPage />} />
             <Route path="/screener" element={<ScreenerPage />} />
             <Route path="/research" element={<ResearchCenterPage tab="cross" />} />
             <Route path="/research/consistency" element={<ResearchCenterPage tab="consistency" />} />

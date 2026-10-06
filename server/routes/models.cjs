@@ -10,7 +10,17 @@
 //   · POST   /api/models/run       执行回测（本地版；公网 503 显式拒绝）
 //   · POST   /api/models/validate-suite  独立验证套件（本地版；公网 503；只读、不落库）
 //
-//   🔴 路由注册顺序：/schema 必须在 /:id 之前，否则 'schema' 会被当成 id 吃掉。
+//   ── 分享（Phase 2 模型分享 v1）—— 状态机在 shared/modelshare.cjs，本文件只做编排 ──
+//   · GET  /api/models/public       公开广场（**匿名可读**；只列已过审的公开示例）
+//   · GET  /api/models/circle       圈内广场（需登录）
+//   · GET  /api/models/review-queue 待审队列（**仅管理员**）
+//   · GET  /api/models/shared/:id   取单个分享物（按 canView 判可见性）
+//   · POST /api/models/:id/share    本人改可见性 / 申请公开（body: { action, note? }）
+//   · POST /api/models/:id/review   管理员过审（body: { action: 'approve'|'reject', note? }）
+//
+//   🔴 路由注册顺序：/schema、/public、/circle、/review-queue 都必须在 /:id 之前，
+//      否则 'public' 这类**单段**字面量路径会被 '/:id' 当成 id 吃掉（返回"模型不存在"）。
+//      （/shared/:id 是两段，不受此影响，但统一放前面更不易错。）
 //
 //   🔴 公网能力边界（用户决策 2026-10-04）：
 //     公网允许**配置、校验、保存、导出**模型（纯声明式，无执行 → 无损害面）；
@@ -19,9 +29,13 @@
 
 /** 注册模型工坊路由 */
 function registerModelRoutes(app, deps) {
-  const { modelrun, modelspec, modelstore, modelexp, validation, uidOf, IS_VERCEL } = deps;
+  const { modelrun, modelspec, modelstore, modelexp, validation, uidOf, isAdmin, IS_VERCEL } = deps;
   const fe = require('../factorexpr.cjs'); // 服务端权威表达式校验（白名单 AST）
+  const share = require('../../shared/modelshare.cjs'); // 分享状态机（纯函数单一源）
   const { MAX_COMPARE } = require('../../shared/experiments.cjs'); // 对比上限单一源（⚠️ 必须 .cjs）
+
+  /** 本次请求的访问者视角（分享相关接口统一用它判可见性） */
+  const viewerOf = (req) => ({ uid: uidOf(req), isAdmin: isAdmin(req) });
 
   // ── 规范常量（必须注册在 /:id 之前）──
   app.get('/api/models/schema', (req, res) => {
@@ -101,6 +115,167 @@ function registerModelRoutes(app, deps) {
       res.json(r);
     } catch (e) {
       res.status(500).json({ ok: false, error: `保存失败: ${String(e.message || e).slice(0, 120)}` });
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────
+  // 分享域（Phase 2 · 模型分享 v1）
+  //   状态机一律在 shared/modelshare.cjs；本段只做「鉴权 → 取 doc → 判可见 → 应用动作 → 落库」编排。
+  //   🔴 三条贯穿本段的纪律：
+  //     ① 非可见一律 404（不区分"无权限"与"不存在"）——沿用模型库既有做法，不泄露存在性。
+  //     ② 对外响应里的 uid 一律经 authorNameOf 脱敏（未启用鉴权时 uidOf 返回 ip:1.2.3.4）。
+  //     ③ 动作失败原样 400 透传 error，不吞、不改写（前端要靠它给出可执行指引）。
+  // ────────────────────────────────────────────────────────────
+
+  /** 广场列表 → 对外摘要（🔴 uid 绝不外露） */
+  const shareItems = (rows, opts = {}) =>
+    rows.map((r) => share.shareSummary(r, { author: share.authorNameOf(r.uid), ...opts }));
+
+  /** 公开广场：只列**已过审**的公开示例（pending 未过审绝不外流） */
+  app.get('/api/models/public', async (req, res) => {
+    try {
+      const rows = await modelstore.listShared({ scope: 'public', limit: req.query.limit });
+      res.json({ ok: true, shareVersion: share.SHARE_VERSION, items: shareItems(rows) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取公开模型失败: ${String((e && e.message) || e).slice(0, 120)}` });
+    }
+  });
+
+  /**
+   * 公开示例详情 —— **与访问者身份无关**，故允许 CDN 边缘缓存（进了 PUBLIC_API_PREFIXES）。
+   * 🔴 为什么不能直接用 /api/models/shared/:id 走公开：那支的内容随可见性变化
+   *    （circle 仅登录可见、private 仅本人可见），而边缘缓存不区分身份 ⇒ 会把
+   *    有权限者看到的响应喂给无权限者。本端点是"只读已过审公开模型"的窄化出口。
+   */
+  app.get('/api/models/public/:id', async (req, res) => {
+    try {
+      const doc = await modelstore.getRaw(req.params.id);
+      // 双保险：既查生效可见性、也查审核态 —— 缓存错配时宁可不给
+      const s = doc ? share.shareOf(doc) : null;
+      if (!doc || share.effectiveVisibility(doc) !== 'public' || s.reviewState !== 'approved') {
+        return res.status(404).json({ ok: false, error: '模型不存在' });
+      }
+      res.json({
+        ok: true,
+        shareVersion: share.SHARE_VERSION,
+        view: share.shareView(doc, {
+          author: share.authorNameOf(doc.uid),
+          modelHash: modelrun.modelHash(doc),
+        }),
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取公开模型失败: ${String((e && e.message) || e).slice(0, 120)}` });
+    }
+  });
+
+  /** 圈内广场：仅登录可见（鉴权中间件挡匿名）；与 public 互斥，不重复展示 */
+  app.get('/api/models/circle', async (req, res) => {
+    try {
+      const rows = await modelstore.listShared({ scope: 'circle', limit: req.query.limit });
+      res.json({ ok: true, shareVersion: share.SHARE_VERSION, items: shareItems(rows) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取圈内模型失败: ${String((e && e.message) || e).slice(0, 120)}` });
+    }
+  });
+
+  /** 待审队列（仅管理员）：admin 要能看到 private 的 pending 模型，否则无从审核 */
+  app.get('/api/models/review-queue', async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ ok: false, error: '仅管理员可查看待审队列' });
+    try {
+      const rows = await modelstore.listShared({ scope: 'pending', limit: req.query.limit });
+      res.json({ ok: true, shareVersion: share.SHARE_VERSION, items: shareItems(rows, { includeReview: true }) });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取待审队列失败: ${String((e && e.message) || e).slice(0, 120)}` });
+    }
+  });
+
+  /** 取单个分享物（按 canView 判可见性） */
+  app.get('/api/models/shared/:id', async (req, res) => {
+    try {
+      const doc = await modelstore.getRaw(req.params.id);
+      if (!doc) return res.status(404).json({ ok: false, error: '模型不存在' });
+      const viewer = viewerOf(req);
+      if (!share.canView(doc, viewer)) return res.status(404).json({ ok: false, error: '模型不存在' });
+      const isOwner = String(doc.uid || '') === String(viewer.uid || '');
+      res.json({
+        ok: true,
+        shareVersion: share.SHARE_VERSION,
+        view: share.shareView(doc, {
+          author: share.authorNameOf(doc.uid),
+          // modelHash 只取语义核心，doc 里的 uid/id/visibility 不会影响它
+          modelHash: modelrun.modelHash(doc),
+          // 审核信息只给本人与管理员（他人无需知道"这模型正被审"）
+          includeReview: isOwner || viewer.isAdmin,
+        }),
+        actions: share.actionsFor(doc, { isOwner, isAdmin: viewer.isAdmin }),
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `读取分享模型失败: ${String((e && e.message) || e).slice(0, 120)}` });
+    }
+  });
+
+  /** 本人改可见性 / 申请公开（**只有本人**；越权按 404 处理） */
+  app.post('/api/models/:id/share', async (req, res) => {
+    try {
+      const uid = uidOf(req);
+      // 🔴 角色闸门（2026-10-06 端到端实测抓到的真漏洞）：owner 端点**只接受 owner 动作**。
+      //    状态机是纯函数、不知道调用者是谁；此前不校验时，用户只要处于 pending 状态，
+      //    传 action:'approve' 就能**自己给自己过审**，审核形同虚设。
+      const action = String(req.body?.action || '');
+      if (share.actionBy(action) !== 'owner') {
+        return res.status(400).json({
+          ok: false,
+          error: `不允许的动作：${action.slice(0, 40) || '(空)'}（审核类动作需管理员权限）`,
+        });
+      }
+      // 🔴 用带所有权校验的 get（不是 getRaw）：越权者拿到 null ⇒ 404，不泄露存在性
+      const doc = await modelstore.get(req.params.id, uid);
+      if (!doc) return res.status(404).json({ ok: false, error: '模型不存在' });
+      const r = share.applyShareAction(doc, action, {
+        now: new Date().toISOString(),
+        note: req.body?.note,
+      });
+      if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+      const saved = await modelstore.setShareState(req.params.id, uid, r.patch);
+      if (!saved.ok) return res.status(500).json({ ok: false, error: saved.error });
+      res.json({
+        ok: true,
+        share: share.shareSummary(saved.doc, {
+          author: share.authorNameOf(uid),
+          includeReview: true,
+        }),
+        actions: share.actionsFor(saved.doc, { isOwner: true, isAdmin: isAdmin(req) }),
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `更新分享设置失败: ${String((e && e.message) || e).slice(0, 120)}` });
+    }
+  });
+
+  /** 管理员过审（**仅管理员**；审核的是"能否成为平台公开示例"） */
+  app.post('/api/models/:id/review', async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ ok: false, error: '仅管理员可审核公开申请' });
+    const action = String(req.body?.action || '');
+    if (!share.ADMIN_ACTIONS.includes(action)) {
+      return res.status(400).json({ ok: false, error: `action 必须是 ${share.ADMIN_ACTIONS.join(' 或 ')}` });
+    }
+    try {
+      const doc = await modelstore.getRaw(req.params.id);
+      if (!doc) return res.status(404).json({ ok: false, error: '模型不存在' });
+      const r = share.applyShareAction(doc, action, { now: new Date().toISOString(), note: req.body?.note });
+      if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+      // 🔴 uid 必须是**模型所有者**（admin 不是 owner）：setShareState 按 uid 校验所有权
+      const saved = await modelstore.setShareState(req.params.id, doc.uid, r.patch);
+      if (!saved.ok) return res.status(500).json({ ok: false, error: saved.error });
+      res.json({
+        ok: true,
+        share: share.shareSummary(saved.doc, {
+          author: share.authorNameOf(doc.uid),
+          includeReview: true,
+        }),
+        actions: share.actionsFor(saved.doc, { isOwner: false, isAdmin: true }),
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: `审核失败: ${String((e && e.message) || e).slice(0, 120)}` });
     }
   });
 

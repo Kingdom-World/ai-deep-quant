@@ -32,6 +32,7 @@ import {
   type ModelSpec,
   type ModelTemplate,
   type ModelRunResponse,
+  type ModelLibraryItem,
   type ValidationIssue,
   type ValidationReport,
 } from '../api';
@@ -40,6 +41,7 @@ import ZoneShell from '../components/ZoneShell';
 import PipelineView from './studio/PipelineView';
 import ExperimentCompare from './studio/ExperimentCompare';
 import ValidationPanel from './studio/ValidationPanel';
+import { VisibilityBadge, ShareControls } from './studio/ShareControls';
 // 研究包（纯函数 · 前后端同源）：验证结论与指标此前只活在浏览器里，科研用途必须能带走
 import { buildResearchBundle, renderResearchReport } from '../../shared/research-bundle.mjs';
 import {
@@ -135,7 +137,7 @@ export default function ModelStudioPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: 'info' | 'ok' | 'err'; text: string } | null>(null);
   const [run, setRun] = useState<Extract<ModelRunResponse, { ok: true }> | null>(null);
-  const [library, setLibrary] = useState<{ id: string; name: string; modelHash: string; updatedAt: string }[]>([]);
+  const [library, setLibrary] = useState<ModelLibraryItem[]>([]);
   const [quota, setQuota] = useState<{ count: number; quota: number }>({ count: 0, quota: 0 });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [opts, setOpts] = useState({ topN: '5', capital: '1000000', slippage: '0.001' });
@@ -690,9 +692,24 @@ export default function ModelStudioPage() {
                     <div style={{ fontSize: 11, color: theme.color.textFaint, fontFamily: MONO, marginBottom: 5 }}>
                       {it.modelHash.slice(0, 10)} · {String(it.updatedAt).slice(0, 16).replace('T', ' ')}
                     </div>
+                    {/* 可见性徽章：显示**当前生效**的档位（申请中不等于已公开） */}
+                    <div style={{ marginBottom: 6 }}>
+                      <VisibilityBadge visibility={it.visibility} reviewState={it.reviewState} />
+                    </div>
                     <div style={rowFlex}>
                       <button type="button" style={{ ...btn(), padding: '4px 9px', fontSize: 12 }} onClick={() => void doLoad(it.id)} disabled={busyish}>载入</button>
                       <button type="button" style={{ ...btn(), padding: '4px 9px', fontSize: 12 }} onClick={() => void doDelete(it.id)} disabled={busyish}>删除</button>
+                    </div>
+                    {/* 分享动作：按钮清单由 shared/modelshare.mjs 的 actionsFor 决定，前端不推演 */}
+                    <div style={{ marginTop: 6 }}>
+                      <ShareControls
+                        id={it.id}
+                        visibility={it.visibility}
+                        reviewState={it.reviewState}
+                        isOwner
+                        isAdmin={false}
+                        onChanged={() => void loadLibrary()}
+                      />
                     </div>
                   </div>
                 ))}

@@ -16,6 +16,8 @@ const NAV_ITEMS = [
   { path: '/analyze', label: '因子分析' },
   { path: '/backtest', label: '策略回测' },
   { path: '/models', label: '模型工坊' },
+  // 模型广场（分享）：与「模型工坊」同属创作区；match 精确到自身，避免 /models 时误高亮
+  { path: '/models/plaza', label: '模型广场', match: '/models/plaza' },
   // match 前缀：/research 下含 5 个子页签（/research/consistency 等）。
   // 缺 match 时需 pathname 精确等于 '/research'，进子页签就匹配不到 → 指示器回落首页。
   { path: '/research', label: '研究中心', match: '/research' },

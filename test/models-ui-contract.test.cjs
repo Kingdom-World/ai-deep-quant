@@ -64,6 +64,7 @@ const app = () => {
     modelstore,
     validation,
     uidOf: (req) => req?.user?.username || 'anon',
+    isAdmin: () => false, // 分享审核闸门（新增 deps）
     IS_VERCEL: false,
   });
   return a;

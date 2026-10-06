@@ -6,8 +6,22 @@
 // ─────────────────────────────────────────────────────────────
 import { apiGet, apiPost, apiDelete } from './client';
 import type { ModelSpec, NormalizedModel, ValidationIssue } from '../../shared/modelspec.mjs';
+// 分享（Phase 2）：可见性/审核的类型与文案**直接取自状态机模块**，
+//   🔴 不在前端另抄一份标签或动作清单 —— 那样两处会分叉（后端加了动作前端不知道）。
+import {
+  VISIBILITY_LABELS,
+  REVIEW_LABELS,
+  actionsFor,
+  type ShareAction,
+  type ShareSummary,
+  type ShareView,
+  type Visibility,
+  type ReviewState,
+} from '../../shared/modelshare.mjs';
 
 export type { ModelSpec, NormalizedModel, ValidationIssue };
+export { VISIBILITY_LABELS, REVIEW_LABELS, actionsFor };
+export type { ShareAction, ShareSummary, ShareView, Visibility, ReviewState };
 
 /** 预置模型骨架（模板库；规范单一源在 shared/modelspec.cjs → 服务端下发） */
 export interface ModelTemplate {
@@ -337,6 +351,9 @@ export interface ModelLibraryItem {
   modelHash: string;
   createdAt: string;
   updatedAt: string;
+  /** 分享可见性（老数据/无字段时服务端归一化为 private） */
+  visibility: Visibility;
+  reviewState: ReviewState;
 }
 
 export interface ModelLibraryResponse {
@@ -351,6 +368,35 @@ export interface ModelLibraryResponse {
 export type ModelSaveResponse =
   | { ok: true; id: string; modelHash?: string }
   | { ok: false; error: string; issues?: ValidationIssue[] };
+
+// ── 分享（Phase 2：三级可见性 + admin 审核）─────────────────────
+/** 改可见性 / 审核的动作结果（share 摘要 + 后续可执行动作） */
+export interface ModelShareActionResponse {
+  ok: boolean;
+  share?: ShareSummary;
+  /** 响应里带上"接下来能做什么"，前端据此渲染按钮（不必在前端推演状态机） */
+  actions?: ShareAction[];
+  error?: string;
+}
+
+/** 广场列表（公开 / 圈内 / 待审队列共用形状） */
+export interface ModelShareListResponse {
+  ok: boolean;
+  shareVersion: number;
+  items: ShareSummary[];
+  error?: string;
+}
+
+/** 分享物详情（**声明式 Model JSON**，不含任何代码） */
+export interface ModelShareDetailResponse {
+  ok: boolean;
+  shareVersion: number;
+  view: ShareView;
+  actions?: ShareAction[];
+  error?: string;
+}
+
+const shareQuery = (limit?: number) => (limit ? `?limit=${encodeURIComponent(String(limit))}` : '');
 
 // ── 实验记录（第六刀：不可变留痕 + 对比）─────────────────────
 //   与「我的模型库」的分工：模型库是**可变**的模型定义；实验是**不可变**的留痕。
@@ -455,6 +501,31 @@ export const modelsApi = {
    */
   validateSuite: (model: ModelSpec, opts?: ValidateSuiteOptions) =>
     apiPost<ValidationReport>('/models/validate-suite', opts ? { model, ...opts } : { model }),
+
+  // ── 分享（Phase 2：三级可见性 + admin 审核）──
+  //   🔴 状态机在服务端；前端**不推演**可见性规则，只发 action、读回 share + actions。
+  share: {
+    /** 本人改可见性 / 申请公开 / 撤回申请（**只有本人**能调，越权一律 404） */
+    set: (id: string, action: ShareAction, note?: string) =>
+      apiPost<ModelShareActionResponse>(`/models/${encodeURIComponent(id)}/share`, { action, note }),
+    /** 管理员过审（approve / reject；非管理员 403） */
+    review: (id: string, action: 'approve' | 'reject', note?: string) =>
+      apiPost<ModelShareActionResponse>(`/models/${encodeURIComponent(id)}/review`, { action, note }),
+    /**
+     * 公开广场。
+     * ⚠️ 该端点在 client.ts 的公开白名单内 ⇒ 不带 Cookie（吃 CDN 边缘缓存）。
+     *    正因为它**与身份无关**才敢这么做；圈内的 shared() 不在白名单。
+     */
+    publicList: (limit?: number) => apiGet<ModelShareListResponse>(`/models/public${shareQuery(limit)}`),
+    /** 圈内广场（需登录） */
+    circleList: (limit?: number) => apiGet<ModelShareListResponse>(`/models/circle${shareQuery(limit)}`),
+    /** 待审队列（仅管理员） */
+    reviewQueue: (limit?: number) => apiGet<ModelShareListResponse>(`/models/review-queue${shareQuery(limit)}`),
+    /** 取分享物（服务端按 canView 判可见性；不可见一律 404） */
+    shared: (id: string) => apiGet<ModelShareDetailResponse>(`/models/shared/${encodeURIComponent(id)}`),
+    /** 公开示例详情（与身份无关，可缓存） */
+    publicDetail: (id: string) => apiGet<ModelShareDetailResponse>(`/models/public/${encodeURIComponent(id)}`),
+  },
 
   // ── 实验记录（不可变留痕；per-uid 隔离，越权一律 404）──
   experiments: {

@@ -103,6 +103,11 @@ async function migrate() {
       updated_at  timestamptz NOT NULL DEFAULT now()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS model_store_uid_idx ON model_store (uid, updated_at DESC)`);
+  // 分享可见性在 doc jsonb 内（**不另开列** ⇒ 单一源，无需 ALTER 迁移、不会两处漂移）。
+  // 广场查询按 (visibility, reviewState) 过滤，故加表达式索引。
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS model_store_share_idx
+      ON model_store ((doc->>'visibility'), (doc->>'reviewState'), updated_at DESC)`);
   // 模型实验记录（Phase 1）：一行 = 一次模型回测的留痕。
   //   · 与 model_store 分开：模型可反复修改（可变），实验**不可变**（复现承诺的载体）
   //   · fingerprint 唯一标识"同一模型+同窗口+同参数"的一次实验

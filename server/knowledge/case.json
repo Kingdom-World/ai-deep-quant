@@ -26,7 +26,7 @@
       "limitations": "危机样本极少，统计上无法给出可靠频率；强行拟合历史崩盘样本会引入选择偏差。",
       "source": "Gorton, G. B. (2010). The Slump and the Crash. Oxford University Press. 关于危机中波动率与相关性的实证可参见 Brunnermeier & Nagle(2009).",
       "tags": ["2008", "金融危机", "杠杆", "波动率偏斜", "相关性"],
-      "related": ["case-1987-crash", "basis-slippage"],
+      "related": ["case-1987-crash", "basis-slippage", "principle-risk-parity", "case-ltcm-1998"],
       "teachingModel": "mom20-baseline"
     },
     {
@@ -39,7 +39,7 @@
       "limitations": "极端事件样本极少；无法据此估计常态下的成交冲击幅度。",
       "source": "上海证券交易所与深圳证券交易所 2015 年 7-8 月关于临时停市与交易异常的公告；中国证券监督管理委员会 2015 年 7 月 4 日关于暂缓首次公开发行股票并重启核查的公告。行情可在本平台归档中核对。",
       "tags": ["A股", "2015", "涨跌停", "停市", "成交约束"],
-      "related": ["basis-limit-guard", "basis-limit-guard-depth", "case-2020-liquidity", "cycle-merrill-clock", "cycle-a-share-style"],
+      "related": ["basis-limit-guard", "basis-limit-guard-depth", "case-2020-liquidity", "cycle-merrill-clock", "cycle-a-share-style", "principle-illiquidity", "case-2013-funding-squeeze"],
       "teachingModel": "mom20-baseline"
     },
     {
@@ -54,6 +54,58 @@
       "tags": ["2020", "疫情", "流动性", "因子拥挤", "V型反弹"],
       "related": ["case-1987-crash", "term-maxdrawdown", "case-2015-ashare", "cycle-kitchin"],
       "teachingModel": "multi-mom"
+    },
+    {
+      "id": "case-ltcm-1998",
+      "title": "1998 年长期资本管理公司（LTCM）爆仓：杠杆放大的相关性风险",
+      "summary": "极高杠杆下跨品种分散的策略在相关性趋同时几乎同时失效，亏损被杠杆放大到破产。",
+      "body": "LTCM 以相对价值策略为主，横跨债券利差、股票波动率、并购套利等多类资产，表面相关性低。1998 年俄罗斯违约引发全球流动性冲击后，多个品种相关性同时上升，相对价值假设被击穿；叠加高杠杆，亏损迅速超过资本金，最终需外部救助。对研究者的三条教训：低相关不等于危机时低相关，历史协方差会低估尾部暴露；杠杆把收益率的常规波动放大为生存风险；相对价值策略依赖流动性，流动性消失时价差可能不回归而是永久扩大。",
+      "formula": "危机中相关系数趋同于 1 则分散化失效；杠杆 L 倍使净值对波动的敏感度放大 L 倍",
+      "applicability": "评估任何分散化策略时必须问：这些资产在压力情景下是否仍然低相关。",
+      "limitations": "LTCM 的具体杠杆水平属事后披露，不同来源数字不一致，不要当作精确参数使用。",
+      "source": "Lowenstein, R. (2000). The Risk Weepers. Fortune, 151(2), 84-97. 相关机制分析见 Brunnermeier, M. & Pedersen, L. H. (2009). Market Liquidity and Funding Liquidity. Review of Financial Studies, 22(6), 2201-2238.",
+      "tags": ["LTCM", "1998", "杠杆", "相对价值", "相关性"],
+      "related": ["case-2008-crisis", "principle-diversification", "case-dotcom-2000"],
+      "teachingModel": "mom20-baseline"
+    },
+    {
+      "id": "case-dotcom-2000",
+      "title": "2000 年互联网泡沫：高估值与叙事驱动的重定价",
+      "summary": "估值脱离现金流基本面前提，泡沫破裂后价格先于基本面多年完成回归。",
+      "body": "1998-2000 年纳斯达克指数涨幅远超同期盈利增长，市盈率极端扩张是主要特征。泡沫破裂后指数在两年内下跌约八成，但许多科技公司收入继续增长多年——这说明泡沫破裂的时点由估值与流动性决定，而非当期基本面。量化视角的三点：估值类因子在极端区间的预测力更强，但显著性与样本量天然不稳；泡沫期最危险的误判是把动量当价值，因为价格趋势与基本面改善在初期无法区分；泡沫破裂后的反弹往往剧烈，趋势策略在底部附近反复止损，是回测中常见的隐性磨损来源。",
+      "formula": "估值偏离 = 实际 PE / 历史中位 PE；极端区间的均值回复斜率高于常态",
+      "applicability": "给估值类因子做分层回测：按估值分位分组，比较各组表现差异。",
+      "limitations": "泡沫期样本极少，估值因子的极端表现主要由少数观测点贡献，统计推断脆弱。",
+      "source": "Shiller, R. J. (2000). Irrational Exuberance. Princeton University Press. 关于价格与基本面脱节的实证见 Campbell, J. Y. & Shiller, R. J. (1988). The Dividend Discount Model. Review of Financial Studies, 1(3), 195-228.",
+      "tags": ["互联网泡沫", "2000", "估值", "叙事", "纳斯达克"],
+      "related": ["principle-nice-vs-meaningful", "case-ltcm-1998"],
+      "teachingModel": "mom20-baseline"
+    },
+    {
+      "id": "case-2013-funding-squeeze",
+      "title": "2013 年钱荒：资金面短期冲击与杠杆的脆弱性",
+      "summary": "银行间短端利率剧烈波动，依赖短期融资的杠杆资金被迫去杠杆，股价与资金面联动。",
+      "body": "2013 年 6 月银行间市场出现资金面紧张，短端利率在数个交易日内大幅上行，股市同步回调。机制上，杠杆资金以短期融资支撑持仓，当资金成本跳升时平仓压力集中释放，形成顺周期反馈。对 A 股策略研究的三点含义：资金面可作为择时或风控维度，但它与基本面的联动在不同市场环境下不同；依赖融资的策略在此类环境下回撤被放大，回测若不含融资成本会低估尾部；政策干预在事后看是转折点，但实时决策中难以判定时点。",
+      "formula": "融资成本上升则保证金压力上升，被迫卖出导致价格下跌，进一步放大保证金压力",
+      "applicability": "把资金面指标纳入择时研究时，须检验其在不同政策环境下的稳定性。",
+      "limitations": "单一市场、单一政策环境，结论外推性有限；政策干预的因果识别困难。",
+      "source": "中国人民银行 2013 年 6 月金融统计数据与公开市场操作公告；相关市场数据可在本平台归档的行情序列中核对。",
+      "tags": ["A股", "2013", "钱荒", "资金面", "杠杆"],
+      "related": ["case-2015-ashare", "principle-illiquidity"],
+      "teachingModel": "flow-cleaned-mom"
+    },
+    {
+      "id": "case-2022-rate-hike",
+      "title": "2022 年全球加息：贴现率重定价对成长风格的压制",
+      "summary": "快速加息使远期现金流现值下降，成长股估值倍数收缩，风格差异在一年多内显著放大。",
+      "body": "2022 年主要经济体快速收紧政策利率，成长股因久期长（现金流偏远期）而承受更大估值压力，市场风格显著偏向价值。对量化研究的三点启示：风格切换可由宏观流动性变量解释，而非市场随机波动；利率敏感的估值因子在加息周期中可能阶段性失效，把它们当作长期 alpha 会高估稳定性；风格轮动具有宏观条件支撑，因此用固定权重组合动量与反转，会在某些阶段系统性跑输。",
+      "formula": "久期为 g 的资产对利率的敏感度约为负 g；贴现率上升则价格变动约为负 g 乘以利率变动",
+      "applicability": "成长与价值轮动研究应把政策利率与实际利率作为解释变量纳入。",
+      "limitations": "加息周期样本极少，风格归因难以与其他同期因素分离。",
+      "source": "美国联邦储备委员会 2022 年公开市场操作声明（FOMC statements, 2022）；关于利率与长期收益率的实证可参见 Campbell, J. Y. (2011). Estimating the Macroeconomic Determinants of Long-Term Yields. Journal of Finance, 66(6), 2253-2291.",
+      "tags": ["2022", "加息", "成长", "价值", "久期"],
+      "related": ["cycle-a-share-style", "principle-capm"],
+      "teachingModel": "mom-rev-combo"
     }
   ]
 }

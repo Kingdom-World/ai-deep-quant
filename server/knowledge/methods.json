@@ -33,7 +33,7 @@
       "body": "在 5% 显著性水平下，单独检验一个假设有 5% 概率误报。若同时检验 100 个因子，即使它们全都毫无预测能力，期望仍有约 5 个看起来显著。这就是多重比较（数据窥探）问题。缓解手段：① 提高门槛——Harvey, Liu & Zhu (2016) 建议截面研究中用 |t| > 3；② 控制错误发现率（FDR）——Benjamini-Hochberg 方法；③ 样本外验证与真实交易成本校验；④ 记录所有尝试（含失败的），避免只报告幸存者。本平台的参数稳健性三防（孤峰判据/样本外/成本敏感度）即是该原则在参数层面的落地。",
       "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
       "tags": ["多重比较", "数据窥探", "p-hacking", "显著性", "FDR"],
-      "related": ["term-stats-significance", "method-parameter-robust", "paper-lopez-de-prado-2018", "paper-harvey-liu-zhu-2016", "paper-benjamini-hochberg-1995", "term-ic", "term-newey-west", "method-benchmark-overfit", "paper-newey-west-1987", "paper-bailey-lopez-2014"]
+      "related": ["term-stats-significance", "method-parameter-robust", "paper-lopez-de-prado-2018", "paper-harvey-liu-zhu-2016", "paper-benjamini-hochberg-1995", "term-ic", "term-newey-west", "method-benchmark-overfit", "paper-newey-west-1987", "paper-bailey-lopez-2014", "principle-nice-vs-meaningful"]
     },
     {
       "id": "method-parameter-robust",
@@ -41,7 +41,7 @@
       "body": "参数优化的最大风险是把噪声当成规律。本项目以三项检验构成防线：① 孤峰判据——最优参数是否被邻域参数包围（若邻域表现骤降，说明是尖峰噪声，不可信）；② 样本外验证——用样本内挑出的最优参数在样本外检验（差距过大即过拟合）；③ 成本敏感度——提高费率/滑点后策略是否仍成立（高换手策略常在加成本后转负）。三项全过才认为参数稳健。注意：即使全过也不等于未来有效，只是排除了最粗糙的过拟合形态。",
       "source": "教材：Pardo, R.《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008) 关于 walk-forward 分析与参数曲面稳健性的方法；工程实现：本项目 server/paramscan.cjs（孤峰判据与样本外对比的落地）。",
       "tags": ["参数稳健", "过拟合", "孤峰", "样本外", "walk-forward"],
-      "related": ["method-multiple-testing", "method-cost-sensitivity", "method-benchmark-overfit", "paper-bailey-lopez-2014"]
+      "related": ["method-multiple-testing", "method-cost-sensitivity", "method-benchmark-overfit", "paper-bailey-lopez-2014", "principle-nice-vs-meaningful"]
     },
     {
       "id": "method-cost-sensitivity",
@@ -65,7 +65,7 @@
       "body": "横截面因子研究的核心是时间对齐，错一步就产生前视偏差。本项目采用的标准流程：在 T-1 日收盘后用当日（及更早）数据计算因子值并排名，在 T 日开盘按排名构建/调整组合。这样做的理由：T-1 收盘数据在 T 日开盘前已确定可得，不存在信息泄露；若改为 T 日收盘排名、T 日收盘成交，则隐含了瞬间完成全市场交易的假设，不可实现。同时需处理的细节：停牌股（无 T 日开盘价）须剔除或顺延、涨跌停股（T 日无法成交）须按守卫规则处理、新股（数据不足）须排除。",
       "source": "教材：Grinold & Kahn《Active Portfolio Management》第 7 章；方法讨论：Fama & French (1993) 分层组合构建的时间对齐处理；工程实现：本项目 server/crosssect.cjs（T-1 收盘排名、T 开盘成交、整手与同费率口径）。",
       "tags": ["横截面", "时间对齐", "T-1", "无前视", "因子排名"],
-      "related": ["method-lookahead", "term-momentum-factor", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-equal-weight", "method-layer-monotonic", "paper-jegadeesh-titman-1993"]
+      "related": ["method-lookahead", "term-momentum-factor", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-equal-weight", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "principle-time-series-momentum"]
     },
     {
       "id": "method-benchmark-choice",
@@ -81,7 +81,7 @@
       "body": "统计检验要有效，样本必须足够长。日频因子研究通常需要至少数十期观测才能让 t 检验有实际功效——样本太短时，即使因子真实有效也可能检验不显著（第二类错误），而样本过长又会跨越市场结构变化（注册制改革、涨跌幅调整、交易制度变化）导致口径不一致。实践折中：以近年数据为主（如 3~5 年），同时逐年检验稳定性；年化指标必须同时给出样本区间与期数，避免短样本年化数字误导。本平台的因子评估按年切分输出「正收益年数/总年数」即为此目的。",
       "source": "统计依据：Wooldridge《Introductory Econometrics》第 4 章关于样本量与检验功效；金融实证讨论：Harvey, Liu & Zhu (2016) 对研究样本期的建议；教材：Ang, A.《Asset Management: A Systematic Approach to Factor Investing》(Oxford University Press, 2014) 关于因子研究样本的实务讨论。",
       "tags": ["样本长度", "统计功效", "第二类错误", "年化", "稳定性"],
-      "related": ["term-annualized", "term-stats-significance", "paper-harvey-liu-zhu-2016"]
+      "related": ["term-annualized", "term-stats-significance", "paper-harvey-liu-zhu-2016", "principle-diversification"]
     },
     {
       "id": "method-single-source",

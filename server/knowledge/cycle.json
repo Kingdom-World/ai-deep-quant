@@ -52,7 +52,7 @@
       "limitations": "风格本身定义不唯一，状态划分带主观性；存在把噪声当趋势的风险。",
       "source": "风格轮动的实证研究可参见 Liu, Stambaugh & Yuan(2019, JFE) 关于 A 股规模与价值溢价的研究，以及 Moskowitz, Ooi & Pedersen(2012, JFE) 关于时间序列动量的经典文献。A 股行情可在本平台归档中核对。",
       "tags": ["A股", "风格轮动", "动量", "反转", "大小盘"],
-      "related": ["case-2015-ashare", "term-momentum-factor"],
+      "related": ["case-2015-ashare", "term-momentum-factor", "case-2022-rate-hike"],
       "teachingModel": "mom-rev-combo"
     }
   ]

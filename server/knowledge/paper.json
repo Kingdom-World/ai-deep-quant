@@ -65,7 +65,7 @@
       "body": "Eugene F. Fama 与 Kenneth R. French 发表于 Journal of Financial Economics 的论文，提出市场、规模、价值三因子模型解释股票收益横截面差异。除因子结论本身外，本库更重视其**方法贡献**：论文系统使用「按特征排序分层、构造各层组合、比较多空收益差」的做法来检验因子有效性，这成为后续因子研究的标准范式。本平台的分层回测（按因子值分 5 层、各层等权、观察单调性与多空差）直接沿用该范式。该论文也是「因子须有经济解释」这一审慎立场的重要来源。",
       "source": "Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56. DOI: 10.1016/0304-405X(93)90023-5。",
       "tags": ["论文", "三因子模型", "分层组合", "横截面", "因子检验范式", "JFE"],
-      "related": ["method-layer-monotonic", "method-cross-section", "term-momentum-factor"]
+      "related": ["method-layer-monotonic", "method-cross-section", "term-momentum-factor", "principle-capm"]
     },
     {
       "id": "paper-wilder-1978",

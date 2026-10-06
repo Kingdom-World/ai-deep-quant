@@ -1,0 +1,55 @@
+{
+  "category": "principle",
+  "categoryLabel": "原理",
+  "description": "金融学的基础原理层：解释「为什么价格会这样动」的理论骨架。term 层回答「这个词什么意思」，principle 层回答「背后的机制是什么」。计划书 §11.1 五层之一。",
+  "entries": [
+    {
+      "id": "principle-emh",
+      "title": "有效市场假说（EMH）",
+      "summary": "价格已反映全部可用信息 ⇒ 任何基于公开信息的超额收益都不可持续。",
+      "body": "Fama(1970) 把市场有效性分为三档：弱式（价格反映历史成交信息，技术分析无效）、半强式（反映全部公开信息，基本面分析无效）、强式（反映全部信息含内幕信息）。三档是递进的强假设，实证上只有弱式获得较广泛支持。量化投资与 EMH 的关系是张力而非对立：EMH 解释「为什么超额收益难以持续」，而策略的核心工作恰恰是找出 EMH 不成立的条件（信息不对称、行为偏差、流动性分割、风险暴露未定价）。因此评价一个因子的正统标准不是「收益高不高」，而是「在控制常见风险暴露后是否仍有增量解释力」。",
+      "formula": "弱式：E[P_{t+1}] = P_t；等价于「收益率序列不可预测」",
+      "applicability": "设计因子时先问：信号是否只是某个已知风险暴露的代理？控制暴露后的 alpha 是否仍显著。",
+      "limitations": "EMH 无法被直接检验（信息集不可观测）；强式版本在定义上不可证伪。把它当定律使用会否证研究本身。",
+      "source": "Fama, E. F. (1970). Efficient Capital Markets: A Review of Theory and Empirical Work. Journal of Finance, 25(2), 383–417.",
+      "tags": ["EMH", "有效市场", "半强式", "信息效率", "alpha"],
+      "related": ["principle-capm", "principle-apt", "principle-disposition"]
+    },
+    {
+      "id": "principle-capm",
+      "title": "资本资产定价模型（CAPM）",
+      "summary": "预期收益 = 无风险利率 + β × 市场风险溢价；只有系统性风险被定价。",
+      "body": "Sharpe(1964) / Lintner(1965) / Mossin(1966) 同期提出。核心结论有两层：① 投资者只对系统性风险（β）要求补偿，非系统性风险可以通过分散化消除；② 任何资产的预期超额收益应与 β 线性相关。这条原理是整个因子体系的参照系——一个策略的 alpha 通常定义为「收益减去按 CAPM/B Fama-French 预期的那部分」，即对风险暴露的残差。实践含义是：不要用高收益证明策略有效，要先问「这份收益是不是市场暴露换来的」。本平台回测中的等权基准与超额收益计算即建立在「先剥离共同暴露、再看增量」这一原则上。",
+      "formula": "E[R_i] = R_f + β_i · (E[R_m] − R_f)；α 即实际收益对 CAPM 预测的回归残差",
+      "applicability": "评估任何策略前先估 β 与因子暴露；控制后仍为正的部分才值得称为 alpha。",
+      "limitations": "CAPM 假设单因子、beta 线性、无摩擦，现实中对收益分布（肥尾、偏斜）的刻画很弱；样本期依赖明显。",
+      "source": "Sharpe, W. F. (1964). Capital Asset Prices: A Theory of Market Equilibrium under Conditions of Risk. Journal of Finance, 19(3), 425–442.",
+      "tags": ["CAPM", "beta", "风险溢价", "alpha", "CAPM"],
+      "related": ["principle-emh", "paper-fama-french-1993", "basis-benchmark", "principle-apt", "cycle-juglar"]
+    },
+    {
+      "id": "principle-apt",
+      "title": "套利定价理论（APT）",
+      "summary": "收益可由若干系统性风险因子的线性暴露解释，不必依赖单一市场因子。",
+      "body": "Ross(1976) 放松了 CAPM 的单因子假设：只要存在足够多的独立证券，收益可表示为若干风险暴露的线性组合，无需市场组合存在且有效。这个从 CAPM 到多因子的理论过渡，直接对应量化实践从「市场 beta」到「规模、价值、动量等多因子」的演进。多因子模型的现实意义在于：不同策略的超额收益可以按暴露归因——若两个策略收益高度相关，很可能只是同一个风险暴露的两种包装。因此因子检验必须报告对已有因子的增量解释力，而不是孤立地报告自身 t 值。",
+      "formula": "R_i = E[R_i] + Σ_k β_{i,k}·F_k + ε_i（k 遍历系统性风险因子）",
+      "applicability": "新因子入库前，先做对现有因子集合的回归，看增量 R² 与残差方向。",
+      "limitations": "因子的选择与数目带有主观性；因子高度共线时回归系数极不稳定，统计推断不可靠。",
+      "source": "Ross, S. A. (1976). Arbitrage Theory of Capital Asset Pricing. Journal of Economic Theory, 6(3), 319–343.",
+      "tags": ["APT", "多因子", "风险归因", "因子暴露"],
+      "related": ["principle-capm", "term-ic", "principle-emh"]
+    },
+    {
+      "id": "principle-disposition",
+      "title": "处置效应与损失厌恶",
+      "summary": "投资者倾向「过早卖掉赢家、长期持有 losers」，导致价格对消息反应不对称。",
+      "body": "Shefrin & Statman(1985) 命名「处置效应」，其心理基础是前景理论中的损失厌恶与参照点依赖：亏损带来的痛苦大于同等盈利带来的快乐。这会产生两个可观测后果——① 已盈利头寸的卖压偏强（获利了结）；② 已亏损头寸的抛压偏弱（不愿承认亏损），相当于给价格提供「缓冲」，使下跌在短期内更容易被吸收。行为金融对量化最大的贡献，是把「异常」从异域变成可检验对象：若某类股票长期跑赢同类，需判断这是认知偏差定价错误，还是某项被遗漏的风险暴露。",
+      "formula": "前景价值 v(x)=x^γ（x≥0）；−λ(−x)^γ（x<0），γ<1、λ>1 ⇒ 损失侧更陡",
+      "applicability": "构造反转因子时，把它理解为对处置效应的直接定价；也解释小盘/低流动性标的的截面差异。",
+      "limitations": "行为解释与风险补偿难以分离——同一现象既可解读为偏差，也可解读为未被定价的风险。",
+      "source": "Shefrin, I., & Statman, M. (1985). The Disposition to Sell Winners Too Early and Ride Losers Too Long. Journal of Finance, 40(3), 793–807.",
+      "tags": ["行为金融", "处置效应", "损失厌恶", "反转", "前景理论"],
+      "related": ["principle-emh", "term-momentum-factor"]
+    }
+  ]
+}

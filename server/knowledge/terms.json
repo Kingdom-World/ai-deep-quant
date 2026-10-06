@@ -25,7 +25,7 @@
       "body": "IC 衡量因子值与下期收益之间的相关性，是因子预测能力的核心度量。常用两种：Pearson IC（线性相关，对极端值敏感）与 Rank IC / Spearman IC（秩相关，稳健，量化实践更常用）。逐期计算得到 IC 序列后，可导出 IC 均值（方向与强度）、IC 标准差（稳定性）与 IC 大于 0 占比（胜率）。判断经验：IC 均值绝对值在 0.03~0.05 量级已具备一定选股能力，0.1 以上较为优秀——但须结合 IR 与显著性检验共同判断，单看 IC 均值易被少数极端期误导。",
       "source": "教材：丁鹏《量化投资：策略与技术》(电子工业出版社) 因子有效性检验章节；论文：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章 The Fundamental Law of Active Management 关于 IC 与信息比率的理论推导。",
       "tags": ["IC", "信息系数", "Rank IC", "Spearman", "因子有效性"],
-      "related": ["term-ir", "method-multiple-testing", "paper-grinold-kahn-2000", "term-spearman", "method-layer-monotonic"]
+      "related": ["term-ir", "method-multiple-testing", "paper-grinold-kahn-2000", "term-spearman", "method-layer-monotonic", "principle-apt"]
     },
     {
       "id": "term-ir",
@@ -65,7 +65,7 @@
       "body": "最大回撤指净值曲线从某一历史高点到其后最低点的最大跌幅：MDD = max over t of ((峰值 − 当前值) / 峰值)。它刻画最坏情况下从顶到底亏多少，是风险承受力的直观指标，且与前视无关（只依赖历史路径）。与夏普的差异：夏普看波动，回撤看路径极值——两个策略夏普相同，回撤可能差异巨大。常见误用：用最大回撤与最大回撤持续期混为一谈；回撤持续期指从谷底恢复到前高所需时间，往往比跌幅本身更折磨人。",
       "source": "教材：Bacon, C.R.《Practical Portfolio Performance Measurement and Attribution》(2nd ed., Wiley, 2008) 第 4 章回撤度量；Magdon-Ismail, M. & Atiya, A. (2004). Maximum Drawdown. Risk Magazine, 17(10), 99-102（回撤的解析性质）。",
       "tags": ["最大回撤", "MDD", "回撤持续期", "风险"],
-      "related": ["term-sharpe", "method-circuitbreaker"]
+      "related": ["term-sharpe", "method-circuitbreaker", "case-1987-crash", "case-2020-liquidity"]
     },
     {
       "id": "term-annualized",
@@ -105,7 +105,7 @@
       "body": "动量因子指过去一段时间收益率较高的股票在未来一段时间继续表现较好（或反之，视市场与周期而定），源于 Jegadeesh & Titman (1993) 的经典发现（美股 3~12 个月形成期、持有期策略显著）。常见构造：mom{n} = 过去 n 个交易日累计收益（或对数收益）。重要提示：动量在中国 A 股市场并不稳定，短期（数日至数周）常表现为反转（reverse）；本项目实测 mom 因子在所选样本上呈现高分组收益低于低分组，即动量失效/反转特征——这是数据结论，不是模型错误，须如实呈现。",
       "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。",
       "tags": ["动量", "momentum", "反转", "因子", "Jegadeesh"],
-      "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993"]
+      "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993", "principle-disposition", "cycle-a-share-style"]
     },
     {
       "id": "term-limit-up-down",

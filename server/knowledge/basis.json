@@ -41,7 +41,7 @@
       "body": "涨跌停判定在本平台是单一实现（server/paper/matcher.cjs 的 priceLimitPct / limitPrices），模拟盘与回测共用。模拟盘规则：市价单触板直接拒单，限价挂单触板则继续挂起等待。回测规则：开盘即触板的信号保留至次日重试（不制造不可能的成交）。判定依赖行情中的 quote.prevClose（前收盘价）；若该字段缺失则 fail-open（放行），这是已知取舍——宁可漏判也不误杀，代价是极端行情下可能高估可成交性，故在数据质量报告中显式提示。",
       "source": "官方规则依据同 term-limit-up-down（沪深北交易所交易规则价格涨跌幅条款）；本平台实现取舍记录于 server/paper/matcher.cjs 头部注释与 test/paper-limits.test.cjs 断言。",
       "tags": ["涨跌停", "matcher", "prevClose", "fail-open", "回测", "模拟盘"],
-      "related": ["term-limit-up-down", "method-silent-fallback", "basis-limit-guard-depth"]
+      "related": ["term-limit-up-down", "method-silent-fallback", "basis-limit-guard-depth", "case-1987-crash", "case-2015-ashare"]
     },
     {
       "id": "basis-calendar",
@@ -57,7 +57,7 @@
       "body": "回测（quant.cjs）与横截面引擎（crosssect.cjs）默认对每次成交施加 0.1% 的滑点，可通过参数覆盖（QUANT 请求可传 slippage）。有效范围 0 到 0.05（5%）——该区间在三个入口处均被硬性夹取：路由层 server/index.cjs:1072、按需回测 quant.cjs:44、横截面引擎 crosssect.cjs:158，均为 Math.min(Math.max(v,0),0.05)。超出区间的取值会被静默截断到边界，不会报错，使用时须注意。模拟盘（paper）当前为零滑点成交——这是已知简化，因为模拟盘以实时报价撮合，未建模冲击成本与排队。两者差异已在「已知遗留」中登记，不作为等价口径使用：跨模拟盘与回测对比收益时必须意识到该差异。",
       "source": "方法论参考：Grinold & Kahn《Active Portfolio Management》第 9 章关于交易成本建模；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39（冲击成本与最优执行）。",
       "tags": ["滑点", "slippage", "成交", "回测", "模拟盘", "冲击成本"],
-      "related": ["basis-fee-cn", "method-cost-sensitivity", "paper-grinold-kahn-2000", "paper-almgren-chriss-2001", "basis-fingerprint"]
+      "related": ["basis-fee-cn", "method-cost-sensitivity", "paper-grinold-kahn-2000", "paper-almgren-chriss-2001", "basis-fingerprint", "case-2008-crisis"]
     },
     {
       "id": "basis-benchmark",
@@ -65,7 +65,7 @@
       "body": "单标的回测同时给出两条参照：① 同股买入持有（Buy & Hold）——回答择时是否战胜了躺着不动；② 沪深300 指数基准线叠加——回答是否战胜了市场整体。两者用途不同：同股对比剔除个股 beta 的影响，适合评估择时能力；指数对比回答跑赢大盘没有，适合对外汇报。因子层面的评估则使用等权组合基准（见 term-equal-weight），因为因子研究关注横截面选股能力，等权基准能避免市值因子混入。",
       "source": "教材：Grinold & Kahn《Active Portfolio Management》第 2 章基准与主动管理框架；指数数据：中证指数有限公司沪深300指数编制方案（样本空间与加权方式）。",
       "tags": ["基准", "买入持有", "沪深300", "等权", "对比"],
-      "related": ["term-equal-weight", "method-benchmark-choice", "paper-grinold-kahn-2000"]
+      "related": ["term-equal-weight", "method-benchmark-choice", "paper-grinold-kahn-2000", "principle-capm"]
     },
     {
       "id": "basis-fingerprint",
@@ -81,7 +81,7 @@
       "body": "A 股买入以 100 股（1 手）为最小单位，卖出可以为零股（持有不足 100 股时须一次卖出）。本平台回测、横截面引擎与模拟盘的下单量一律向下取整到整手，避免出现 137 股这类不可实现的持仓。价格最小变动单位为 0.01 元（人民币），撮合与成本计算均按该精度处理。港股的每手股数因股而异（由上市公司确定），美股为 1 股——本平台目前对港股按 A 股整手规则简化处理，属已知简化。",
       "source": "官方规则：上海证券交易所《交易规则》关于申报数量应为 100 股或其整数倍的规定；深圳证券交易所《交易规则》同类条款；港股每手股数由发行人公告确定（香港交易所上市规则）。",
       "tags": ["整手", "100股", "最小变动单位", "下单", "取整"],
-      "related": ["basis-limit-guard", "term-turnover"]
+      "related": ["basis-limit-guard", "term-turnover", "case-2015-ashare"]
     }
   ]
 }

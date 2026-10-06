@@ -14,7 +14,17 @@
 //   检索口径（与 UI 提示一致）：
 //     · 查询串按空白/逗号切分为词项，全部词项都命中才算匹配（AND 语义，减少噪声）
 //     · 大小写不敏感；中文无需分词（子串匹配）
-//     · category 可选过滤（term/basis/method/paper）
+//     · layers 可选多值过滤（教学五层，供学习路径批量取）；category 保留单类筛选
+//
+// ── 知识库 2.0（计划书 §11.1）新增的三条硬约束 ──
+//   ① **两个维度**：教学五层（LAYERS：术语/方法/原理/案例/周期专题）与平台辅助类
+//      （AUX：口径/文献）分开。存量 basis 是"平台自身的计算口径"，属辅助类而非教学层 ——
+//      混进五层会让学习路径出现"平台费率口径"这种教学上无意义的内容。
+//   ② **发布门**：无 source（出处）的条目标记 `draft:true`，**不进检索结果**，
+//      只计入 `stats().draft`。这给「AI 生成初稿 → 人工审核补出处 → 发布」提供
+//      数据模型支撑，而不是靠人记着"这条还没审"。
+//   ③ **结构化字段可选**：summary/formula/applicability/limitations/teachingModel
+//      缺失时按"降级到 body"展示，不强制回填（回填历史内容属内容工作，不在地基范围）。
 // ─────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
@@ -22,12 +32,35 @@ const path = require('path');
 /** 知识库目录（可用环境变量覆盖，便于测试隔离） */
 const DIR = process.env.KNOWLEDGE_DIR || path.join(__dirname, 'knowledge');
 
-const CATEGORIES = {
+/**
+ * 🔴 知识库 2.0 的**两个维度**（计划书 §11.1）：
+ *   ① 教学五层（LAYERS）—— 学科知识，是 Learn 学习路径的编排依据；
+ *   ② 平台辅助类（AUX）—— 平台自身的计算口径与权威文献，**不是教学层**。
+ *
+ *   为什么必须分维：存量 `basis`（"本平台每一项计算所采用的具体口径与依据"）
+ *   是**平台特有**的，既不是术语也不是方法。硬塞进五层会让学习路径混入
+ *   "平台的费率口径"这种教学上无意义的内容。
+ *
+ *   ⚠️ 存量 label 刻意**不改**（方法论/口径/文献），避免影响前端既有显示；
+ *      新增三层才用计划书措辞（原理/案例/周期专题）。
+ */
+const LAYERS = {
   term: '术语',
-  basis: '口径',
   method: '方法论',
+  principle: '原理',
+  case: '案例',
+  cycle: '周期专题',
+};
+const AUX = {
+  basis: '口径',
   paper: '文献',
 };
+const CATEGORIES = { ...LAYERS, ...AUX };
+
+/** 教学五层的 key（顺序 = 学习路径的自然顺序：术语→方法→原理→案例→周期） */
+const LAYER_KEYS = Object.keys(LAYERS);
+/** 是否教学层（Learn 路径只消费教学层） */
+const isTeachingLayer = (c) => Object.prototype.hasOwnProperty.call(LAYERS, c);
 
 /** 命中位置权重（标题最重，出处最轻） */
 const WEIGHT = { title: 10, tags: 6, body: 3, source: 2 };
@@ -48,13 +81,32 @@ function readAll() {
       const doc = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8'));
       for (const e of doc.entries || []) {
         if (!e || !e.id || !e.title) continue; // 跳过残缺条目，不让一条脏数据毁掉整库
+        const cat = e.category || doc.category || 'term';
+        const source = typeof e.source === 'string' ? e.source.trim() : '';
         out.push({
           id: e.id,
-          category: e.category || doc.category || 'term',
-          categoryLabel: CATEGORIES[e.category || doc.category] || '其他',
+          category: cat,
+          categoryLabel: CATEGORIES[cat] || '其他',
+          isTeachingLayer: isTeachingLayer(cat),
           title: e.title,
           body: e.body || '',
-          source: e.source || '',
+          // ── 知识库 2.0 结构化字段（§11.1：定义/公式/适用场景/局限/出处）──
+          //   全部**可选**：存量 49 条只有 body，缺失时按"降级到 body"展示，
+          //   不强制回填（回填 49 条历史内容是内容工作，不属于地基）。
+          summary: typeof e.summary === 'string' ? e.summary : '',
+          formula: typeof e.formula === 'string' ? e.formula : '',
+          applicability: typeof e.applicability === 'string' ? e.applicability : '',
+          limitations: typeof e.limitations === 'string' ? e.limitations : '',
+          /** 教学用模型（Phase 1 Model JSON 的 id）：cycle/case 条目可挂教学实验 */
+          teachingModel: e.teachingModel || null,
+          source,
+          /**
+           * 🔴 发布门（§11.1「无出处的条目不发布」）：
+           *    无 source ⇒ 标记为**草稿**，不进检索结果，只计入 stats.draft。
+           *    这给「AI 生成初稿 → 人工审核补出处 → 发布」一个数据模型支撑，
+           *    而不是靠人记着"这条还没审"。
+           */
+          draft: !source,
           tags: Array.isArray(e.tags) ? e.tags : [],
           related: Array.isArray(e.related) ? e.related : [],
         });
@@ -193,8 +245,12 @@ function runAnd(pool, tokens) {
  */
 function search(query, opts = {}) {
   const all = load();
-  const { category, limit = 50 } = opts;
-  const pool = category ? all.filter((e) => e.category === category) : all;
+  const { category, layers, limit = 50, includeDraft = false } = opts;
+  // 🔴 发布门：草稿（无出处）不进检索；includeDraft 仅供管理/审核视图
+  let pool = includeDraft ? all : all.filter((e) => !e.draft);
+  // layers 优先于 category（学习路径按层批量取；category 保留给单类筛选的既有调用方）
+  if (Array.isArray(layers) && layers.length) pool = pool.filter((e) => layers.includes(e.category));
+  else if (category) pool = pool.filter((e) => e.category === category);
 
   const tokens = tokenize(query);
   if (!tokens.length) {
@@ -262,7 +318,22 @@ function stats() {
   const all = load();
   const byCategory = {};
   for (const e of all) byCategory[e.category] = (byCategory[e.category] || 0) + 1;
-  return { total: all.length, byCategory, withSource: all.filter((e) => e.source).length };
+  // 教学五层各自规模（Phase 2.5 的规模目标就以此为准：term 80-120 / method 80-100 / …）
+  const byLayer = {};
+  for (const k of LAYER_KEYS) byLayer[k] = byCategory[k] || 0;
+  const published = all.filter((e) => !e.draft);
+  return {
+    total: all.length,
+    published: published.length,
+    /** 🔴 草稿数（无出处、未过审）：知识库 2.0 的待办工作量一目了然 */
+    draft: all.length - published.length,
+    withSource: all.filter((e) => e.source).length,
+    byCategory,
+    byLayer,
+    teachingTotal: all.filter((e) => e.isTeachingLayer).length,
+    /** 挂教学模型的条目数（§11.1 教学因子联动的落地进度） */
+    withTeachingModel: all.filter((e) => e.teachingModel).length,
+  };
 }
 
 /** 分类元数据（供前端渲染过滤器） */
@@ -274,4 +345,31 @@ function categories() {
     .map((k) => ({ key: k, label: CATEGORIES[k], count: all.filter((e) => e.category === k).length }));
 }
 
-module.exports = { search, byIds, stats, categories, CATEGORIES, extractKeywords, DIR };
+/**
+ * 取某一教学层的全部**已发布**条目（Learn 学习路径编排用）。
+ * 🔴 非教学层（basis/paper）传入一律返回空数组 —— 它们不属于课程内容。
+ * @param {string} layer 五层之一
+ * @param {{limit?:number}} [opts]
+ */
+function listByLayer(layer, opts = {}) {
+  if (!isTeachingLayer(layer)) return [];
+  const lim = Math.max(1, Math.min(Number(opts.limit) || 200, 500));
+  return load()
+    .filter((e) => e.category === layer && !e.draft)
+    .slice(0, lim);
+}
+
+module.exports = {
+  search,
+  byIds,
+  stats,
+  categories,
+  listByLayer,
+  isTeachingLayer,
+  LAYERS,
+  AUX,
+  LAYER_KEYS,
+  CATEGORIES,
+  extractKeywords,
+  DIR,
+};

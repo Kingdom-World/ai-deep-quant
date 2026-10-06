@@ -348,3 +348,101 @@ test('独立性：验证结论必须随引擎版本与指纹一起交付（无�
     '验证结论必须可复现（同输入同判定）',
   );
 });
+
+// ═══ 三、数据版本取用策略 ════════════════════════════════════
+//   🔴 fingerprint 只含数据**窗口**，不含数据**内容** ⇒ 归档修正后窗口不变而数据已变。
+//      dataVersion 补这一环，"结论 + engineVersion + dataVersion"才是完整复现凭据。
+//      本组用**合成归档**（不依赖真实归档 ⇒ CI 也真跑）。
+const ARCH = require('../server/archiveindex.cjs');
+
+/** 合成归档：n 只 × rows 行（行数不必达入池门槛 —— 本组只关心索引/版本，不关心入池） */
+function mkSynthArchive(n = 3, rows = 40) {
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vldk-'));
+  for (let k = 0; k < n; k++) {
+    const code = `sh${600000 + k}`;
+    const rs = [];
+    for (let i = 0; i < rows; i++) {
+      const d = new Date(Date.UTC(2020, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+      rs.push({ date: d, open: 10, high: 11, low: 9, close: 10, volume: 1, amount: 1, turn: 1, pctChg: 0 });
+    }
+    fs.writeFileSync(
+      path.join(dir, `${code}.json`),
+      JSON.stringify({ code, adjust: 'none+factor', rows: rs, factors: [] }),
+    );
+  }
+  return dir;
+}
+
+test('🔴 数据版本：三态显式（缓存命中 / 现算 / 不可用），绝不把"没取到"当成功', () => {
+  const saved = process.env.LOCAL_HISTORY_DIR;
+  const dir = mkSynthArchive();
+  process.env.LOCAL_HISTORY_DIR = dir;
+  ARCH.invalidateArchiveIndex();
+  try {
+    // ① 缓存未命中 + 未要求现算 ⇒ unavailable，并且给出**可执行**的取得方式
+    const s1 = V.resolveDataVersion();
+    assert.strictEqual(s1.digest, null);
+    assert.strictEqual(s1.source, 'unavailable');
+    assert.match(s1.note, /compute|数据质量/, '不可用时必须告诉调用方怎么才能拿到，而不是一句"无"');
+
+    // ② 缓存命中（先构建索引一次，模拟"刚访问过数据质量页"）⇒ 零成本沿用
+    const idx = ARCH.buildArchiveIndex();
+    assert.strictEqual(idx.ok, true, idx.error);
+    const s2 = V.resolveDataVersion();
+    assert.strictEqual(s2.source, 'cache');
+    assert.strictEqual(s2.digest, idx.version.digest, '缓存态必须与索引同源');
+
+    // ③ 缓存已失效 + 显式要求现算 ⇒ computed
+    ARCH.invalidateArchiveIndex();
+    const s3 = V.resolveDataVersion({ compute: true });
+    assert.strictEqual(s3.source, 'computed');
+    assert.strictEqual(s3.digest, idx.version.digest, '现算结果必须与索引口径一致（同一算法）');
+    assert.match(s3.digest, /^[0-9a-f]{64}$/);
+  } finally {
+    if (saved === undefined) delete process.env.LOCAL_HISTORY_DIR;
+    else process.env.LOCAL_HISTORY_DIR = saved;
+    ARCH.invalidateArchiveIndex();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('归档不可用时数据版本显式为 unavailable（不抛错、不假装有）', () => {
+  const saved = process.env.LOCAL_HISTORY_DIR;
+  const os = require('node:os');
+  process.env.LOCAL_HISTORY_DIR = path.join(os.tmpdir(), 'vldk-nonexistent-xyz');
+  ARCH.invalidateArchiveIndex();
+  try {
+    const s = V.resolveDataVersion({ compute: true });
+    assert.strictEqual(s.digest, null);
+    assert.strictEqual(s.source, 'unavailable');
+    assert.ok(s.note && s.note.length > 0, '必须给出原因，不能是空说明');
+    // ⚠️ 原因里不得出现归档绝对路径（公开仓库/公网红线）
+    assert.ok(!/:\\/.test(s.note), `不得暴露本机路径：${s.note}`);
+  } finally {
+    if (saved === undefined) delete process.env.LOCAL_HISTORY_DIR;
+    else process.env.LOCAL_HISTORY_DIR = saved;
+    ARCH.invalidateArchiveIndex();
+  }
+});
+
+test('验证报告带数据版本：compute 时必须现算并有值（复现三件套不可缺）', (t) => {
+  if (skip(t)) return;
+  ARCH.invalidateArchiveIndex(); // 保证"默认只读缓存"这条断言不依赖执行顺序
+  const r = V.runValidation(MODEL(), { skip: ['walkForward', 'plateau', 'causality'], opts: { topN: 5 } });
+  assert.ok(r.dataVersion && typeof r.dataVersion.source === 'string', '报告必须带数据版本三态之一');
+  assert.ok(['cache', 'computed', 'unavailable'].includes(r.dataVersion.source));
+  assert.strictEqual(r.dataVersion.digest, null, '默认只读缓存：真实归档未被索引过 ⇒ unavailable（不白扫 90MB）');
+
+  ARCH.invalidateArchiveIndex();
+  const r2 = V.runValidation(MODEL(), {
+    skip: ['walkForward', 'plateau', 'causality'],
+    dataVersion: 'compute',
+    opts: { topN: 5 },
+  });
+  assert.strictEqual(r2.dataVersion.source, 'computed');
+  assert.match(r2.dataVersion.digest, /^[0-9a-f]{64}$/, '现算必须给出内容指纹');
+  // 复核：与直接构建索引得到的版本一致（同一条算法，无第二套口径）
+  assert.strictEqual(r2.dataVersion.digest, ARCH.buildArchiveIndex().version.digest);
+  ARCH.invalidateArchiveIndex();
+});

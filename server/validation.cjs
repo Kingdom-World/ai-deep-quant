@@ -26,6 +26,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crosssect = require('./crosssect.cjs');
+const archiveindex = require('./archiveindex.cjs');
 const { runModel, ENGINE_VERSION } = require('./modelrun.cjs');
 
 // ── 判定阈值（全部显式；随结果返回，便于复核与争议时追溯）──
@@ -518,7 +519,14 @@ function causalityCheck(model, cfg = {}) {
 
   const srcDir = crosssect.resolveArchiveDir();
   if (!fs.existsSync(srcDir)) {
-    return { ok: false, error: `归档目录不存在，无法做数据截断型因果性检验：${srcDir}`, backtests };
+    // ⚠️ 错误信息不得含归档绝对路径（公开仓库/公网红线）；只说明来源形态
+    return {
+      ok: false,
+      error: `归档目录不存在，无法做数据截断型因果性检验（来源：${
+        process.env.LOCAL_HISTORY_DIR ? 'LOCAL_HISTORY_DIR 环境变量' : '默认数据目录'
+      }）`,
+      backtests,
+    };
   }
   const fullDaily = stripTerminalArtifact(fullSeries);
   const fullUniverseSize = full.result.universeSize;
@@ -725,10 +733,57 @@ function causalityCheck(model, cfg = {}) {
 // ─────────────────────────────────────────────────────────────
 // 五、汇总报告
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * 数据版本（回答"这次结论是拿哪一版数据算的"）。
+ *
+ *   🔴 与 `fingerprint` 的分工（这是复现承诺上的一个真洞）：
+ *     fingerprint 由「引擎版本 + 数据**窗口**(start/end) + 池子规模 + 运行参数」构成，**不含数据内容**。
+ *     归档每日同步（可追加、可修正）⇒ 窗口与池子规模都可能不变，而底下的数据已经换了。
+ *     于是"同 fingerprint ⇒ 同结果"在某些情形下并不成立。
+ *     dataVersion（内容摘要）补上这一环：**结论 + engineVersion + dataVersion 才是完整复现三件套**。
+ *
+ *   ⚠️ 默认**只读缓存**：把 90MB 归档全量摘要一遍约 5–8s，验证本身已跑十几次回测，
+ *      不该再为"顺手带个字段"多扫一遍。故：
+ *        · 缓存命中（例如刚访问过数据质量页）→ 直接带，零成本；
+ *        · 未命中且未显式要求 → 带 `null` 并**显式标注 source:'unavailable'**（不静默、不假装有）；
+ *        · `compute:true`（验证路由会传）→ 真算一遍，保证报告必定可追溯到数据版本。
+ * @param {{compute?:boolean}} [cfg]
+ */
+function resolveDataVersion(cfg = {}) {
+  const peeked = archiveindex.peekArchiveVersion();
+  if (peeked) return { digest: peeked, source: 'cache', note: '取自归档索引缓存（与数据质量页同源）' };
+  if (cfg.compute !== true) {
+    return {
+      digest: null,
+      source: 'unavailable',
+      note:
+        '未命中归档索引缓存。为避免为单个字段重扫约 90MB 归档，此处不主动计算；' +
+        '访问「数据质量」页或传 dataVersion:"compute" 可取得精确数据版本。',
+    };
+  }
+  try {
+    const idx = archiveindex.buildArchiveIndex();
+    if (idx.ok) {
+      return {
+        digest: idx.version.digest,
+        source: 'computed',
+        stocks: idx.version.stocks,
+        rows: idx.version.rows,
+        lastDate: idx.version.lastDate,
+        note: '本次现算的数据内容摘要（算法见数据质量页）',
+      };
+    }
+    return { digest: null, source: 'unavailable', note: idx.error };
+  } catch (e) {
+    return { digest: null, source: 'unavailable', note: `计算数据版本失败：${String(e.message || e).slice(0, 120)}` };
+  }
+}
+
 /**
  * 组装完整验证报告。任何一项失败都**如实带出**，不用"通过"掩盖未跑项。
  * @param {object} model
- * @param {{opts?:object, folds?:number, param?:string, cuts?:number|string[], skip?:string[]}} [cfg]
+ * @param {{opts?:object, folds?:number, param?:string, cuts?:number|string[], skip?:string[], dataVersion?:'compute'|boolean}} [cfg]
  */
 function runValidation(model, cfg = {}) {
   const opts = cfg.opts || {};
@@ -741,6 +796,11 @@ function runValidation(model, cfg = {}) {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
     fingerprint: full.ok ? full.fingerprint : null,
+    /**
+     * 完整复现三件套之一：**数据版本**（fingerprint 不含数据内容，见 resolveDataVersion 注释）。
+     * 模型非法时（stage=validate）不必为它白扫归档 ⇒ 只 peek 一次。
+     */
+    dataVersion: resolveDataVersion({ compute: cfg.dataVersion === 'compute' && full.ok }),
     model: { name: (model && model.name) || '(未命名)', factors: (model && model.factors || []).length },
     sample: null,
     power: null,
@@ -814,6 +874,8 @@ module.exports = {
   plateauScan,
   causalityCheck,
   runValidation,
+  /** 导出以便直接测"数据版本的取用策略（缓存/现算/不可用三态）" */
+  resolveDataVersion,
   /** 导出以便测试用**同一条规则**做前缀比对（避免测试里另写一份、日后分叉） */
   stripTerminalArtifact,
   /** 导出以便测试构造"泄露对照样本"（证明本检验真的能抓到泄露，而不是永远绿） */

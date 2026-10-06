@@ -19,6 +19,8 @@ const NAV_ITEMS = [
   // match 前缀：/research 下含 5 个子页签（/research/consistency 等）。
   // 缺 match 时需 pathname 精确等于 '/research'，进子页签就匹配不到 → 指示器回落首页。
   { path: '/research', label: '研究中心', match: '/research' },
+  // 数据治理：回答"这次结论是拿哪一版数据算的"（归档内容指纹 + 体检）
+  { path: '/data', label: '数据质量' },
   { path: '/stock/sh600519', label: '量化看板', match: '/stock' },
   { path: '/paper', label: '模拟交易' },
   { path: '/agents', label: 'Agent 团队' },

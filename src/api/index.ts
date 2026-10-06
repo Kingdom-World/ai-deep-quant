@@ -37,6 +37,9 @@ export type { ModelSpec, NormalizedModel, ValidationIssue, ModelSchema, ModelBac
 // 独立验证套件（Phase 2）：阈值/局限规范 + 报告与三项检查的返回类型
 export type { ValidationSpec, ValidationReport, ValidationPower, ValidateSuiteOptions, WalkForwardFold, WalkForwardResult, WalkForwardResponse, PlateauPoint, PlateauResult, PlateauResponse, CausalityCut, CausalityResult, CausalityResponse } from './models';
 export { modelsApi } from './models';
+// 数据治理（Phase 2）：归档版本索引 + 数据质量体检
+export type { ArchiveVersion, ArchiveSymbolRow, ArchiveQuality, DataQualityReport } from './data';
+export { dataApi } from './data';
 export * from './backtest';
 export * from './agent';
 export * from './research';

@@ -21,6 +21,7 @@ import NewsPage from './pages/NewsPage';
 import LoginPage from './pages/LoginPage';
 import LegalPage from './pages/LegalPage';
 import ModelStudioPage from './pages/ModelStudioPage';
+import DataQualityPage from './pages/DataQualityPage';
 import AppFooter from './components/AppFooter';
 import { zoneOfPath } from './lib/zones';
 
@@ -122,6 +123,8 @@ function App() {
             <Route path="/research/experiments" element={<ResearchCenterPage tab="experiments" />} />
             <Route path="/research/factors" element={<ResearchCenterPage tab="factors" />} />
             <Route path="/research/knowledge" element={<ResearchCenterPage tab="knowledge" />} />
+            {/* 数据治理（Phase 2）：归档版本索引 + 数据质量体检 */}
+            <Route path="/data" element={<DataQualityPage />} />
             {/* 旧路由兼容（红队 R-D：SPA 内用 <Navigate replace>，非真 301） */}
             <Route path="/experiments" element={<Navigate to="/research/experiments" replace />} />
             <Route path="/factor-eval" element={<Navigate to="/research/factors" replace />} />

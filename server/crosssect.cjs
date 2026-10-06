@@ -836,6 +836,9 @@ module.exports = {
   resolveFactor,
   resolveArchiveDir,
   UNIVERSE_MIN_ROWS,
+  /** 复权口径的**单一实现**：归档体检（server/archiveindex.cjs）也要用它统计 adjFallback，
+   *  另写一份必然与引擎口径分叉。⚠️ 它会**原地**给 rows 补 adjClose/adjOpen 并可能置 adjFallback。 */
+  withAdjustedPrices,
   FACTOR_WINDOWS,
   REVERSAL_FACTORS,
 };

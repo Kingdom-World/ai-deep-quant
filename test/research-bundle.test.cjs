@@ -63,6 +63,8 @@ const VALIDATION = () => ({
   engineVersion: '1.2.3',
   generatedAt: '2026-10-05T12:00:00.000Z',
   fingerprint: 'f'.repeat(64),
+  /** 数据内容版本（验证路由默认现算 ⇒ 真实报告里通常都有） */
+  dataVersion: { digest: 'a'.repeat(64), source: 'computed', stocks: 209, rows: 489024, lastDate: '2026-09-11' },
   verdict: { pass: false, flags: ['折间总收益离散度 76.05 个百分点（> 40）——分期表现不稳定'] },
   sample: { range: { start: '2015-02-03', end: '2026-09-11', bars: 2822 }, bars: 2822, universeSize: 209 },
   power: { icPeriods: 141, rebalances: 142, sufficient: true, note: 'IC 共 141 期，达到最低门槛 12 期' },
@@ -123,7 +125,47 @@ test('身份锚点：modelHash / fingerprint 原样带上（复现时靠它们�
   assert.strictEqual(b.identity.modelHash, 'HASH');
   assert.strictEqual(b.identity.fingerprint, RUN().fingerprint);
   assert.strictEqual(b.identity.validationFingerprint, VALIDATION().fingerprint);
+  assert.strictEqual(b.identity.dataVersion, 'a'.repeat(64));
   assert.strictEqual(b.engineVersion, '1.2.3');
+});
+
+test('🔴 数据版本：随包固化（复现三件套的第三件）；缺了必须显式说明', () => {
+  // ① 有数据版本：进 identity，报告头部印出，且不报"缺"
+  const b = R.buildResearchBundle({ model: MODEL(), run: RUN(), validation: VALIDATION() });
+  assert.strictEqual(b.identity.dataVersion, 'a'.repeat(64));
+  assert.ok(
+    !b.missing.some((s) => /数据版本摘要/.test(s)),
+    `有数据版本就不该报缺：${JSON.stringify(b.missing)}`,
+  );
+  const md = R.renderResearchReport(b);
+  assert.ok(md.includes('a'.repeat(64)), '报告头部必须印出数据版本（否则读者无法核对数据底稿）');
+  assert.ok(
+    /engineVersion \+ fingerprint \+ dataVersion/.test(md),
+    '报告必须说明"完整复现凭据 = 引擎版本 + 指纹 + 数据版本"三者',
+  );
+
+  // ② 无数据版本（旧报告 / 缓存未命中 / 公网）⇒ missing 显式说明 + 报告标"未取得"
+  const noDv = { ...VALIDATION() };
+  delete noDv.dataVersion;
+  const b2 = R.buildResearchBundle({ model: MODEL(), validation: noDv });
+  assert.strictEqual(b2.identity.dataVersion, null);
+  assert.ok(
+    b2.missing.some((s) => /数据版本摘要/.test(s)),
+    '缺数据版本必须显式声明——沉默会让读者误以为"结论与数据版本无关"',
+  );
+  const md2 = R.renderResearchReport(b2);
+  assert.ok(md2.includes('（未取得）'), '报告要显示"未取得"，不能留空');
+  assert.ok(
+    /无法逐字节核对数据底稿/.test(md2),
+    '缺数据版本时要点明后果：复现时无法核对数据底稿',
+  );
+
+  // ③ 回测响应里也能带（将来 runModel 若直出数据版本，研究包同样认得）
+  const fromRun = R.buildResearchBundle({
+    model: MODEL(),
+    run: { ...RUN(), dataVersion: { digest: 'b'.repeat(64) } },
+  });
+  assert.strictEqual(fromRun.identity.dataVersion, 'b'.repeat(64));
 });
 
 test('🔴 缺项必须显式声明：未跑回测/未跑验证/无实验时 missing 逐条说明原因', () => {

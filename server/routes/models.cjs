@@ -204,6 +204,12 @@ function registerModelRoutes(app, deps) {
         param: body.param,
         cuts: body.cuts,
         skip: Array.isArray(body.skip) ? body.skip : undefined,
+        /**
+         * 数据版本默认**现算**（'compute'）：验证本就要跑十几次回测（30–60s），
+         * 再多一次约 5–8s 的归档摘要，换来报告必定可追溯到"哪一版数据"——
+         * 科研级可复现要求下这是划算的。传 dataVersion:'cache' 可退化为只用缓存。
+         */
+        dataVersion: body.dataVersion === 'cache' ? undefined : 'compute',
         opts: {
           topN: body.topN,
           capital: body.capital,

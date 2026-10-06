@@ -54,7 +54,8 @@ const ZONE_LIST: ZoneMeta[] = [
     mindset: '这个结论靠不靠得住',
     backdrop: 'aurora',
     shell: 'bench',
-    prefixes: ['/research', '/experiments', '/factor-eval'],
+    // /data（数据质量）同属研究心智：都在回答"这个结论靠不靠得住"（数据底稿也是结论的一部分）
+    prefixes: ['/research', '/experiments', '/factor-eval', '/data'],
     migrated: false,
   },
   {

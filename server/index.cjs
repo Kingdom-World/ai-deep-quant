@@ -1300,6 +1300,8 @@ app.get('/api/agents/capabilities', (req, res) => {
 // 「子系统装载状态」：可选功能模块的加载失败必须**显式外露**，不得静默吞掉（项目铁律 #4）。
 // 由 8d 段赋值；为空表示全部就绪。
 let modelRoutesError = null;
+// 由 8e 段赋值（数据治理域：/api/data/quality）。
+let dataRoutesError = null;
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -1313,6 +1315,9 @@ app.get('/api/health', (req, res) => {
     subsystems: {
       modelRoutes: modelRoutesError
         ? { ok: false, status: 'degraded', reason: String(modelRoutesError.message || modelRoutesError).slice(0, 200) }
+        : { ok: true, status: 'ready' },
+      dataRoutes: dataRoutesError
+        ? { ok: false, status: 'degraded', reason: String(dataRoutesError.message || dataRoutesError).slice(0, 200) }
         : { ok: true, status: 'ready' },
     },
     time: new Date().toISOString(),
@@ -1578,6 +1583,21 @@ try {
 } catch (e) {
   modelRoutesError = e;
   console.error('[model-routes] 装载失败（模型工坊降级，其余功能不受影响）:', (e && e.stack) || e);
+}
+
+// ───────────── 8e. 数据治理域路由（Phase 2：归档版本索引 + 数据质量体检） ─────────────
+//   与 8d 同样的装载隔离：数据质量页是**新增可选功能**，它依赖的索引模块装载失败
+//   绝不能带走整站（2026-10-04 线上 INIT_FAILED 事故的教训）。
+//   ⚠️ 只读：本域不写归档、不落库、不改任何状态。
+try {
+  require('./routes/data.cjs').registerDataRoutes(app, {
+    archiveindex: require('./archiveindex.cjs'),
+    singlesource: require('../shared/single-source.cjs'), // 口径单一源清单（治理门）
+    IS_VERCEL,
+  });
+} catch (e) {
+  dataRoutesError = e;
+  console.error('[data-routes] 装载失败（数据质量页降级，其余功能不受影响）:', (e && e.stack) || e);
 }
 
 // ───────────── 9. 静态托管（生产模式：单端口整站） ─────────────

@@ -96,6 +96,13 @@ function buildResearchBundle(input = {}) {
   const missing = [];
   const runOk = !!(run && run.ok);
   const hasValidation = !!(validation && validation.ok);
+  /**
+   * 数据**内容**版本（study/复现用）。
+   * 来源：验证报告（server/validation.cjs 的 resolveDataVersion）优先，回测响应次之。
+   * 🔴 它补的是 fingerprint 的一个真洞：fingerprint 只含数据**窗口**，归档修正后窗口可能不变。
+   */
+  const dataVersion = (validation && validation.dataVersion) || (run && run.dataVersion) || null;
+  const dataVersionDigest = dataVersion && dataVersion.digest ? dataVersion.digest : null;
 
   if (!model) missing.push('模型定义（未提供）');
   if (!runOk) missing.push('基准回测结果（本次未执行或未成功——公网不提供执行）');
@@ -105,6 +112,13 @@ function buildResearchBundle(input = {}) {
         (validation && !validation.ok && validation.error
           ? `：${String(validation.error.message || validation.error).slice(0, 80)}`
           : ''),
+    );
+  }
+  // 有验证结果却没有数据版本 ⇒ 明确说明（否则读者会以为"结论与数据版本无关"）
+  if (hasValidation && !dataVersionDigest) {
+    missing.push(
+      '数据版本摘要（归档内容指纹）' +
+        (dataVersion && dataVersion.note ? `：${String(dataVersion.note).slice(0, 100)}` : '（未取得）'),
     );
   }
   if (!experiments.length) missing.push('历史实验记录（未勾选或模型库中尚无留痕）');
@@ -119,6 +133,8 @@ function buildResearchBundle(input = {}) {
       modelHash,
       fingerprint: runOk ? run.fingerprint : null,
       validationFingerprint: hasValidation ? validation.fingerprint : null,
+      /** 数据内容版本（见上方注释；null 表示未取得，原因写在 missing[] 里） */
+      dataVersion: dataVersionDigest,
       name: model?.name || '(未命名)',
       factorCount: Array.isArray(model?.factors) ? model.factors.length : 0,
     },
@@ -164,6 +180,11 @@ function buildResearchBundle(input = {}) {
       identityNote:
         'modelHash 只由语义核心（因子/预处理/过滤/组合/股票池/回测设置）决定，改名称不影响；' +
         'fingerprint 还含数据窗口与运行参数，标识"一次实验"。',
+      /** 完整复现三件套的第三件 —— 很多人会漏掉它，所以单独解释一句 */
+      dataVersionNote:
+        'dataVersion 是归档**内容**摘要（逐行字段哈希）；fingerprint 只含数据**窗口**（start/end）。' +
+        '归档每日同步、可追加可修正 ⇒ 窗口与池子规模不变而底下数据已换的情形真实存在，只有 dataVersion 能区分。' +
+        '故完整复现凭据为：**engineVersion + fingerprint + dataVersion** 三者同时一致。',
       bundleScope: '本包不含净值序列（那是数据，不是结论）；需要曲线请用回测接口另行导出。',
       /** 最容易误读的一句：pass 只是"没报警"，不是"有效" */
       verdictCaveat:
@@ -207,6 +228,10 @@ function renderResearchReport(bundle) {
   L.push(`- 引擎版本：${mdCell(b.engineVersion)}`);
   L.push(`- 模型定义哈希（modelHash）：\`${mdCell(id.modelHash)}\``);
   L.push(`- 实验指纹（fingerprint）：\`${mdCell(id.fingerprint)}\``);
+  L.push(
+    `- 数据版本（dataVersion）：\`${mdCell(id.dataVersion || '（未取得）')}\`` +
+      (id.dataVersion ? '' : ` —— ${mdCell('归档内容指纹未随本包导出，复现时无法逐字节核对数据底稿')}`),
+  );
   L.push(`- 研究包格式：${mdCell(b.kind)} v${mdCell(b.bundleVersion)}`);
   if (b.origin) L.push(`- 导出环境：${mdCell(b.origin)}`);
   L.push('');
@@ -351,6 +376,7 @@ function renderResearchReport(bundle) {
   L.push('');
   L.push(`- ${mdCell(b.provenance?.reproduce)}`);
   L.push(`- ${mdCell(b.provenance?.identityNote)}`);
+  if (b.provenance?.dataVersionNote) L.push(`- ${mdCell(b.provenance.dataVersionNote)}`);
   L.push(`- ${mdCell(b.provenance?.bundleScope)}`);
   L.push('');
   if ((b.missing || []).length) {

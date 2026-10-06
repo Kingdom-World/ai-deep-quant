@@ -102,6 +102,108 @@ test('② 发布门行为：无 source ⇒ draft=true 且不进默认检索', ()
   }
 });
 
+// ── byIds 的发布门（原缺陷 #68）──
+//   🔴 为什么必须造草稿来测：真实内容当前 draft=0，拿真实数据断言"byIds 过滤草稿"
+//      会永远绿——正是「断言打在永真条件上、失去发现能力」的那类假测试。
+//      下面用临时知识库（1 条已发布 + 1 条草稿）把绕过路径真正走一遍。
+function withTempKb(fn) {
+  const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kb2-'));
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'x.json'),
+      JSON.stringify({
+        category: 'principle',
+        categoryLabel: '原理',
+        description: 't',
+        entries: [
+          { id: 'has-src', title: '有出处', body: 'x', source: 'Someone (2020). A Book. Publisher.', tags: [] },
+          { id: 'no-src', title: '无出处', body: '草稿正文', source: '', tags: [] },
+        ],
+      }),
+    );
+    const saved = process.env.KNOWLEDGE_DIR;
+    process.env.KNOWLEDGE_DIR = dir;
+    delete require.cache[require.resolve('../server/knowledge.cjs')];
+    const k2 = require('../server/knowledge.cjs');
+    try {
+      return fn(k2);
+    } finally {
+      process.env.KNOWLEDGE_DIR = saved;
+      delete require.cache[require.resolve('../server/knowledge.cjs')];
+      require('../server/knowledge.cjs');
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('🔴 byIds 默认过滤草稿（修复前：知道 id 就能读出未过审全文）', () => {
+  withTempKb((k2) => {
+    assert.deepStrictEqual(k2.byIds(['no-src']), [], '🔴 草稿不得被 byIds 默认读出');
+    assert.deepStrictEqual(k2.byIds(['no-src', 'has-src']).map((e) => e.id), ['has-src'], '混合查询只返回已发布那条');
+    // 管理视图：显式 includeDraft 才拿得到
+    assert.deepStrictEqual(k2.byIds(['no-src'], { includeDraft: true }).map((e) => e.id), ['no-src']);
+  });
+});
+
+test('🔴 byIds 与 search 的发布门口径一致（同一把尺子，不许一个严一个松）', () => {
+  withTempKb((k2) => {
+    const bySearch = new Set(k2.search('', { limit: 99 }).items.map((e) => e.id));
+    for (const e of k2.byIds(['has-src', 'no-src'])) {
+      assert.ok(bySearch.has(e.id), `byIds 返回了 search 看不到的条目：${e.id}（发布门被绕过了）`);
+    }
+  });
+});
+
+test('categories 的 count 是已发布数（过滤器数字必须点得出来）', () => {
+  withTempKb((k2) => {
+    const c = k2.categories().find((x) => x.key === 'principle');
+    assert.strictEqual(c.count, 1, 'count 应为已发布数（1 条草稿不算）');
+    assert.strictEqual(c.total, 2, 'total 应为全量');
+    assert.strictEqual(c.draft, 1, 'draft 应显式给出待办量');
+    // 口径等式：count 恒等于 search 能检索到的条数
+    const searchable = k2.search('', { category: 'principle', limit: 99 }).total;
+    assert.strictEqual(c.count, searchable, '🔴 count 与 search 可检索数必须一致，否则过滤器是假数字');
+  });
+});
+
+test('categories 不列出「零已发布」的分类（避免渲染出点不动的死 chip）', () => {
+  withTempKb((k2) => {
+    const keys = k2.categories().map((c) => c.key);
+    assert.ok(keys.includes('principle'), '有已发布条目的分类必须在列表里');
+    for (const k of ['term', 'method', 'case', 'cycle', 'basis', 'paper']) {
+      assert.ok(!keys.includes(k), `${k} 在本临时库无任何条目（含草稿），不该出现在过滤器里`);
+    }
+  });
+});
+
+test('stats 的 publishedByLayer 是已发布口径（学习路径编排不得按全量排章）', () => {
+  withTempKb((k2) => {
+    const s = k2.stats();
+    assert.strictEqual(s.byLayer.principle, 2, 'byLayer 是工作量视角（含草稿）');
+    assert.strictEqual(s.publishedByLayer.principle, 1, 'publishedByLayer 是可用量视角');
+    // 不变量：五层已发布之和 = 总已发布（临时库里只有 principle，其余层为 0）
+    const layerSum = kb.LAYER_KEYS.reduce((a, k) => a + (s.publishedByLayer[k] || 0), 0);
+    assert.strictEqual(layerSum, s.published, '各层已发布之和 = 总已发布数（本库无辅助类）');
+    // 不变量：全量 = 五层全量 + 辅助类全量（byCategory 才是覆盖全部分类的那个）
+    const layerTotal = kb.LAYER_KEYS.reduce((a, k) => a + (s.byLayer[k] || 0), 0);
+    const auxTotal = kb.AUX ? Object.keys(kb.AUX).reduce((a, k) => a + (s.byCategory[k] || 0), 0) : 0;
+    assert.strictEqual(layerTotal + auxTotal, s.total, '五层全量 + 辅助类全量 = 总条目数');
+    assert.strictEqual(s.teachingTotal, 1, 'teachingTotal 只算已发布的教学层条目');
+    assert.strictEqual(s.withSource, 1, 'withSource = 已发布数（草稿恒无 source）');
+  });
+});
+
+test('真实内容库：过滤器 count 与实际可检索条数逐类对齐（防口径再漂移）', () => {
+  // 这条跑在**真实内容**上（draft=0），所以它锁的是"实现没跑偏"；
+  // 草稿场景由上面 withTempKb 那几条负责。两者缺一不可。
+  for (const c of kb.categories()) {
+    const r = kb.search('', { category: c.key, limit: 999 });
+    assert.strictEqual(c.count, r.total, `分类 ${c.key} 的 count 与可检索条数不一致`);
+  }
+});
+
 // ═══ 三、存量零回归 ══════════════════════════════════════════════
 
 test('③ 存量 49 条全部仍在且 id 唯一（新增层不得挤掉旧内容）', () => {

@@ -35,9 +35,16 @@ test('分类覆盖：术语/口径/方法论三类均非空（M1 内容规划）
   for (const k of ['term', 'basis', 'method']) {
     assert.ok(cats.includes(k), `缺少分类 ${k}`);
   }
+  // 🔴 count 走**已发布**（2026-10-07 口径修正）：草稿不进 search，
+  //   过滤器上的数字必须等于"点进去能看到几条"，否则就是能点的假数字。
+  //   故 sum 对 published，总量对 total —— 两个口径都要锁，否则改回去没人会发现。
   const cat = kb.categories();
   const sum = cat.reduce((a, c) => a + c.count, 0);
-  assert.equal(sum, kb.stats().total, '分类计数之和应等于总条目数');
+  assert.equal(sum, kb.stats().published, '分类已发布计数之和应等于已发布条目数');
+  const sumTotal = cat.reduce((a, c) => a + c.total, 0);
+  assert.equal(sumTotal, kb.stats().total, '分类全量计数之和应等于总条目数');
+  const sumDraft = cat.reduce((a, c) => a + c.draft, 0);
+  assert.equal(sumDraft, kb.stats().draft, '分类草稿计数之和应等于草稿数');
 });
 
 // ── 文献类（paper）非孤岛（M1 收尾遗留项 ①）──
@@ -123,13 +130,16 @@ test('检索：分类过滤生效', () => {
 
 test('检索：空查询 = 浏览模式，返回该分类全部条目', () => {
   const r = kb.search('', { category: 'basis' });
+  // 口径已对齐：categories().count 与 search 都走已发布 ⇒ 这条断言正是
+  // "过滤器数字 = 点进去能看到的条数" 的可执行定义
   assert.equal(r.total, kb.categories().find((c) => c.key === 'basis').count);
   assert.ok(r.items.every((e) => e.score === 0), '浏览模式不打分');
 });
 
-test('检索：空查询遍历全部分类时能覆盖全部条目', () => {
+test('检索：空查询遍历全部分类时能覆盖全部**已发布**条目（草稿不进检索）', () => {
   const r = kb.search('', { limit: 1000 });
-  assert.equal(r.total, kb.stats().total);
+  assert.equal(r.total, kb.stats().published);
+  assert.ok(r.items.every((e) => !e.draft), '默认检索结果里不得出现草稿');
 });
 
 test('检索：明显无关的查询返回空集而非报错', () => {
@@ -154,7 +164,7 @@ test('降级路径的噪声是显式标注的，不是伪装的精确结果', ()
 });
 
 test('检索：纯空白查询等同空查询', () => {
-  assert.equal(kb.search('   ').total, kb.stats().total);
+  assert.equal(kb.search('   ').total, kb.stats().published);
 });
 
 test('排序：标题命中优先于仅正文命中', () => {

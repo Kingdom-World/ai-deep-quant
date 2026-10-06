@@ -12,6 +12,9 @@
 /** 注册知识/选股/自选域路由 */
 function registerKnowledgeScreenerRoutes(app, deps) {
   const { knowledgeBase, screener, watchlist, broker } = deps;
+  // 🔴 未注入 isAdmin 时**必须 fail closed**（拒绝草稿视图），不能默认放行 ——
+  //   "忘了注入"是改代码时最常见的手滑，而它一旦默认 true 就是静默的越权口子。
+  const isAdmin = typeof deps.isAdmin === 'function' ? deps.isAdmin : () => false;
 
 // ── 知识库（M1-1.3）：结构化条目检索 + 出处 ──
 //   口径：q 为空时返回该分类全部条目（浏览模式）；多词按 AND 语义，命中位置加权排序。
@@ -30,10 +33,18 @@ app.get('/api/knowledge/search', (req, res) => {
 });
 
 // 按 id 取条目（前端关联口径跳转 / Agent 引用校验）
+// 🔴 发布门（2026-10-07）：includeDraft=1 会读到**未过审**的草稿全文
+//   （草稿的存在本身意味着"还没审完"，与已发布内容混在一起等于审核流程形同虚设）。
+//   knowledgeBase.byIds 默认已过滤草稿，这里再把 includeDraft 绑到管理员闸门 ——
+//   两道都要有：默认过滤防"忘了传参"，鉴权防"故意传参"。
 app.get('/api/knowledge/entries', (req, res) => {
   try {
     const ids = String(req.query.ids || '').split(/[,，]/).map((s) => s.trim()).filter(Boolean);
-    res.json({ ok: true, items: knowledgeBase.byIds(ids) });
+    const wantDraft = /^(1|true|yes)$/i.test(String(req.query.includeDraft || ''));
+    if (wantDraft && !isAdmin(req)) {
+      return res.status(403).json({ ok: false, error: 'includeDraft 仅管理员可用（草稿尚未过审）' });
+    }
+    res.json({ ok: true, items: knowledgeBase.byIds(ids, { includeDraft: wantDraft }) });
   } catch (e) {
     res.status(500).json({ ok: false, error: '知识库读取失败: ' + (e.message || '').slice(0, 80) });
   }

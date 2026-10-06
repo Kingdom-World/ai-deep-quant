@@ -306,10 +306,25 @@ function search(query, opts = {}) {
   return { mode, total: hits.length, items: hits.slice(0, limit) };
 }
 
-/** 按 id 批量取条目（关联口径跳转用；不存在的 id 静默忽略） */
-function byIds(ids = []) {
+/**
+ * 按 id 批量取条目（关联口径跳转用；不存在的 id 静默忽略）
+ *
+ * 🔴 发布门同样适用于此（2026-10-07 修）：原先这里直接 `load()` 全量返回，
+ *   等于**绕过 search 的发布门**——草稿（无出处、尚未过审）只要知道 id 就能读出全文。
+ *   攻击面不是"内容涉密"而是"审核流程形同虚设"：草稿的存在本身就是"还没审完"的信号，
+ *   一旦可读，被审中的错误结论（如审查中发现公式写错的那几条）就与已发布内容无法区分。
+ *   故默认与 search 对齐过滤 draft；管理/审核视图显式传 includeDraft 才拿得到。
+ *
+ * ⚠️ 这里**不自带鉴权**：调用方（路由层）必须自己把 includeDraft 绑到 admin 校验上，
+ *    否则等于白改。见 server/routes/knowledge-screener.cjs。
+ * @param {string[]} ids
+ * @param {{includeDraft?:boolean}} [opts] includeDraft 仅供管理/审核视图
+ */
+function byIds(ids = [], opts = {}) {
   const all = load();
-  const map = new Map(all.map((e) => [e.id, e]));
+  const { includeDraft = false } = opts;
+  const pool = includeDraft ? all : all.filter((e) => !e.draft);
+  const map = new Map(pool.map((e) => [e.id, e]));
   return ids.map((id) => map.get(id)).filter(Boolean);
 }
 
@@ -322,27 +337,53 @@ function stats() {
   const byLayer = {};
   for (const k of LAYER_KEYS) byLayer[k] = byCategory[k] || 0;
   const published = all.filter((e) => !e.draft);
+  // 🔴 已发布口径的分层计数（2026-10-07 补）。
+  //   为什么必须与 byLayer 并存：byLayer 走全量（含草稿），是**内容工作量**视角；
+  //   publishedByLayer 走已发布，是**学习路径可用量**视角。学习路径编排只能读后者
+  //   ——按全量排会排出"这一章有 12 节"然后点进去发现 4 节是草稿的空章节。
+  //   规模目标（term 80-120 等）应按已发布计，否则数字虚高。
+  const publishedByCategory = {};
+  for (const e of published) publishedByCategory[e.category] = (publishedByCategory[e.category] || 0) + 1;
+  const publishedByLayer = {};
+  for (const k of LAYER_KEYS) publishedByLayer[k] = publishedByCategory[k] || 0;
   return {
     total: all.length,
     published: published.length,
     /** 🔴 草稿数（无出处、未过审）：知识库 2.0 的待办工作量一目了然 */
     draft: all.length - published.length,
-    withSource: all.filter((e) => e.source).length,
+    /** 存量字段，语义未变：draft 恒等于 !source ⇒ withSource 与 published 恒等，写成后者是强调「带出处 = 已发布」这一个门禁 */
+    withSource: published.length,
     byCategory,
     byLayer,
-    teachingTotal: all.filter((e) => e.isTeachingLayer).length,
-    /** 挂教学模型的条目数（§11.1 教学因子联动的落地进度） */
-    withTeachingModel: all.filter((e) => e.teachingModel).length,
+    publishedByCategory,
+    publishedByLayer,
+    teachingTotal: published.filter((e) => e.isTeachingLayer).length,
+    /** 挂教学模型的条目数（§11.1 教学因子联动的落地进度；只算已发布，否则会挂到看不见的草稿上） */
+    withTeachingModel: published.filter((e) => e.teachingModel).length,
   };
 }
 
-/** 分类元数据（供前端渲染过滤器） */
+/**
+ * 分类元数据（供前端渲染过滤器）
+ * 🔴 count = **已发布**数（2026-10-07 改）。原先走全量，于是草稿一出现，
+ *   过滤器上的数字就和"点进去能看到几条"对不上（草稿不进 search）——
+ *   数字能点、点出来是空的，这比数字偏大更伤信任。
+ *   现在 count 与 search 严格一致；全量在 total 上，需要展示待办量时用 draft。
+ */
 function categories() {
   const all = load();
-  const present = new Set(all.map((e) => e.category));
+  const published = all.filter((e) => !e.draft);
+  // 只列**有已发布条目**的分类：全草稿的分类渲染出来是个点不动的死 chip
+  const present = new Set(published.map((e) => e.category));
   return Object.keys(CATEGORIES)
     .filter((k) => present.has(k))
-    .map((k) => ({ key: k, label: CATEGORIES[k], count: all.filter((e) => e.category === k).length }));
+    .map((k) => ({
+      key: k,
+      label: CATEGORIES[k],
+      count: published.filter((e) => e.category === k).length,
+      total: all.filter((e) => e.category === k).length,
+      draft: all.filter((e) => e.category === k && e.draft).length,
+    }));
 }
 
 /**

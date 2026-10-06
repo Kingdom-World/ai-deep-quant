@@ -1568,6 +1568,7 @@ require('./routes/knowledge-screener.cjs').registerKnowledgeScreenerRoutes(app, 
   screener,
   watchlist,
   broker,
+  isAdmin: (req) => isAdminReq(req), // 草稿视图闸门（/api/knowledge/entries?includeDraft=1）
 });
 
 // ───────────── 8d. 模型工坊路由（Phase 1：/api/models/schema|validate|run） ─────────────

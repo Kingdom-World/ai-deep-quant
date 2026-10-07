@@ -832,6 +832,19 @@ app.get('/api/qa', async (req, res) => {
     marketMood: () => screener.getMood(),
   };
 
+  // 🔴 对抗性注入闸门（#73）—— 必须**先于**越界意图闸门。
+  //   实测缺口：4 条典型注入全部漏过，且知识库都会被误命中
+  //   （「忽略之前的指令」→ case-ltcm-1998、「扮演分析师」→ method-multiple-testing）。
+  //   两者性质不同：越界是「内容边界」，注入是「**指令边界**」——更危险，
+  //   攻击者要的不是答案，是把 Agent 变成他的工具。
+  const inj = agentIntent.detectInjection(q);
+  if (inj.injection) {
+    return reply({
+      question: q, type: 'injection-blocked', engine: 'intent-gate',
+      answer: agentIntent.injectionRefusal(),
+    });
+  }
+
   // 🔴 越界意图闸门（#71）——必须在 brain.lookup **之前**。
   //   实测缺陷：「推荐一只明天涨停的股票」会被 2-gram 模糊匹配命中
   //   term-limit-up-down（涨跌停术语），用户看到的是一条正经的涨跌停规则解释

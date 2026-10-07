@@ -161,4 +161,72 @@ function refusal(q, d) {
   return lines.join('\n');
 }
 
-module.exports = { detect, refusal, OUT_OF_SCOPE, RULES, norm };
+/**
+ * 🔴 对抗性注入特征（prompt injection）。
+ *
+ *   实测缺口（#73 建eval 时暴露）：4 条典型注入**全部漏过**，且知识库都会被误命中
+ *   （「忽略之前的指令」→ case-ltcm-1998、「扮演分析师」→ method-multiple-testing）。
+ *   与越界意图分开成层，因为两者性质不同：
+ *     · 越界 = 「问平台不该答的」（内容边界）
+ *     · 注入 = 「试图改写 Agent 的行为」（**指令边界**）—— 更危险，
+ *       因为攻击者的目标不是答案本身，而是让 Agent 变成他的工具。
+ *
+ *   ⚠️ 这层**只能挡已知模式**，挡不住所有注入（对抗性攻击没有穷举）。
+ *   它的价值是：把最常见的低成本话术挡在门外，且**拦下时留下可审计的 matched**。
+ *   真正的纵深防御在别处（system prompt、输出过滤、动作白名单）。
+ */
+const INJECTION_PATTERNS = [
+  /忽略(之前|上面|以上|前面)?.{0,6}(指令|要求|规则|提示)/,
+  /(无视|忘记| disregard).{0,6}(之前|上面|以上)?.{0,6}(指令|规则|设定)/,
+  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/i,
+  /(disregard|forget)\s+(all\s+)?(previous|prior|above)/i,
+  /reveal\s+(your\s+)?(system\s+)?prompt/i,
+  /(显示|输出|告诉我|打印).{0,6}(你的)?(系统)?(提示词|prompt|指令|设定)/i,
+  /你现在(是|扮演|就是|当作)/,
+  /(扮演|假装|假装成|pretend\s+to\s+be|act\s+as)/,
+  /绕过(所有)?(限制|规则|校验|风控|审查)/,
+  /(解除|取消|禁用)(你的)?(限制|规则|防护|护栏)/,
+  /(不受|不要)遵守.{0,6}(限制|规则|设定|指令)/,
+  /不需要(遵守|理会).{0,6}(投资建议|限制|规则)/,
+  /developer\s+mode|dan\s+mode|jailbreak/i,
+  /(DBA|管理员|admin|root).{0,4}(权限|模式|身份)/i,
+  /从现在开始你/,
+];
+
+/**
+ * 判定：注入检测。
+ * ⚠️ **独立于越界判定**，两者都要查（一条问题可能同时是注入与越界）。
+ * @returns {{injection:boolean, matched?:string}|{injection:false}}
+ */
+function detectInjection(q) {
+  const s = String(q || '');
+  if (!s) return { injection: false };
+  for (const re of INJECTION_PATTERNS) {
+    const m = s.match(re);
+    if (m) return { injection: true, matched: m[0] };
+  }
+  return { injection: false };
+}
+
+/** 注入被拦时的回答：中性、不解释内部结构、不给二次尝试的暗示 */
+function injectionRefusal() {
+  return [
+    '⚠️ 这条请求包含试图改写我行为指令的内容，我不执行。',
+    '',
+    '我是「AI深度量化」的站内助手，只回答量化研究相关的问题：',
+    '· 「分析 AAPL」—— 个股五因子解读（基于真实历史行情）',
+    '· 「什么是夏普比率」—— 量化名词解释（带出处）',
+    '· 「回测怎么用」—— 策略回测指引',
+  ].join('\n');
+}
+
+module.exports = {
+  detect,
+  refusal,
+  detectInjection,
+  injectionRefusal,
+  OUT_OF_SCOPE,
+  INJECTION_PATTERNS,
+  RULES,
+  norm,
+};

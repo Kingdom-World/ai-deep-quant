@@ -22,6 +22,9 @@ const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const auth = require('./auth.cjs');
 const brain = require('./ai/brain.cjs');
+// 🔴 越界意图闸门（#71）：纯函数、零 IO，在知识检索与云端 LLM 之前拦截越界问题。
+//   ⚠️ 必须 require .cjs（平台运行时禁用 require(ESM)），见 no-require-esm 测试。
+const agentIntent = require('../shared/agent-intent.cjs');
 const reviewMod = require('./agents/review.cjs');
 const review = require('./agents/review.cjs');
 const cloudAI = require('./ai/cloud.cjs');
@@ -828,6 +831,20 @@ app.get('/api/qa', async (req, res) => {
     knowledgeSearch: (query) => knowledgeBase.search(String(query || '').slice(0, 200), { limit: 3 }),
     marketMood: () => screener.getMood(),
   };
+
+  // 🔴 越界意图闸门（#71）——必须在 brain.lookup **之前**。
+  //   实测缺陷：「推荐一只明天涨停的股票」会被 2-gram 模糊匹配命中
+  //   term-limit-up-down（涨跌停术语），用户看到的是一条正经的涨跌停规则解释
+  //   还标着「🧠 来自学习知识库」—— 答非所问却带着真出处，比胡说更伤信任。
+  //   位置说明：放在确定性技能**之后**、知识检索与云端 LLM **之前** ——
+  //   「分析 AAPL」要真数据（技能处理），而「推荐一只股票」连云端都不该发起请求。
+  const scope = agentIntent.detect(q);
+  if (scope.outOfScope) {
+    return reply({
+      question: q, type: 'out-of-scope', engine: 'intent-gate',
+      answer: agentIntent.refusal(q, scope),
+    });
+  }
 
   // 自学习知识库命中记录（hit 用于：云端上下文注入 / 高置信直答 / 兜底前中置信降级）
   //   🔴 直答已移到本地技能路由之后（见下）——brain 的 2-gram 模糊匹配会把

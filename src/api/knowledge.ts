@@ -112,7 +112,17 @@ export interface KnowledgeSearchResult {
   categories: KnowledgeCategoryCount[];
 }
 
-export type KnowledgeSearchMode = 'browse' | 'and' | 'keyword';
+/**
+ * 检索路径：
+ * - `browse` 空查询浏览模式
+ * - `and`    严格 AND 全部词项命中
+ * - `keyword` 放宽到词项匹配（**置信度较低**：含碎片噪声可能）
+ * - `substring` 识别出复合词（**置信度较高**：查询片段确实出现在标题/标签里，#72）
+ *
+ * ⚠️ 新增 substring 后前端要区别对待：keyword 该提示"已放宽"，
+ *   substring 不必再提示放宽（那会让用户以为结果不可靠，而它其实更准）。
+ */
+export type KnowledgeSearchMode = 'browse' | 'and' | 'keyword' | 'substring';
 
 export const knowledgeApi = {
   /** 检索知识条目；q 为空 = 浏览模式（返回该分类全部） */

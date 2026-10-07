@@ -237,6 +237,86 @@ function extractKeywords(query) {
   return Array.from(new Set(words.filter((w) => w.length >= 2 || /^[a-z]/.test(w))));
 }
 
+// 🔴 本函数专用的疑问词剥离（比 extractKeywords 的 STOPWORDS 更狠）。
+//   实测踩过：「米哈游是什么」切成 2 字片后，残留的「什么」命中了
+//   标题「多重比较：**什么**是试得越多越容易骗自己」⇒ 无关查询被判命中。
+//   根因：疑问词不是实词，让它参与片段匹配必然产生这类假阳性。
+//   与 extractKeywords 用同一份词表（口径单一源），但这里**额外**保留
+//   「/」等未在其列表中的高频疑问形态。
+const QUESTION_TAILS = [
+  '这是什么意思', '是什么意思', '什么意思', '是什么', '什么是', '怎么理解', '怎么算', '怎么处理', '如何理解',
+  '为什么', '怎么样', '有什么', '为什么是', '是什么呀', '到底',
+  '的', '是', '啊', '呢', '吗', '呀', '了', '请问', '请', '帮我', '一下', '下',
+];
+
+/**
+ * 🔴 复合词兜底（#72）：查询被拆成「连续片段」，逐片在条目里找，
+ *   绕开 2-gram 的跨词边界噪声。
+ *
+ *   实测缺陷：`基钦周期` 检索不到，而 `基钦` 能（条目 cycle-kitchin「基钦库存周期」存在）。
+ *   根因：`基钦周期` → tokens `["基钦","钦周","周期"]`，其中 `钦周` 是**跨词边界垃圾**
+ *   （基钦|周期 的跨界组合），任何条目都不含它 ⇒ AND 语义下整条被淘汰。
+ *
+ *   ⚠️⚠️ 第一版实现是错的（自己踩过）：原写成「查询整串必须是条目的子串」，
+ *   但 `基钦周期` **不是** `基钦库存周期` 的子串（中间隔了「库存」）⇒ 修复无效。
+ *   第二版把 4 字整段当单片也不对（`基钦周期` 整段同样找不到）。
+ *   最终版：**整段与 2 字切分同时产出**，由「命中片段数」门槛来筛 ——
+ *   只取整段会漏，只取切分会引入噪声，两者都产出才稳。
+ *
+ *   🔴 为什么不能只靠"加进白名单"：任何 n-gram 方案都会产出跨边界碎片，
+ *   枚举是打地鼠（下一个词还会漏）。
+ *   🔴 为什么插在 OR 降级**之前**：OR 会把碎片噪声一起放进来
+ *   （"zzz绝对不存在zzz" 曾返回 3 条）。片段命中是**强信号**。
+ */
+function runSubstring(pool, query) {
+  // 🔴 必须先剥离疑问尾巴，否则「周期是什么」这类正常问法会失效
+  let cleaned = String(query || '').toLowerCase().trim();
+  for (const w of [...QUESTION_TAILS].sort((a, b) => b.length - a.length)) {
+    cleaned = cleaned.split(w).join(' ');
+  }
+  cleaned = cleaned.replace(/[？?！!。，,、.：:（）()【】\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (cleaned.length < 2) return []; // 过短（如"夏"）噪声太大，不走这层
+
+  // 切连续片段：英文词块 + 中文连续段
+  // 🔴 中文段**总是**同时产出「整段」与「2 字切分」两种片段，交给打分去争：
+  //   「基钦周期」(4 字) 整段在标题里找不到（标题是「基钦库存周期」），
+  //   但切出的「基钦」+「周期」两片都能命中 —— 只取整段会漏，只取切分会引入噪声，
+  //   两者都产出、由"命中片段数"门槛来筛，才是稳的。
+  const frags = [];
+  for (const m of cleaned.matchAll(/[a-z][a-z0-9-]{1,}/g)) frags.push(m[0]);
+  for (const seg of cleaned.match(/[一-龥]+/g) || []) {
+    if (seg.length >= 3) frags.push(seg); // 整段（长词辨识度高，如「最大回撤」）
+    for (let i = 0; i + 2 <= seg.length; i += 2) frags.push(seg.slice(i, i + 2)); // 2 字片
+  }
+  const uniq = Array.from(new Set(frags.filter((f) => f.length >= 2)));
+  if (!uniq.length) return [];
+
+  const hits = [];
+  for (const e of pool) {
+    const title = e.title.toLowerCase();
+    const tags = e.tags.map((t) => String(t).toLowerCase());
+    const body = e.body.toLowerCase();
+    let score = 0;
+    const matched = [];
+    for (const f of uniq) {
+      // 出处不参与（是英文文献名，中文查询几乎不可能命中，计进去只添噪声）
+      let s = 0;
+      if (title.includes(f)) s = Math.max(s, WEIGHT.title);
+      if (tags.some((t) => t.includes(f))) s = Math.max(s, WEIGHT.tags);
+      if (body.includes(f)) s = Math.max(s, WEIGHT.body);
+      if (s > 0) { score += s; matched.push(f); }
+    }
+    if (!matched.length) continue;
+    // 🔴 命中门槛：≥2 片命中，或单片命中标题/标签。
+    //   只命中 1 片且只在正文 ⇒ 大概率是撞词，不足以作为"复合词命中"。
+    const inTitle = matched.some((f) => title.includes(f));
+    const inTags = matched.some((f) => tags.some((t) => t.includes(f)));
+    if (matched.length < 2 && !inTitle && !inTags) continue;
+    hits.push({ ...e, score: score * (1 + (matched.length - 1) * 0.5), matched });
+  }
+  return hits;
+}
+
 /** 单词项在单条上的命中得分（0 表示未命中该词） */
 function scoreToken(entry, tok) {
   let s = 0;
@@ -294,7 +374,14 @@ function search(query, opts = {}) {
     };
   }
 
-  // ① 严格 AND
+  // ①-b 复合词兜底（#72）：AND 全失败时，先试「查询片段命中」。
+  //   🔴 关键修正（实测回归）：本层最初插在 OR 降级**之前**，结果抢走了排序位 ——
+  //     「PIT是什么意思」原本 term-pit 排第 1，被 basis-financial-pubdate 挤到第 2；
+  //     「涨跌停规则怎么处理的」basis-limit-guard 也丢了首位。
+  //   原因：OR 降级会**按词项覆盖度打分**，天然把"命中多个词"的条目排前面，质量更高；
+  //   而片段层只按片段数累加，容易让"命中标题一个字"的长条目虚高。
+  //   ⇒ 顺序必须是：**AND → OR（既有路径，语义最宽且打分最好）→ 复合词兜底**。
+  //   这样复合词层只在既有两条路都空手而归时才兜底，绝不影响既有排序。
   let mode = 'and';
   let hits = runAnd(pool, tokens);
 
@@ -330,6 +417,18 @@ function search(query, opts = {}) {
       );
       for (const h of hits) delete h._bodyHits;
       if (hits.length) mode = 'keyword';
+    }
+  }
+
+  // ③ 复合词兜底（#72）：AND 与 OR 都空手时才跑。
+  //   🔴 顺序理由见上方①-b 注释：抢在 OR 之前会夺走既有排序位（实测 term-pit 被挤到第 2）。
+  //   ⚠️ mode 独立标记为'substring'：调用方需要区分「放宽到词项」与「识别出复合词」——
+  //   后者置信度更高（查询片段确实出现在标题/标签里）。
+  if (!hits.length) {
+    const sub = runSubstring(pool, query);
+    if (sub.length) {
+      hits = sub;
+      mode = 'substring';
     }
   }
 

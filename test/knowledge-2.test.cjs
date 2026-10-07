@@ -255,7 +255,85 @@ test('③ 存量条目不因新字段而失效：body/source/tags/related 仍可
   assert.strictEqual(t.isTeachingLayer, true);
 });
 
-// ═══ 四、结构化字段 ══════════════════════════════════════════
+// ═══ 四、复合词兜底（#72）═══════════════════════════════════
+
+test('③ 复合词：「基钦周期」这类跨词边界的查询必须能命中（实测缺陷回归）', () => {
+  // 实测缺陷：'基钦周期' → tokens ['基钦','钦周','周期']，其中'钦周'是跨词边界垃圾，
+  // 任何条目都不含它 ⇒ AND 语义下整条被淘汰 ⇒ total=0。
+  // 而条目 cycle-kitchin「基钦库存周期」确实存在、'基钦' 单独查也命中 ⇒ 是检索缺陷不是内容缺失。
+  for (const q of ['基钦周期', '朱格拉周期']) {
+    const r = kb.search(q, { limit: 5 });
+    assert.ok(r.total > 0, `「${q}」应能命中（跨词边界的 2-gram 拖垮了 AND）`);
+  }
+  const r = kb.search('基钦周期', { limit: 5 });
+  assert.ok(
+    r.items.some((e) => e.id === 'cycle-kitchin'),
+    `「基钦周期」应命中 cycle-kitchin，实际 ${r.items.map((e) => e.id).join(',')}`,
+  );
+});
+
+test('③ 复合词：同义译名也能命中（科钦 = 基钦）', () => {
+  // Kitchin 在中文文献里有「基钦/科钦」两种译名，条目只写了「基钦」。
+  // 这类同义译名靠枚举维护是打地鼠，靠片段匹配才能自然覆盖。
+  const r = kb.search('科钦周期', { limit: 5 });
+  assert.ok(r.total > 0, '「科钦」（同义译名）应能命中');
+});
+
+test('🔴 复合词层不得抢走既有排序（实测回归，必须留门）', () => {
+  // 🔴 这条是本段最贵的教训：复合词层最初插在 OR 降级**之前**，
+  //   结果「PIT是什么意思」原本的排序被改动（term-pit 被挤到第 2、
+  //   basis-financial-pubdate 抢到第 1），「涨跌停规则怎么处理的」也丢了首位。
+  //   根因：OR 降级按**词项覆盖度**打分，质量高于片段层；
+  //   片段层只按片段数累加，长条目容易虚高。
+  //   ⇒ 顺序必须是 AND → OR → 复合词兜底。
+  //   本测试锁住「既有排序不因新增兜底层而改变」。
+  //   ⚠️ 只锁前 3 名：limit 给 5 时第 4/5 名本就是同一 OR 路径产出的，不在本门范围。
+  const pit = kb.search('PIT是什么意思', { limit: 5 });
+  assert.strictEqual(pit.mode, 'keyword', '既有整句提问应仍走 keyword（OR 降级）路径，不该被新层接管');
+  assert.deepStrictEqual(
+    pit.items.slice(0, 3).map((e) => e.id),
+    ['basis-financial-pubdate', 'term-pit', 'method-lookahead'],
+    '「PIT是什么意思」的前 3 名排序被复合词层改变了（这是实测过的真实回归）',
+  );
+  const guard = kb.search('涨跌停规则怎么处理的', { limit: 5 });
+  assert.deepStrictEqual(
+    guard.items.slice(0, 3).map((e) => e.id),
+    ['term-limit-up-down', 'basis-limit-guard', 'case-2015-ashare'],
+    '「涨跌停规则怎么处理的」前 3 名排序被改变了',
+  );
+});
+
+test('🔴 复合词层不得把无关查询变成有结果（防假阳性）', () => {
+  // ⚠️ 残留疑问词会制造假阳性：「米哈游是什么」切出的「什么」
+  //   曾命中标题「多重比较：**什么**是试得越多越容易骗自己」。
+  //   ⇒ 必须剥离疑问尾巴后再切片段。
+  //   这两条走 AND/OR 既有路径（mode!=='substring'）⇒ 由新层引入的假阳性才算本门的锅。
+  for (const q of ['米哈游是什么', '12345678']) {
+    const r = kb.search(q, { limit: 5 });
+    assert.ok(
+      r.mode !== 'substring',
+      `「${q}」不该由复合词层命中（mode=${r.mode}，ids=${r.items.map((e) => e.id).join(',')}）`,
+    );
+    assert.strictEqual(r.total, 0, `「${q}」不该命中任何条目，实际 ${r.items.map((e) => e.id).join(',')}`);
+  }
+  // ⚠️ 「今天中午吃什么」命中 1 条是**既有缺陷**（OR 降级路径，改动前就是如此），
+  //   已用 git archive 基线对照确认 ⇒ 不在本门范围，另立欠账跟踪。
+  //   这里只锁一条：它不得是 substring 模式（否则说明是新层引入的）。
+  const lunch = kb.search('今天中午吃什么', { limit: 5 });
+  assert.notStrictEqual(lunch.mode, 'substring', '「今天中午吃什么」不该走复合词层');
+});
+
+test('③ 检索模式字段：新增 substring 档位（供前端区分置信度）', () => {
+  // mode='substring' 与 mode='keyword' 语义不同：
+  //   keyword = 放宽到词项匹配（置信度较低）；substring = 识别出复合词（置信度较高）。
+  //   前端需要区分二者才能给不同的提示文案。
+  const r = kb.search('基钦周期', { limit: 3 });
+  assert.strictEqual(r.mode, 'substring', `复合词命中应标substring，实际 ${r.mode}`);
+  // 既有三态不能消失
+  assert.strictEqual(kb.search('', { limit: 3 }).mode, 'browse', 'browse 档位必须仍在');
+});
+
+// ═══ 五、结构化字段 ══════════════════════════════════════════
 
 test('④ 新层条目带结构化字段（定义/公式/局限），这是 §11.1 的显式要求', () => {
   for (const layer of ['principle', 'case', 'cycle']) {

@@ -11,7 +11,7 @@
       "formula": "周期长度 ≈ 40 个月；工业企业产成品存货同比的拐点领先于 PPI 与顺周期行业",
       "applicability": "把宏观库存周期转成二分组变量，对因子做分段回归，检验其择时敏感性。",
       "limitations": "库存数据发布滞后（一般滞后约 1 个月）且有修订，实时使用必须用 PIT 数据，否则会引入前视偏差。",
-      "source": "Kitchin, J. (1923). Cycles and Trends in Economic Factors. Review of Economics and Statistics, 5(2), 85–102. 中国库存周期数据的发布与修订时点可参见国家统计局官方说明。",
+      "source": "Kitchin, J. (1923). Cycles and Trends in Economic Factors. Review of Economics and Statistics, 5(2), 85–102. 中国库存周期数据的发布与修订时点可参见国家统计局官方说明。.",
       "tags": ["基钦", "库存周期", "短周期", "补库", "去库"],
       "related": ["cycle-juglar", "case-2020-liquidity", "cycle-merrill-clock"],
       "teachingModel": "flow-cleaned-mom",

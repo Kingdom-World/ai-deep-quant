@@ -121,6 +121,20 @@ function titleSim(a, b) {
  *   把我们的 "703-708" 与它的 "703" 直接比字符串 ⇒ 永远不一致。
  *   ⇒ 规则：页码**任一方是另一方的前缀**即判 match。
  *
+ * 坑③ 期号：某些刊用**分册标记**（Sharpe 1966 那篇在 Journal of Business 39，
+ *   Crossref 标issue="S1" = Supplement 1；而学术引用普遍写 39(1)）。
+ *   实证：10.1086/294846 权威 issue="S1"，我们写"1" —— 两者都对。
+ *   ⇒ 规则：期号形如 `S<n>` / `Pt<n>` 时，其数字部分与我们的纯数字等价即判 match。
+ *
+ * 坑④（**最险的一个**，#74 实测踩中）：只按**标题**相似度挂 DOI 会被
+ *   "书评 / 短评 / 引用文献"骗过 —— 标题几乎全等，作者/年份/刊物全不同。
+ *   三个真实错例：Lowenstein 的书 → 命中 Choice Reviews 的**书评**；
+ *   Shiller 的书 → 命中 Foreign Affairs 的**书评**；
+ *   Kitchin 1923 正文 → 命中同刊的 **"Comment"** 短评。
+ *   ⇒ 已把门禁从"标题相似度"升级为**标题 + 年份 + 刊名三重**（见 tools/backfill-doi.cjs
+ *     的 gateMatch）。⚠️ 本工具只负责**事后**发现，所以"verified"这一栏的前提是
+ *     写入时就过了三重门禁；若你手工塞 DOI，请自行核对刊名与年份。
+ *
  * 教训（值得记住）：校验器的判定规则必须先问"这是真的吗，还是我在制造噪声"，
  * 否则它会安静地把正确的引用报成错的 —— 用三次就没人信它了。
  */
@@ -157,7 +171,13 @@ function diffFields(ref, meta) {
   if (v) push('volume', v.a, v.b, v.ok ? 'match' : 'mismatch');
 
   const i = cmpi('issue', ref.issue, meta.issue);
-  if (i) push('issue', i.a, i.b, i.ok ? 'match' : 'mismatch');
+  if (i) {
+    // 坑③：分册标记等价（Crossref "S1"/"Pt2" ≡ 通行写法的 "1"/"2"）
+    const stripPart = (s) => String(s).trim().replace(/^(s|pt|part|suppl|supp)\.?\s*(\d+)$/i, '$2');
+    const partEq = !i.ok && stripPart(i.a) === stripPart(i.b) && stripPart(i.a) !== '';
+    push('issue', i.a, i.b, i.ok || partEq ? 'match' : 'mismatch',
+      partEq && !i.ok ? `分册标记差异（我们 ${i.a} ≡ 权威 ${i.b}）` : '');
+  }
 
   // 页码：前缀等价即 match（Crossref 常只存首页）
   if (ref.pages) {

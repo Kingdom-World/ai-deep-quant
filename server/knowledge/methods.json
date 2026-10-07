@@ -31,7 +31,7 @@
       "id": "method-multiple-testing",
       "title": "多重比较：为什么试得越多越容易骗自己",
       "body": "在 5% 显著性水平下，单独检验一个假设有 5% 概率误报。若同时检验 100 个因子，即使它们全都毫无预测能力，期望仍有约 5 个看起来显著。这就是多重比较（数据窥探）问题。缓解手段：① 提高门槛——Harvey, Liu & Zhu (2016) 建议截面研究中用 |t| > 3；② 控制错误发现率（FDR）——Benjamini-Hochberg 方法；③ 样本外验证与真实交易成本校验；④ 记录所有尝试（含失败的），避免只报告幸存者。本平台的参数稳健性三防（孤峰判据/样本外/成本敏感度）即是该原则在参数层面的落地。",
-      "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
+      "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68 DOI: 10.1093/rfs/hhv059.；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
       "tags": ["多重比较", "数据窥探", "p-hacking", "显著性", "FDR"],
       "related": ["term-stats-significance", "method-parameter-robust", "paper-lopez-de-prado-2018", "paper-harvey-liu-zhu-2016", "paper-benjamini-hochberg-1995", "term-ic", "term-newey-west", "method-benchmark-overfit", "paper-newey-west-1987", "paper-bailey-lopez-2014", "method-nice-vs-meaningful"]
     },
@@ -55,7 +55,7 @@
       "id": "method-layer-monotonic",
       "title": "分层回测与单调性：因子有效性的直观检验",
       "body": "把每个横截面日的股票按因子值排序分为 5 层（或 10 层），各层等权构建组合并逐期计算收益。判读方式：① 若因子有效，层收益应呈现单调递增或递减；② 多空组合（最高层减最低层）的收益差是最直接的因子强度度量；③ 若只有最高层或最低层有收益、中间层无序，说明有效性来自局部（可能是极小市值或不可交易样本），需剔除后重验；④ 按年切分观察单调性是否稳定，避免被单一年份主导。单调性强度可用层序与层收益的 Spearman 秩相关量化。",
-      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 6-7 章因子组合构建与分层分析；论文：Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56（分层组合法构造因子的经典做法）。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 6-7 章因子组合构建与分层分析；论文：Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56（分层组合法构造因子的经典做法）。 DOI: 10.1016/0304-405x(93)90023-5.",
       "tags": ["分层回测", "单调性", "多空组合", "Spearman", "因子检验"],
       "related": ["term-spearman", "term-ic", "method-cross-section", "paper-grinold-kahn-2000", "paper-fama-french-1993", "term-volatility", "term-momentum-factor", "paper-jegadeesh-titman-1993", "method-time-series-momentum"]
     },
@@ -123,7 +123,7 @@
       "formula": "经济显著性 ≈ 年化超额 / 年化跟踪误差（信息比率），并需再扣交易成本",
       "applicability": "评估新因子的第一道关：把 t 值换算成年化超额对成本与换手的量级。",
       "limitations": "没有普适的 t 值门槛（取决于样本期、市场数、检验次数）；事后设定门槛同样存在选择性偏差。",
-      "source": "Harvey, C. R., Liu, Y., & Zhu, H. (2016). The Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. 另见 Bailey, Borwein, Lopez de Prado & Zhu (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5), 94-101.",
+      "source": "Harvey, C. R., Liu, Y., & Zhu, H. (2016). The Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. 另见 Bailey, Borwein, Lopez de Prado & Zhu (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5), 94-101. DOI: 10.1093/rfs/hhv059.",
       "tags": ["多重检验", "t值", "经济显著性", "发表偏差", "Deflated Sharpe"],
       "related": ["principle-emh", "method-multiple-testing", "method-parameter-robust", "method-benchmark-overfit", "case-dotcom-2000"]
     },

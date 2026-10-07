@@ -47,7 +47,7 @@
       "id": "term-stats-significance",
       "title": "统计显著性与 t / p 值",
       "body": "检验某因子的平均收益是否真的不为零时，构造 t = mean(r) / (s/√T)，其中 r 为逐期收益序列、s 为样本标准差、T 为期数。t 的绝对值越大越不可能是偶然。p 值为原假设为真时出现当前或更极端结果的概率，p 小于 0.05 常称显著（5% 水平）。三个常见陷阱：① 忽略自相关导致 t 虚高（须用 Newey-West 修正）；② 多重比较（同时检验大量因子，必然有若干显著是巧合）；③ 样本过短，t 分布的近似不成立。学术界常用 |t| 不小于 2（约 p<0.05）与 |t| 不小于 3（Harvey 等提出的更高门槛）作为参考线。",
-      "source": "教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 4 章假设检验；论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68（提出 |t|>3 的更高门槛以应对多重比较）。",
+      "source": "教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 4 章假设检验；论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68（提出 |t|>3 的更高门槛以应对多重比较）。 DOI: 10.1093/rfs/hhv059.",
       "tags": ["t检验", "p值", "显著性", "假设检验", "t统计量"],
       "related": ["term-newey-west", "method-multiple-testing", "paper-harvey-liu-zhu-2016", "term-ir", "method-sample-length", "paper-newey-west-1987", "paper-benjamini-hochberg-1995"]
     },
@@ -55,7 +55,7 @@
       "id": "term-sharpe",
       "title": "夏普比率（Sharpe Ratio）",
       "body": "夏普比率 = (组合收益率 − 无风险利率) / 收益率标准差，衡量每承担一单位总波动获得的超额回报。注意三点：① 分母是总风险（含非系统性风险），不是跟踪误差；② 对收益率序列的自相关与偏度敏感，高频/持有期短的策略会因序列相关而虚高，需做年化与自相关调整；③ 比较夏普必须在同一频率、同一区间、同一无风险利率口径下进行。年化常用 Sharpe_annual = Sharpe_period × √(每年期数)，但该公式假设收益独立同分布，日内或高频数据需谨慎。",
-      "source": "原始论文：Sharpe, W.F. (1966). Mutual Fund Performance. Journal of Business, 39(1), 119-138；教材：Bodie, Kane & Marcus《Investments》第 5 章风险与收益度量；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52（关于自相关调整）。",
+      "source": "原始论文：Sharpe, W.F. (1966). Mutual Fund Performance. Journal of Business, 39(1), 119-138 DOI: 10.1086/294846.；教材：Bodie, Kane & Marcus《Investments》第 5 章风险与收益度量；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52（关于自相关调整）。 DOI: 10.2469/faj.v58.n4.2453.",
       "tags": ["夏普比率", "Sharpe", "风险调整收益", "年化"],
       "related": ["term-maxdrawdown", "term-annualized", "term-volatility"]
     },
@@ -87,7 +87,7 @@
       "id": "term-spearman",
       "title": "Spearman 秩相关（Rank Correlation）",
       "body": "Spearman 秩相关系数是把两组数据各自转换为排名后计算 Pearson 相关，公式等价于对秩做线性相关。特点：只依赖顺序、对单调非线性关系稳健、对极端值不敏感——因此成为 Rank IC 与分层单调性检验的标准工具。取值范围 [−1, 1]。注意：秩相同（tie）时需用平均秩处理；样本量小时临界值表与正态近似有差异。分层回测中常用它衡量层序与层收益的单调强度。",
-      "source": "教材：Conover, W.J.《Practical Nonparametric Statistics》(3rd ed., Wiley, 1999) 第 5 章秩相关方法；Spearman, C. (1904). The Proof and Measurement of Association between Two Things. American Journal of Psychology, 15(1), 72-101。",
+      "source": "教材：Conover, W.J.《Practical Nonparametric Statistics》(3rd ed., Wiley, 1999) 第 5 章秩相关方法；Spearman, C. (1904). The Proof and Measurement of Association between Two Things. American Journal of Psychology, 15(1), 72-101。 DOI: 10.2307/1412159.",
       "tags": ["Spearman", "秩相关", "Rank IC", "单调性", "非参数"],
       "related": ["term-ic", "method-layer-monotonic"]
     },
@@ -95,7 +95,7 @@
       "id": "term-volatility",
       "title": "波动率（Volatility）",
       "body": "波动率通常指收益率序列的标准差，是最基础的离散度度量。年化：σ_annual = σ_daily × √252。要点：① 波动率是对称的（上涨与下跌同样计入），故不区分方向；② 历史波动率与隐含波动率（期权市场反推）是两回事；③ 波动率具有聚集性（GARCH 效应），简单固定窗口估计会滞后于市场状态切换；④ 因子低波动异象即指低波动股票长期风险调整收益优于高波动股票（Baker, Bradley & Wurgler 2011）。",
-      "source": "教材：Hull, J.C.《Options, Futures, and Other Derivatives》第 15 章波动率估计；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly. Financial Analysts Journal, 67(1), 40-54。",
+      "source": "教材：Hull, J.C.《Options, Futures, and Other Derivatives》第 15 章波动率估计；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly. Financial Analysts Journal, 67(1), 40-54。 DOI: 10.2469/faj.v67.n1.4.",
       "tags": ["波动率", "volatility", "标准差", "低波动异象", "GARCH"],
       "related": ["term-sharpe", "method-layer-monotonic"]
     },
@@ -103,7 +103,7 @@
       "id": "term-momentum-factor",
       "title": "动量因子（Momentum）",
       "body": "动量因子指过去一段时间收益率较高的股票在未来一段时间继续表现较好（或反之，视市场与周期而定），源于 Jegadeesh & Titman (1993) 的经典发现（美股 3~12 个月形成期、持有期策略显著）。常见构造：mom{n} = 过去 n 个交易日累计收益（或对数收益）。重要提示：动量在中国 A 股市场并不稳定，短期（数日至数周）常表现为反转（reverse）；本项目实测 mom 因子在所选样本上呈现高分组收益低于低分组，即动量失效/反转特征——这是数据结论，不是模型错误，须如实呈现。",
-      "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。",
+      "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。 DOI: 10.1111/j.1540-6261.1993.tb04702.x.",
       "tags": ["动量", "momentum", "反转", "因子", "Jegadeesh"],
       "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993", "principle-disposition", "cycle-a-share-style", "method-time-series-momentum"]
     },

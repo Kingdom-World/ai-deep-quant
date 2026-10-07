@@ -41,13 +41,23 @@ const MAX_OUTPUT_TOKENS = 4_000;
 //   不受 FREE_MODELS 白名单拦截（白名单防的是平台额度被付费模型无声扣费，
 //   BYOK 的费用由用户自己的账户承担——与 T2 浏览器直连通道同一口径）。
 //   冷却表/并发闸按 byok 前缀隔离，避免用户侧 429 污染平台档的模型健康状态。
-/** 把前端下传的 BYOK 配置解析为单次调用目标；字段缺失返回 null */
+//
+//   🔴 SSRF：`base` 来自前端下送，主闸门在 `agents/byok.cjs` 的
+//     `normalizeByokOverride`。此处**再校一次**是纵深防御 ——
+//     `overrideTarget` 是本文件的独立入口，将来若有人绕过 normalize 直接调它，
+//     校验不能只挂在调用方身上。
+//     ⚠️ 与下方 `isLocalHostAllowed` 方向相反：那个是"**允许**内网"
+//     （本地兜底通道专用），这里是"**拒绝**内网"。两者不可复用、不可混淆。
+const { assertPublicEgressUrl } = require('../../shared/ssrf.cjs');
+
+/** 把前端下传的 BYOK 配置解析为单次调用目标；字段缺失或目标不可对外出网返回 null */
 function overrideTarget(cfgOverride, model) {
   if (!cfgOverride || typeof cfgOverride !== 'object') return null;
   const base = String(cfgOverride.base || '').trim().replace(/\/$/, '');
   const key = String(cfgOverride.key || '');
   const effModel = String(model || cfgOverride.model || '').trim();
   if (!base || !key || !effModel) return null;
+  if (!assertPublicEgressUrl(base).ok) return null;   // 🔴 SSRF 纵深防御
   return { provider: cfgOverride.provider || 'custom', base, key, model: effModel, local: false, byok: true };
 }
 

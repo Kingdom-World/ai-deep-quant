@@ -26,19 +26,34 @@ jobs:
         run: npm ci
 
       - name: Unit tests (node --test)
-        # 失败时把「not ok 清单 + 末 120 行输出」写进 job summary——
-        # summary 走公开 API 可读，不受 admin 日志权限限制
+        # 🔴 失败时把「not ok 清单 + 末 200 行输出 + 运行环境」写进 job summary。
+        #   为什么不只写 not ok 清单：本地复现失败的**主要障碍**是读不到日志
+        #   （/actions/jobs/<id>/logs 对非 admin 返回 403），只有 summary 公开可读。
+        #   为什么加「运行环境」：Node 大版本差异会造出第二类"只在本地成立"的失败，
+        #   记录下来才能一眼看出是版本问题还是代码问题。
         run: |
           set -o pipefail
           npm test 2>&1 | tee /tmp/test-out.txt || {
             {
-              echo "## Unit test failure（node $(node -v)）"
+              echo "## Unit test failure"
+              echo "- node: \`$(node -v)\`"
+              echo "- runner: \`$RUNNER_OS\`, node 期望 \`24\`"
+              echo "- commit: \`$GITHUB_SHA\`"
+              echo
+              echo "### not ok 清单"
               echo '```'
-              grep -E "^not ok" /tmp/test-out.txt | head -20
+              grep -E "^not ok" /tmp/test-out.txt | head -30 || echo "(无 not ok 行 —— 可能是进程异常退出/超时，非断言失败)"
               echo '```'
-              echo '<details><summary>最后 120 行原始输出</summary>'
+              echo
+              echo '<details><summary>最后 200 行原始输出</summary>'
               echo '```'
-              tail -120 /tmp/test-out.txt
+              tail -200 /tmp/test-out.txt
+              echo '```'
+              echo '</details>'
+              echo
+              echo '<details><summary>环境（node -p 关键项）</summary>'
+              echo '```'
+              node -p "JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,cpus:require('os').cpus().length,tmpdir:require('os').tmpdir()})"
               echo '```'
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"

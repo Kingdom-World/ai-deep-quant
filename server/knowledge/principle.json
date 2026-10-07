@@ -83,7 +83,7 @@
       "formula": "ILI_t = mean_i( |r_it| / ADV_it )，取过去 L 期均值",
       "applicability": "任何高换手策略都应报告：剔除最小成交额分位后的收益是否仍然存在。",
       "limitations": "指标对微观结构假设敏感；历史流动性与未来冲击可能非线性，极端市况下失效。",
-      "source": "Amihud, Y. (2002). Illiquidity and Stock Returns. Journal of Financial Markets, 5(1), 31-56. 另见 Amihud, Y. & Mendelson, H. (1986). Asset Pricing and the Bid-Ask Spread. Journal of Financial Economics, 17(2), 223-249.",
+      "source": "Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56. DOI: 10.1016/s1386-4181(01)00024-6. 另见 Amihud, Y. & Mendelson, H. (1986). Asset Pricing and the Bid-Ask Spread. Journal of Financial Economics, 17(2), 223-249.",
       "tags": ["流动性", "Amihud", "换手", "冲击成本", "规模因子"],
       "related": ["basis-slippage", "case-2015-ashare", "case-2013-funding-squeeze"]
     }

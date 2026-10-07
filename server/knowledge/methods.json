@@ -7,7 +7,7 @@
       "id": "method-lookahead",
       "title": "前视偏差（Look-ahead Bias）的三种隐蔽形态",
       "body": "前视偏差指使用了决策时点尚不可得的信息。最隐蔽的三种形态：① 财务数据按报告期对齐——把 Q4 数据用于次年 1 月的决策（真实披露常在 3~4 月）；② 指标窗口跨界——计算 T 日因子时用到 T 日收盘数据，却在 T 日开盘成交；③ 样本参数污染——用全样本挑选的参数回测全样本（应做样本外验证）。检验方法：把数据截断到某个历史时点重跑，若结论显著变差，则大概率存在前视。防御：PIT 数据层 + 因子计算与成交时点严格分离（T-1 收盘排名、T 开盘成交）。",
-      "source": "教材：López de Prado《Advances in Financial Machine Learning》(Wiley, 2018) 第 7 章；教材：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5), 458-471（回测过拟合的系统性讨论）。",
+      "source": "教材：López de Prado《Advances in Financial Machine Learning》(Wiley, 2018) 第 7 章；教材：Bailey, D. H., Borwein, J. M., López de Prado, M. & Zhu, Q. J. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471. DOI: 10.1090/noti1105.（回测过拟合的系统性讨论）。",
       "tags": ["前视偏差", "look-ahead", "回测陷阱", "PIT", "样本外"],
       "related": ["term-pit", "basis-financial-pubdate", "paper-lopez-de-prado-2018", "method-cross-section"]
     },
@@ -47,7 +47,7 @@
       "id": "method-cost-sensitivity",
       "title": "成本敏感度：毛收益的幻觉",
       "body": "许多策略的毛收益来自高频换手捕捉的微小价差，一旦扣除佣金、印花税与滑点就会归零甚至转负。检验做法：把费率与滑点按倍数上调（如 1 倍、2 倍、3 倍），观察净收益的衰减曲线；若 1.5 倍成本即转负，则策略对成本极度敏感，实盘几乎不可能盈利。成本估算的保守性很重要——回测常用固定百分比滑点，而真实冲击成本随下单量与流动性变化，规模越大偏差越大。因此任何策略上线前都应给出成本敏感度结论，而非只报一个扣费后的数字。",
-      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, Israel & Moskowitz (2018). Trading Costs, SSRN；Almgren & Chriss (2001). Optimal Execution of Portfolio Transactions, Journal of Risk 3(2)。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, Israel & Moskowitz (2018). Trading Costs, SSRN；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/jor.2001.041.",
       "tags": ["成本敏感度", "滑点", "换手", "净收益", "冲击成本"],
       "related": ["term-turnover", "basis-slippage", "method-parameter-robust", "paper-grinold-kahn-2000", "paper-almgren-chriss-2001", "basis-fee-cn"]
     },
@@ -111,7 +111,7 @@
       "id": "method-benchmark-overfit",
       "title": "回测过拟合的六种征兆",
       "body": "识别策略过拟合的六条经验：① 参数曲面上只有一个孤峰（邻域骤降）；② 样本外表现远差于样本内；③ 换手率极高且收益主要来自微小价差；④ 加入成本后收益归零；⑤ 收益集中在少数几笔交易或少数时间段；⑥ 逻辑上说不清为什么有效（无经济解释）。六条中命中两条以上，应视为不可信。真正的稳健策略通常表现为：参数平原、样本内外接近、逻辑清晰、对成本有一定容忍度、收益分散在多期。本平台的参数扫描与因子评估输出都围绕这些征兆设计判据。",
-      "source": "教材：Pardo《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008)；论文：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5)；Bailey & López de Prado (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5)。",
+      "source": "教材：Pardo《The Evaluation and Optimization of Trading Strategies》(2nd ed., Wiley, 2008)；论文：Bailey, D. H., Borwein, J. M., López de Prado, M. & Zhu, Q. J. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471. DOI: 10.1090/noti1105.；Bailey, D. H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094.",
       "tags": ["过拟合", "回测", "孤峰", "样本外", "经济解释"],
       "related": ["method-parameter-robust", "method-multiple-testing", "paper-bailey-lopez-2014", "method-nice-vs-meaningful"]
     },
@@ -135,7 +135,7 @@
       "formula": "时间序列动量：sign(r_{t-12,t})·r_{t+1}；横截面动量：按 r_{t-12,t} 排序做多前 decile、做空后 decile",
       "applicability": "写研究报告时必须明确动量的横截面或时间序列口径，回测实现要与所引文献一致。",
       "limitations": "动量在部分市场表现为短期反转，命名需谨慎；危机中动量可能瞬时崩溃（见 case-1987-crash）。",
-      "source": "Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers. Journal of Finance, 48(1), 65-91. 时间序列动量：Moskowitz, T., Ooi, Y. H., & Pedersen, L. H. (2012). Time Series Momentum. Journal of Financial Economics, 104(2), 228-250.",
+      "source": "Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91. DOI: 10.1111/j.1540-6261.1993.tb04702.x.；时间序列动量：Moskowitz, T., Ooi, Y. H., & Pedersen, L. H. (2012). Time Series Momentum. Journal of Financial Economics, 104(2), 228-250. DOI: 10.1016/j.jfineco.2011.11.003.",
       "tags": ["动量", "时间序列动量", "横截面动量", "趋势", "反转"],
       "related": ["principle-disposition", "term-momentum-factor", "method-cross-section", "method-layer-monotonic"]
     }

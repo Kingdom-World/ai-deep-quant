@@ -20,6 +20,7 @@ const kb = require('../server/knowledge.cjs');
 const { registerKnowledgeScreenerRoutes } = require('../server/routes/knowledge-screener.cjs');
 const { MODEL_TEMPLATES } = require('../shared/modelspec.cjs');
 const layers = require('../shared/knowledge-layers.cjs');
+const { parseSource, splitRefs } = require('../shared/knowledge-source.cjs');
 
 // 用真实内容目录起路由，拿**真实响应体**做契约（不构造假 app/req-res 之外的东西）
 const { LAYERS, AUX, CATEGORIES, LAYER_KEYS } = layers;
@@ -117,6 +118,42 @@ test('契约：teachingModel 的 key 与 /api/models/schema 的模板对得上�
   assert.ok(linked.length > 0, '应有挂教学模型的条目');
   for (const e of linked) {
     assert.ok(templateKeys.has(e.teachingModel), `${e.id} 的 teachingModel「${e.teachingModel}」不在 MODEL_TEMPLATES 里`);
+  }
+});
+
+// ═══ 三、出处结构化字段（#71）══════════════════════════════════
+
+test('契约：条目带出处结构化字段（citationStrength/sourceRefs）', async () => {
+  // 🔴 为什么前端要读得到：页面据此显示「本条出处可核查到什么强度」。
+  //   只说"有出处"（withSource）会让人误以为出处都是核过的 ——
+  //   而实测只有 7/70 条真的能被机器逐字段比对。
+  const r = await getSearch();
+  assertHasKeys(r.items[0], ['citationStrength', 'sourceRefs'], 'search.items[0]');
+  assert.ok(['none', 'existential', 'structured', 'verifiable'].includes(r.items[0].citationStrength), '强度取值必须在既定档位内');
+  assert.ok(Array.isArray(r.items[0].sourceRefs), 'sourceRefs 必须是数组');
+  // 每条 ref 的形状：前端要读 kind/strength 渲染徽标
+  if (r.items[0].sourceRefs.length) {
+    assertHasKeys(r.items[0].sourceRefs[0], ['kind', 'strength', 'doi', 'year', 'container', 'title'], 'items[0].sourceRefs[0]');
+  }
+});
+
+test('契约：stats 暴露出处强度分布（内容质量指标，与 withSource 同级）', () => {
+  const s = kb.stats();
+  assertHasKeys(s, ['byCitationStrength'], 'stats');
+  const b = s.byCitationStrength;
+  assert.ok(typeof b.verifiable === 'number' && typeof b.structured === 'number', 'verifiable/structured 必须是数字');
+  const sum = Object.values(b).reduce((a, c) => a + c, 0);
+  assert.strictEqual(sum, s.published, `强度分布之和(${sum})必须等于已发布数(${s.published}) —— 否则有条目被漏统计`);
+});
+
+test('契约：sourceRefs 是派生的，不得与 source 文本分叉', () => {
+  // 🔴 这是本设计最重要的一条：**不把结构化结果写进 JSON**（否则两份表示会分叉，
+  //   且分叉后无法判定哪个是真的）。所以必须能证明 refs 确实来自当前 source 文本。
+  const all = kb.search('', { limit: 9999 }).items;
+  for (const e of all) {
+    const parsed = parseSource(e.source);
+    assert.strictEqual(e.sourceRefs.length, parsed.refs.length, `${e.id}: sourceRefs 条数与即时解析不一致（JSON 里可能存了派生值）`);
+    assert.strictEqual(e.sourceRefs.length, splitRefs(e.source).length, `${e.id}: 与按分号拆分的条数不一致`);
   }
 });
 

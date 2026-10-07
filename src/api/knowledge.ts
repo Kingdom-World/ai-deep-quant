@@ -12,6 +12,28 @@ import type { KnowledgeCategory, KnowledgeLayer } from '../../shared/knowledge-l
 
 export type { KnowledgeCategory, KnowledgeLayer };
 
+/**
+ * 出处引用强度（#71）：
+ * - `verifiable`  有 DOI ⇒ 可机器逐字段比对（最强，Crossref 可核）
+ * - `structured`  有作者+年+标题 ⇒ 可比对标题（较强）
+ * - `existential` 只能核「这东西存在吗」（最弱，但总比不核强）
+ * - `none`        没写出处
+ *
+ * 🔴 为什么前端要区分这三档：`withSource` 只说明「有出处」，会让人误以为出处都核过了。
+ *   实测 70 条里只有 7 条真能被机器逐字段比对 —— 差别必须显式呈现。
+ */
+export type CitationStrength = 'none' | 'existential' | 'structured' | 'verifiable';
+
+/** 单条出处的结构化形态（**由 source 文本派生**，不另存一份） */
+export interface KnowledgeSourceRef {
+  kind: 'journal' | 'book' | 'chapter' | 'report' | 'web';
+  strength: CitationStrength;
+  doi: string;
+  year: number | null;
+  container: string;
+  title: string;
+}
+
 export interface KnowledgeEntry {
   id: string;
   category: KnowledgeCategory;
@@ -31,6 +53,10 @@ export interface KnowledgeEntry {
   teachingModel: string | null;
   /** 教学说明：挂着 teachingModel 时学生具体观察什么；teachingModel 为 null 时说明为何不挂 */
   teachingNote: string;
+  /** 本条 source 里最强的一条引用强度（页面据此显示"出处可核查到什么程度"） */
+  citationStrength: CitationStrength;
+  /** 结构化后的各条出处（派生字段；缺失即为空数组） */
+  sourceRefs: KnowledgeSourceRef[];
   /** 可核查出处（教材章节 / 交易所规则 / 论文题目与链接）——非空是内容硬约束 */
   source: string;
   /** 发布门：true = 无出处、未过审，**不会**出现在默认检索结果里 */
@@ -69,6 +95,8 @@ export interface KnowledgeStats {
   publishedByLayer: Record<string, number>;
   teachingTotal: number;
   withTeachingModel: number;
+  /** 出处强度分布（#71）：verifiable = 有 DOI，机器可逐字段核验 */
+  byCitationStrength: Record<CitationStrength, number>;
 }
 
 export interface KnowledgeSearchResult {

@@ -49,9 +49,16 @@ const DIR = process.env.KNOWLEDGE_DIR || path.join(__dirname, 'knowledge');
  *      本文件继续 re-export（既有 require 方零变化）。
  */
 const { LAYERS, AUX, CATEGORIES, LAYER_KEYS, isTeachingLayer } = require('../shared/knowledge-layers.cjs');
+// 🔴 出处结构化是**派生**的，不是另存一份（#71）。
+//   为什么不把解析结果写进 JSON 与 source 并存：两份表示必然分叉，
+//   而"哪个是真的"无法判定 —— 违背口径单一源纪律。派生保证同源同果。
+const { parseSource, citationStrength } = require('../shared/knowledge-source.cjs');
 
 /** 命中位置权重（标题最重，出处最轻） */
 const WEIGHT = { title: 10, tags: 6, body: 3, source: 2 };
+
+/** 出处强度档位顺序（弱 → 强）。取最强时按序比大小，勿写死布尔比较。 */
+const STRENGTH_ORDER = ['none', 'existential', 'structured', 'verifiable'];
 
 let cache = null; // { stamp, entries } —— 按目录 mtime 失效，无需重启
 
@@ -97,6 +104,33 @@ function readAll() {
            *   模板确实不适用时置 teachingModel: null 并在 note 里说明理由（不硬凑）。
            */
           teachingNote: typeof e.teachingNote === 'string' ? e.teachingNote : '',
+          /**
+           * 🔴 出处结构化（#71，**派生**而非另存）：从 source 文本解析出来，
+           *   不写进 JSON —— 两份表示必然分叉，且分叉后无法判定哪个是真的。
+           *   供前端展示「本条出处可核查到什么强度」，也让 tools/verify-sources.cjs
+           *   能直接复用，不必二次解析（避免两处解析规则漂移）。
+           */
+          sourceRefs: (() => {
+            const p = parseSource(source);
+            return p.refs.map((r) => ({
+              kind: r.kind,
+              strength: citationStrength(r),
+              doi: r.doi,
+              year: r.year,
+              container: r.container,
+              title: r.title,
+            }));
+          })(),
+          /** 本条 source 里最强的一条引用强度（verifiable > structured > existential > none） */
+          citationStrength: (() => {
+            const p = parseSource(source);
+            if (!p.refs.length) return 'none';
+            const order = ['none', 'existential', 'structured', 'verifiable'];
+            return p.refs.reduce(
+              (best, r) => (order.indexOf(citationStrength(r)) > order.indexOf(best) ? citationStrength(r) : best),
+              'none',
+            );
+          })(),
           source,
           /**
            * 🔴 发布门（§11.1「无出处的条目不发布」）：
@@ -344,6 +378,20 @@ function stats() {
   for (const e of published) publishedByCategory[e.category] = (publishedByCategory[e.category] || 0) + 1;
   const publishedByLayer = {};
   for (const k of LAYER_KEYS) publishedByLayer[k] = publishedByCategory[k] || 0;
+
+  // 🔴 出处强度分布（#71）："有多少条出处机器可逐字段核验"。
+  //   为什么进 stats 而不是只留在 tools 的报告里：它是**内容质量指标**，
+  //   和 withSource 同级 —— withSource 只说"有出处"，strength 说"出处能核到什么程度"。
+  //   页面据此显示"可核验 N 条"，用户才知道该不该信任本库的引用。
+  //   ⚠️ 这不是发布门：现在只观测、不拦截（收紧门禁会一次性把存量打回，需人工补出处）。
+  const byStrength = { verifiable: 0, structured: 0, existential: 0, none: 0 };
+  for (const e of published) {
+    const p = parseSource(e.source);
+    const best = p.refs.length
+      ? p.refs.reduce((b, r) => (STRENGTH_ORDER.indexOf(citationStrength(r)) > STRENGTH_ORDER.indexOf(b) ? citationStrength(r) : b), 'none')
+      : 'none';
+    byStrength[best] = (byStrength[best] || 0) + 1;
+  }
   return {
     total: all.length,
     published: published.length,
@@ -358,6 +406,8 @@ function stats() {
     teachingTotal: published.filter((e) => e.isTeachingLayer).length,
     /** 挂教学模型的条目数（§11.1 教学因子联动的落地进度；只算已发布，否则会挂到看不见的草稿上） */
     withTeachingModel: published.filter((e) => e.teachingModel).length,
+    /** 出处强度分布（已发布口径）：verifiable = 有 DOI 可逐字段机器比对 */
+    byCitationStrength: byStrength,
   };
 }
 

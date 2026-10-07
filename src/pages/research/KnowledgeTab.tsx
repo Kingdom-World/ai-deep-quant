@@ -41,6 +41,20 @@ const LAYER_BADGE: Record<string, string> = {
   cycle: '周期',
 };
 
+/**
+ * 出处强度徽标（#71）。
+ * 🔴 为什么必须显式区分：页面原来只显示「全部带出处（N/M）」，
+ *   那句话把"我写了个出处"说成了"出处是对的"。实测 70 条里只有 7 条
+ *   真能被机器逐字段比对（Crossref 核过），其余靠格式像不像。
+ *   不把差别摆出来，等于替用户做了一个他没法验证的信任假设。
+ */
+const STRENGTH_META: Record<string, { label: string; color: string; hint: string }> = {
+  verifiable: { label: '可核验', color: '#4ade80', hint: '有 DOI，出处的卷期页已与 Crossref 逐字段比对通过' },
+  structured: { label: '可解析', color: '#60a5fa', hint: '作者/年份/标题完整，但无 DOI，只能核到标题级' },
+  existential: { label: '仅存证', color: '#f59e0b', hint: '出处形态不规则，只能核「是否真实存在」' },
+  none: { label: '无出处', color: '#f87171', hint: '没有出处（草稿）' },
+};
+
 export default function KnowledgeTab() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
@@ -130,7 +144,9 @@ export default function KnowledgeTab() {
   const statLine = useMemo(() => {
     if (!stats) return '';
     // 草稿数显式外露：内容欠账有多少条是"看得见的待办量"，不该只藏在后端 stats 里
-    const src = `已发布 ${stats.published}/${stats.total} 条均带出处`;
+    const cs = stats.byCitationStrength;
+    const verifiable = cs?.verifiable ?? 0;
+    const src = `已发布 ${stats.published}/${stats.total} 条均带出处，其中 ${verifiable} 条出处可机器核验`;
     const todo = stats.draft > 0 ? ` · 草稿待审 ${stats.draft} 条` : '';
     return isFiltered ? `命中 ${total} 条 · ${src}${todo}` : `共 ${stats.published} 条 · ${src}${todo}`;
   }, [stats, total, isFiltered]);
@@ -273,6 +289,19 @@ function CatChip({ active, onClick, label, count, color, draft }: { active: bool
         </span>
       )}
     </button>
+  );
+}
+
+/** 出处强度徽标（#71）：把"出处可核查到什么程度"摆在明面上 */
+function CitationBadge({ strength }: { strength: string }) {
+  const m = STRENGTH_META[strength] || STRENGTH_META.none;
+  return (
+    <span
+      title={m.hint}
+      style={{ fontSize: 10, color: m.color, border: `1px solid ${m.color}55`, backgroundColor: `${m.color}14`, borderRadius: 4, padding: '1px 6px', cursor: 'help' }}
+    >
+      {m.label}
+    </span>
   );
 }
 
@@ -423,7 +452,9 @@ function EntryCard({
         </div>
       )}
 
-      {/* 出处：与正文同等显眼——这是本平台的知识库与"随便写个说明"的区别 */}
+      {/* 出处：与正文同等显眼——这是本平台的知识库与"随便写个说明"的区别。
+          🔴 出处旁必须挂强度徽标（#71）：只显示出处而不说它能被核查到什么程度，
+             等于替用户做了一个他没法验证的信任假设（实测仅 7/70 可机器核验）。 */}
       <div
         style={{
           marginTop: 12,
@@ -436,7 +467,15 @@ function EntryCard({
           lineHeight: 1.8,
         }}
       >
-        <span style={{ color: '#f59e0b', fontWeight: 700, marginRight: 6 }}>出处</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: entry.source ? 6 : 0 }}>
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>出处</span>
+          <CitationBadge strength={entry.citationStrength} />
+          {entry.sourceRefs?.some((r) => r.doi) && (
+            <span style={{ fontSize: 10, color: '#475569' }}>
+              {entry.sourceRefs.filter((r) => r.doi).length} 条含 DOI
+            </span>
+          )}
+        </div>
         {entry.source}
       </div>
 

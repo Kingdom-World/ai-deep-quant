@@ -63,7 +63,7 @@
       "id": "term-maxdrawdown",
       "title": "最大回撤（Maximum Drawdown）",
       "body": "最大回撤指净值曲线从某一历史高点到其后最低点的最大跌幅：MDD = max over t of ((峰值 − 当前值) / 峰值)。它刻画最坏情况下从顶到底亏多少，是风险承受力的直观指标，且与前视无关（只依赖历史路径）。与夏普的差异：夏普看波动，回撤看路径极值——两个策略夏普相同，回撤可能差异巨大。常见误用：用最大回撤与最大回撤持续期混为一谈；回撤持续期指从谷底恢复到前高所需时间，往往比跌幅本身更折磨人。",
-      "source": "教材：Bacon, C.R.《Practical Portfolio Performance Measurement and Attribution》(2nd ed., Wiley, 2008) 第 4 章回撤度量；Magdon-Ismail, M. & Atiya, A. (2004). Maximum Drawdown. Risk Magazine, 17(10), 99-102（回撤的解析性质）。",
+      "source": "教材：Bacon, C.R.《Practical Portfolio Performance Measurement and Attribution》(2nd ed., Wiley, 2008) 第 4 章回撤度量；Magdon-Ismail, M., Atiya, A. F., Pratap, A. & Abu-Mostafa, Y. S. (2004). On the Maximum Drawdown of a Brownian Motion. Journal of Applied Probability, 41(1), 147-161. DOI: 10.1239/jap/1077134674（回撤的解析性质；Risk Magazine 2004 那篇业界文章与本文同源，但 Risk 不在 Crossref 收录范围）。",
       "tags": ["最大回撤", "MDD", "回撤持续期", "风险"],
       "related": ["term-sharpe", "method-circuitbreaker", "case-1987-crash", "case-2020-liquidity"]
     },

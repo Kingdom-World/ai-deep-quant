@@ -31,7 +31,7 @@
       "id": "method-multiple-testing",
       "title": "多重比较：为什么试得越多越容易骗自己",
       "body": "在 5% 显著性水平下，单独检验一个假设有 5% 概率误报。若同时检验 100 个因子，即使它们全都毫无预测能力，期望仍有约 5 个看起来显著。这就是多重比较（数据窥探）问题。缓解手段：① 提高门槛——Harvey, Liu & Zhu (2016) 建议截面研究中用 |t| > 3；② 控制错误发现率（FDR）——Benjamini-Hochberg 方法；③ 样本外验证与真实交易成本校验；④ 记录所有尝试（含失败的），避免只报告幸存者。本平台的参数稳健性三防（孤峰判据/样本外/成本敏感度）即是该原则在参数层面的落地。",
-      "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68 DOI: 10.1093/rfs/hhv059.；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
+      "source": "论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68 DOI: 10.1093/rfs/hhv059.；Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing. Journal of the Royal Statistical Society Series B, 57(1), 289-300. DOI: 10.1111/j.2517-6161.1995.tb02031.x.；教材：López de Prado (2018) 第 8 章 The Dangers of Backtesting。",
       "tags": ["多重比较", "数据窥探", "p-hacking", "显著性", "FDR"],
       "related": ["term-stats-significance", "method-parameter-robust", "paper-lopez-de-prado-2018", "paper-harvey-liu-zhu-2016", "paper-benjamini-hochberg-1995", "term-ic", "term-newey-west", "method-benchmark-overfit", "paper-newey-west-1987", "paper-bailey-lopez-2014", "method-nice-vs-meaningful"]
     },
@@ -47,7 +47,7 @@
       "id": "method-cost-sensitivity",
       "title": "成本敏感度：毛收益的幻觉",
       "body": "许多策略的毛收益来自高频换手捕捉的微小价差，一旦扣除佣金、印花税与滑点就会归零甚至转负。检验做法：把费率与滑点按倍数上调（如 1 倍、2 倍、3 倍），观察净收益的衰减曲线；若 1.5 倍成本即转负，则策略对成本极度敏感，实盘几乎不可能盈利。成本估算的保守性很重要——回测常用固定百分比滑点，而真实冲击成本随下单量与流动性变化，规模越大偏差越大。因此任何策略上线前都应给出成本敏感度结论，而非只报一个扣费后的数字。",
-      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, Israel & Moskowitz (2018). Trading Costs, SSRN；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/jor.2001.041.",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, A., Israel, R. & Moskowitz, T. J. (2018). Trading Costs. SSRN Working Paper. DOI: 10.2139/ssrn.3229719.；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/jor.2001.041.",
       "tags": ["成本敏感度", "滑点", "换手", "净收益", "冲击成本"],
       "related": ["term-turnover", "basis-slippage", "method-parameter-robust", "paper-grinold-kahn-2000", "paper-almgren-chriss-2001", "basis-fee-cn"]
     },

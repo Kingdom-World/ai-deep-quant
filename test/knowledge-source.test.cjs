@@ -199,3 +199,88 @@ test('detectKind：中文官方文档/接口文档仍判 report（不能被误�
   assert.strictEqual(p('Baostock 日线数据接口 field=pctChg 定义（涨跌幅，以百分数表示）'), 'report');
   assert.strictEqual(p('上海证券交易所与深圳证券交易所 2015 年 7-8 月关于临时停市与交易异常的公告'), 'report');
 });
+
+// ═══ 审查修复回归（2026-10-08）═══════════════════════════════
+// 🔴 这 5 条都是"看起来对、实际错"的形态（由子代理复审 + 独立复现确认）
+
+test('splitRefs：括号内的分号不得切开（否则标注被割裂成假引用）', () => {
+  // 实测：修复前 `（查无此文；同刊亦无）` 被切成两段
+  const got = S.splitRefs('（FOMC 2022；补充）；Campbell (2011). T.（查无此文；同刊亦无）');
+  assert.strictEqual(got.length, 2, `应切 2 段，实际 ${got.length}：${JSON.stringify(got)}`);
+  assert.ok(got[0].includes('FOMC 2022；补充'), '第一段应含完整括号内容');
+  assert.ok(got[1].includes('查无此文；同刊亦无'), '第二段应含完整括号标注');
+});
+
+test('splitRefs：括号外的分号仍要切（不能修过头）', () => {
+  const got = S.splitRefs('A (2020). T1. Journal, 1(1), 1-10；B (2021). T2. Journal, 2(2), 2-20');
+  assert.strictEqual(got.length, 2);
+  assert.ok(got[0].startsWith('A (2020)'));
+  assert.ok(got[1].startsWith('B (2021)'));
+});
+
+test('detectKind：期刊名里的出版社字样不得把期刊判成书', () => {
+  // 实测：修复前 `. Journal of Finance, 25(2), 383-417. 数据见 Wiley Online Library`
+  // 被判成 book（Wiley 信号抢先）
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  assert.strictEqual(p('Fama, E. F. (1970). Efficient Capital Markets. Journal of Finance, 25(2), 383-417. 数据见 Wiley Online Library'), 'journal');
+  assert.strictEqual(p('Some Author (2010). A Paper. Journal of Banking and Finance. Published by Elsevier.'), 'journal');
+});
+
+test('detectKind：书的判定仍要成立（修复不能过头）', () => {
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  assert.strictEqual(p('Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill.'), 'book');
+  assert.strictEqual(p('Lowenstein, R. (2000). When Genius Failed. Random House.'), 'book');
+  assert.strictEqual(p('Gorton, G. B. (2010). Slapped by the Invisible Hand. Oxford University Press.'), 'book');
+});
+
+test('parseAuthors：中文标签前缀不得混入作者名（真实库曾 49 处受影响）', () => {
+  // 实测：修复前 `论文：Fama, E. F. (1970)…` ⇒ authors=['论文：Fama']
+  assert.deepStrictEqual(S.parseSource('论文：Fama, E. F. (1970). T. Journal of Finance, 48(1), 1-10.').refs[0].authors, ['Fama']);
+  assert.deepStrictEqual(S.parseSource('原始论文：Newey, W.K. & West, K.D. (1987). T. Econometrica, 46(6), 1-10.').refs[0].authors, ['Newey', 'West']);
+  // 无标签的正常写法不受影响
+  assert.deepStrictEqual(S.parseSource('Fama, E. F. & French, K. R. (1993). T. Journal, 1(1), 1-10.').refs[0].authors, ['Fama', 'French']);
+});
+
+test('parseAuthors：解析不出时返回空，不得把原文当作者名', () => {
+  const r = S.parseSource('（无作者的中文说明：这一条没有作者）').refs[0];
+  assert.ok((r.authors || []).every((a) => !/[\u4e00-\u9fff：:（）]/.test(a)),
+    `作者名不得含中文/冒号/括号：${JSON.stringify(r.authors)}`);
+});
+
+test('citationStrength：只有 container 不算 structured（定义要求"可比对标题"）', () => {
+  // 实测：修复前 74 条 structured 里 41 条只有 container（如"交易规则"），无法比对任何东西
+  // 真实形态：书名/公告名落进 container、无 title（全文无「作者(年)」骨架）
+  const onlyContainer = S.parseRef('方法论参考：Grinold & Kahn《Active Portfolio Management》第 9 章');
+  assert.strictEqual(S.citationStrength(onlyContainer), 'existential',
+    '只有 container 应判 existential（无法比对）');
+  const withTitle = S.parseRef('Author (2020). A Real Title. Journal, 1(1), 1-10.');
+  assert.strictEqual(S.citationStrength(withTitle), 'structured');
+  const withDoi = S.parseRef('Author (2020). T. Journal, 1(1), 1-10. DOI: 10.1234/abc.def');
+  assert.strictEqual(S.citationStrength(withDoi), 'verifiable');
+});
+
+test('parseAuthors：作者段**必须以拉丁字母开头**（防把说明文字当作者）', () => {
+  // 独立于"标签剥离"的兜底防线：即使标签没剥干净，正则也应拒绝非拉丁开头
+  for (const s of [
+    '说明：本条目出处见交易所规则',
+    '（补充：无作者）',
+    '依据 交易规则 第 3 条',
+  ]) {
+    const a = S.parseSource(s).refs[0].authors || [];
+    assert.ok(a.every((x) => /^[A-Za-zÀ-Þ]/.test(x)),
+      `作者名必须以拉丁字母开头，实际：${JSON.stringify(a)}（输入 ${JSON.stringify(s)}）`);
+  }
+});
+
+test('🔴 parseAuthors 的失败兜底必须是空串（源码级契约）', () => {
+  // 实测：这一行的守备场景在当前输入形态下**不可达**
+  //   （`part.split(',')[0]` → `split(/[.。]/)[0]` 之后，target 已不含可匹配的拉丁串）
+  // ⇒ 用源码级断言锁定行为，避免"运行时测不到 ⇒ 悄悄改成返回原文"
+  //   而那会把说明文字当作者名放出去（假数据比没数据更糟）。
+  const src = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'shared', 'knowledge-source.cjs'), 'utf8');
+  const i = src.indexOf('function parseAuthors');
+  const seg = src.slice(i, src.indexOf('\n}', i));
+  assert.match(seg, /return m \? norm\(m\[1\]\) : '';/, '失败兜底必须返回空串，不得返回 target');
+  assert.ok(!/return m \? norm\(m\[1\]\) : target;/.test(seg), '不得把 target 当兜底');
+});

@@ -307,6 +307,24 @@ const titleEq = titleEquivalent(ref.title, rec.theirs.title);
     console.log('\n⚠️ 网络不可用，未写快照（避免把"没核到"固化成"核过了"）');
   }
 
+  // 🔴 快照过期自检（2026-10-08 审查加）
+  //   背景：快照**没有读取方**（服务端不读、UI 不读），但将来可能有人接。
+  //   而快照一旦过期（数据改了但没重跑工具），读到的就是**过期结论**——
+  //   它的形态与正确结论完全一样，看不出问题。
+  //   ⇒ 每次跑完核验都提醒一次：快照的 verified 数与**当前实际**是否一致。
+  try {
+    if (fs.existsSync(OUT_FILE)) {
+      const old = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8'));
+      const oldVerified = (old.tally || {}).verified ?? (old.results || []).filter((r) => r.status === 'verified').length;
+      const nowVerified = tally.verified || 0;
+      if (oldVerified !== nowVerified) {
+        console.log(`\n🔴 快照已过期：文件里 verified=${oldVerified}，当前实际=${nowVerified}`);
+        console.log('   （快照生成于 ' + (old.generatedAt || '未知') + '）');
+        console.log('   如有任何读取方依赖它，会拿到过期结论 ⇒ 请用 --write 重跑刷新。');
+      }
+    }
+  } catch { /* 快照损坏不影响核验本身 */ }
+
   if (networkDown) return 2;
   return problems.length ? 1 : 0;
 }

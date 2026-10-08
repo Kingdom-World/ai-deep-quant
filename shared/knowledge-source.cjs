@@ -75,10 +75,29 @@ function norm(s) {
 
 /** 拆多条出处：分号/中文分号切分（条目里常见「…；另见 …」） */
 function splitRefs(text) {
-  return norm(text)
-    .split(/[;；]/)
-    .map(norm)
-    .filter(Boolean);
+  // 🔴 不能无条件在分号处切（2026-10-08 审查发现并复现）：
+  //   中文括号内的分号是**同一句的补充说明**，不是引用分隔符。
+  //   实证：`Campbell (2011). T.（查无此文；同刊亦无）` 被切成
+  //   `…（查无此文` + `同刊亦无）` 两段 ⇒ **括号标注被割裂成假引用**
+  //   （真实条目 case-2022-rate-hike 因此多出一段无 title 的 report）。
+  //   这类错误会污染下游（核验工具把半截括号当引用去查）。
+  //   ⇒ 只在**括号深度为 0** 时切分。
+  const s = norm(text);
+  const parts = [];
+  let buf = '';
+  let depth = 0;
+  for (const ch of s) {
+    if (ch === '（' || ch === '(' || ch === '【' || ch === '《') depth++;
+    else if (ch === '）' || ch === ')' || ch === '】' || ch === '》') depth = Math.max(0, depth - 1);
+    if ((ch === ';' || ch === '；') && depth === 0) {
+      parts.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  parts.push(buf);
+  return parts.map(norm).filter(Boolean);
 }
 
 /**
@@ -96,6 +115,11 @@ function parseAuthors(s) {
   if (!t) return [];
   // 去掉结尾的年份括号 " (2018)" 与后续正文（作者段之后是标题）
   const cleaned = t
+    // 🔴 先剥掉**中文标签前缀**（2026-10-08 审查发现：真实库 49 处受影响）：
+    //   出处里常写「论文：Fama, E. F. (1970)…」「原始论文：Newey…」——
+    //   标签会被当成作者名的一部分（实测得到 authors=[\"论文：Fama\"]）。
+    //   ⇒ 作者段**必须**以拉丁大写字母开头，故先把标签剥掉再解析。
+    .replace(/^[\u4e00-\u9fff\s]*(论文|教材|原始论文|研究|方法|口径|官方|参考|文献|来源|依据)?\s*[：:]\s*/, '')
     .replace(/\s*\(\d{4}[a-z]?\)\s*$/, '')
     .trim();
   if (!cleaned) return [];
@@ -111,7 +135,9 @@ function parseAuthors(s) {
       const head = part.split(',')[0].trim();
       const target = /[.。]/.test(head) ? part.split(/[.。]/)[0].trim() : head;
       const m = target.match(/^([A-ZÀ-Þ][\p{L}'’\-]+(?:\s+(?:de|del|van|von|der|la|le|da|dos|di)\s+[\p{L}'’\-]+|\s+[A-ZÀ-Þ][\p{L}'’\-]+)*)/u);
-      return m ? norm(m[1]) : target;
+      // 🔴 匹配失败时**返回空**而不是 target —— 返回 target 会把中文前缀
+      //    当作者名放出去（比"没解析出作者"更糟：假数据会进核验流程）
+      return m ? norm(m[1]) : '';
     })
     .filter(Boolean);
 }
@@ -131,21 +157,29 @@ function detectKind(t) {
   //      Society B）是标准缩写，词表无 `journal` 故漏判。
   //      ⇒ 显式收录常见缩写。
   //   ③ 词表再加若干本领域常见刊名首词（econometrica / biometrica / ssrn 等）。
-  // 🔴 出版社信号必须**先于**期刊词表判 —— 否则 `Active Portfolio Management`
-  //    这类书名里的 `management` 会命中期刊词表，把**书**判成期刊
-  //    （实测踩过；书被判成期刊后会走 DOI 补全 = 给书伪造 DOI 的入口）。
-  //    但需排除"期刊名里含 Press 的情况"不成立，故出版社信号放前面是安全的。
-  const PUBLISHERS = ['Press', 'Publishing', 'Publishers?', 'Wiley', 'McGraw-?Hill', 'Springer',
-    'Pearson', 'Elsevier', 'Random House', 'Princeton', 'Harvard Business', 'MIT Press',
-    'Oxford', 'Cambridge University', 'John Wiley', 'FT Press', 'Penguin', 'Harper',
-    'Simon & Schuster', '出版社'];
-  if (new RegExp(`\\b(${PUBLISHERS.join('|')})`, 'i').test(t) && !/\bWorking Paper\b/i.test(t)) return 'book';
+  // 🔴 出版社信号（2026-10-08 审查修正，两次都踩过）：
+  //   ① 必须**先于**期刊词表判 —— 否则 `Active Portfolio Management` 的
+  //      `management` 命中期刊词表，把**书**判成期刊（书被判成期刊 =
+  //      给书伪造 DOI 的入口）。
+  //   ② 但**不能无条件抢先** —— 期刊名里常出现 `Wiley`/`Elsevier`：
+  //      `… Journal of Finance. 数据见 Wiley Online Library` 会被误判成书
+  //      （实测复现）。
+  //   ⇒ 正确做法：**期刊形态优先，但要求"刊名 + 卷期页"同时出现**；
+  //      仅凭刊名词就判期刊时，才让出版社信号参与（书的书名通常无卷期页）。
   const JOURNALS = 'journal|review|quarterly|economics|finance|science|reports|annals|notices|'
-    + 'econometric|biometric|statistic|psychometr|management|banking|financial|'
-    + 'jrss|jf|jfe|rfs|aer|qje|jpe|ssrn|risk|portfolio|forecast';
-  // 期刊卷期页：`Journal, 29(1), 5-68`（词首前缀 + 40 字符内出现卷期括号）
+    + 'econometric|biometric|statistic|psychometr|banking|financial|'
+    + 'jrss|jf|jfe|rfs|aer|qje|jpe|ssrn|risk|portfolio|forecast|management';
+  // ① 期刊最强形态：刊名 + （20 字符内）卷期括号 ⇒ 直接判期刊，出版社信号不参与
   if (new RegExp(`(${JOURNALS})[^.;]{0,40},?\\s*\\d+\\s*\\(`, 'i').test(t)) return 'journal';
+  // ② 出版社信号（含 Random House/Princeton 等商业社 + Wiley/McGraw-Hill 等学术社）
+  const PUBLISHERS = ['Press', 'Publishing', 'Publishers?', 'McGraw-?Hill', 'Springer',
+    'Pearson', 'Random House', 'Princeton', 'Harvard Business', 'MIT Press',
+    'Oxford University Press', 'Cambridge University', 'John Wiley', 'FT Press',
+    'Penguin', 'Harper', 'Simon & Schuster', '出版社'];
+  if (new RegExp(`\\b(${PUBLISHERS.join('|')})`, 'i').test(t) && !/\bWorking Paper\b/i.test(t)) return 'book';
+  // ③ 仅凭刊名词（无卷期页）⇒ 也判期刊（放行 `Wiley Online Library` 这类）
   if (new RegExp(`\\b(${JOURNALS})`, 'i').test(t)) return 'journal';
+  if (/\b(Wiley|Elsevier|Springer|Pearson)\b/i.test(t)) return 'book';
   if (/^https?:\/\//.test(t)) return 'web';
   return 'report';
 }
@@ -352,8 +386,15 @@ function parseSource(source) {
 function citationStrength(ref) {
   if (!ref || !ref.raw) return 'none';
   if (ref.doi) return 'verifiable';
-  if (ref.authors.length && ref.year && ref.title) return 'structured';
-  if (ref.title || ref.container) return 'structured';
+  // 🔴 structured 的判据（2026-10-08 审查修正）：
+  //   原先写 `ref.title || ref.container` ⇒ **只要有 container 就算 structured**，
+  //   而 container 常是"交易规则"/"关于…的公告"这类**无法比对任何东西**的值。
+  //   实测：74 条 structured 里 **41 条只有 container 没有 title** ——
+  //   接近一半的"结构化"是虚的，UI 上的强度徽标因此被高估。
+  //   ⇒ 与上方定义对齐：必须有**可核验的标题**才算 structured。
+  //   ⚠️ 有作者+年+标题的"完整结构化"仍算 structured（不另设等级，避免徽标口径膨胀）。
+  //   ⚠️ 只有 title 没有作者/年（如机构公告）也算 —— 标题本身可被搜索核验。
+  if (ref.title) return 'structured';
   return 'existential';
 }
 

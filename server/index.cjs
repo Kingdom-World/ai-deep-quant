@@ -1356,6 +1356,14 @@ app.get('/api/health', (req, res) => {
       dataRoutes: dataRoutesError
         ? { ok: false, status: 'degraded', reason: String(dataRoutesError.message || dataRoutesError).slice(0, 200) }
         : { ok: true, status: 'ready' },
+      // 🔴 鉴权状态（2026-10-08 审查加）：未启用时 `isAdminReq` 对所有人返回 true
+      //   ⇒ 草稿视图（/api/knowledge/entries?includeDraft=1）会向任何访问者开放。
+      //   原来只有一条启动日志告警，而 Serverless 日志不常看 —— 把它外露到自检端点，
+      //   运维扫一眼 /api/health 就能发现"公网部署却忘了开鉴权"。
+      //   ⚠️ **只报布尔开关，不报账号/口令/域名等任何拓扑信息**（公开仓库保密红线）。
+      auth: AUTH_ENABLED
+        ? { ok: true, status: 'enabled' }
+        : { ok: false, status: 'disabled', reason: '未启用鉴权（AUTH_ENABLED 未置 1 且未配置 SITE_PASSWORD）：管理类视图对任何访问者开放，请勿用于公网' },
     },
     time: new Date().toISOString(),
   });

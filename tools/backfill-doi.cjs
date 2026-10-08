@@ -27,6 +27,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { titleSim, SIM_GATE } = require('../shared/source-match.cjs');
 
 const ROOT = path.join(__dirname, '..');
 process.env.KNOWLEDGE_DIR = path.join(ROOT, 'server', 'knowledge');
@@ -43,21 +44,7 @@ const ONLY = (() => {
 const UA = 'ai-deep-quant-doi-backfill/1.0 (https://github.com/Kingdom-World/ai-deep-quant; mailto:contact@example.com)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 标题相似度（Jaccard 词级）—— 与 verify-sources.cjs 同口径 */
-function titleSim(a, b) {
-  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, ' ').trim();
-  const A = norm(a), B = norm(b);
-  if (!A || !B) return 0;
-  if (A === B) return 1;
-  const sa = new Set(A.split(' ')), sb = new Set(B.split(' '));
-  let inter = 0;
-  for (const w of sa) if (sb.has(w)) inter++;
-  const union = sa.size + sb.size - inter;
-  return union ? inter / union : 0;
-}
 
-/** 门禁：标题相似度阈值。低于它 ⇒ 检索命中的是别的论文，不写 */
-const SIM_GATE = 0.75;
 
 // 🔴 实测教训（#74 落盘后由 verify-sources 抓出，19 条里3 条是错的）：
 //   **只比标题会被"书评 / 短评 / 引用文献"骗过**。三个真实错例：

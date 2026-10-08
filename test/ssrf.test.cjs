@@ -192,3 +192,42 @@ test('normalizeByokOverride：原有铁律未被SSRF 改动破坏', () => {
   assert.strictEqual(normalizeByokOverride({ base: 'ftp://a.com', key: 'k', model: 'm' }), null, '非 http(s) 仍拒');
   assert.strictEqual(normalizeByokOverride({ base: `https://a.com/${'x'.repeat(400)}`, key: 'k', model: 'm' }), null, '超长仍拒');
 });
+// ─────────────────────────────────────────────────────────────
+// 尾点绕过（2026-10-08 审查发现并复现）
+//
+// 🔴 按 DNS 规范 `localhost.` ≡ `localhost`（尾点是合法 FQDN 写法，
+//    解析器会忽略它）。我们的判定基于字符串 ⇒ 多一个点就全部落空。
+//    实测修复前 6/6 全放行（含元数据端点），等于防护形同虚设。
+// ─────────────────────────────────────────────────────────────
+
+test('🔴 尾点绕过：所有内网形态加尾点仍必须拦下', () => {
+  const bypasses = [
+    'http://localhost./v1',
+    'http://foo.local./v1',
+    'http://db.internal./v1',
+    'http://metadata.google.internal./v1',
+    'http://127.0.0.1./v1',
+    'http://10.0.0.1./v1',
+    'http://192.168.1.1./v1',
+    'http://169.254.169.254./latest/meta-data/',
+  ];
+  for (const u of bypasses) {
+    assert.strictEqual(assertPublicEgressUrl(u).ok, false, `尾点绕过未拦：${u}`);
+  }
+});
+
+test('尾点绕过：多重尾点也要拦（DNS 允许 fqdn.. 形式）', () => {
+  assert.strictEqual(assertPublicEgressUrl('http://localhost../v1').ok, false);
+  assert.strictEqual(assertPublicEgressUrl('http://10.0.0.1.../v1').ok, false);
+});
+
+test('尾点修复不能把公网也拦掉（防过窄）', () => {
+  assert.strictEqual(assertPublicEgressUrl('https://api.example.com./v1').ok, true, '公网域名带尾点应放行');
+  assert.strictEqual(assertPublicEgressUrl('https://open.bigmodel.cn/api/paas/v4').ok, true);
+});
+
+test('normalizeHost：尾点归一后与无尾点写法等价', () => {
+  assert.strictEqual(normalizeHost('localhost.'), 'localhost');
+  assert.strictEqual(normalizeHost('10.0.0.1.'), '10.0.0.1');
+  assert.strictEqual(normalizeHost('LOCALHOST.'), 'localhost');
+});

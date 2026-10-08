@@ -227,8 +227,11 @@ function parseRef(text) {
     afterTitle = titleEndInRaw > 0 ? raw.slice(titleEndInRaw) : rest.slice(fullTitle.length);
     ref.title = norm(fullTitle).replace(/[,;]\s*$/, '').slice(0, 300);
   } else {
-    // 🔴 本知识库里另有两类**没有「作者(年)」骨架**的出处（占 122 条引用里的多数），
+    // 🔴 本知识库里另有两类**没有「作者(年)」骨架**的出处（实测占多数引用），
     //   实测统计：把它们判成 parsed:false 会让结构化率只有 43%，形同放弃。
+    //   ⚠️ 这里**不写死条数** —— 数字会随条目增删腐坏（曾写"122 条"而实际已 127），
+    //   而注释里的过期数字比没有数字更糟（读者会以为是当前事实）。
+    //   需要具体数字就现场跑 tools/verify-sources.cjs。
     //   它们各有固定形态，**显式识别比一律判失败更有用**：
     //
     //   ① 教材章节：`教材：Grinold & Kahn《Active Portfolio Management》第 7 章`

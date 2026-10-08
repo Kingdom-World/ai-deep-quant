@@ -121,6 +121,26 @@ function norm(s) {
 }
 
 /**
+ * 注入检测专用归一：**去掉所有空白**。
+ *
+ * 🔴 为什么不能复用 norm（2026-10-08 审查发现并复现的绕过）：
+ *   `norm` 只把连续空白压成一个空格，字符间的**单空格仍保留** ⇒
+ *   `忽 略 之 前 的 指 令` 与 `ignore previous instructions` 的中文版
+ *   都无法命中 pattern（实测 4/4 全绕过）。
+ *   攻击者只需在字符间插空格即可穿透闸门 —— 这是最廉价的一类绕过。
+ *
+ * ⚠️ 但**不能**把去空白当成唯一归一：英文 `ignore previous instructions`
+ *   是**词间有空格**的短语，全去空格后 pattern 若含空格就匹配不上。
+ *   ⇒ 注册表里的 pattern 一律写成**不含空白**的形式（见 INJECTION_PATTERNS
+ *     的注释），检测时对输入去空白、对 pattern 也去空白后比对。
+ * @param {string} s
+ * @returns {string} 去空白、小写
+ */
+function normTight(s) {
+  return String(s || '').replace(/[\s　]+/g, '').toLowerCase();
+}
+
+/**
  * 判定是否越界。
  * @param {string} q 用户问题
  * @returns {{outOfScope:boolean, kind?:string, label?:string, refuse?:string, matched?:string}|{outOfScope:false}}
@@ -201,11 +221,55 @@ const INJECTION_PATTERNS = [
 function detectInjection(q) {
   const s = String(q || '');
   if (!s) return { injection: false };
+  // 🔴 双路匹配（2026-10-08 修）：**原样** 与 **去空白** 各扫一遍。
+  //   只扫原样 ⇒ 字符间插空格即可绕过（实测 4/4 穿透）；
+  //   只扫去空白 ⇒ pattern 里若含空格则英文短语匹配不上。
+  //   两路都要，且 pattern 自身也要去空白后比对（见下）。
+  const tight = normTight(s);
   for (const re of INJECTION_PATTERNS) {
     const m = s.match(re);
     if (m) return { injection: true, matched: m[0] };
+    // 去空白后再匹配：把 pattern 也去空白（一次性预计算，避免每轮重算）
+    const tightRe = re.__tight || (re.__tight = new RegExp(stripWs(re.source), re.flags));
+    const m2 = tightRe.exec(tight);
+    if (m2) return { injection: true, matched: m2[0], matchedTight: true };
   }
   return { injection: false };
+}
+
+/**
+ * 把正则源码里**字符类之外**的空白匹配式去掉：
+ *   · 字面空格 / `\t` ⇒ 直接删
+ *   · `\s`（含其后量词 `*`/`+`/`?`）⇒ 整段删掉
+ * 字符类 `[...]` 内部原样保留（那里空格可能是字面量）。
+ *
+ * 用途：去空白那一路的 pattern 生成（`忽 略 之 前` 这类插空绕过）。
+ * 🔴 为什么不用简单 `replace(/\s/g,'')` —— 它会把 `\s` 里的 `s` 当普通字符
+ *    留下，生成一个**永远匹配不到**的错误正则（静默失效，比不修更糟）。
+ */
+function stripWs(src) {
+  let out = '';
+  let inClass = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '\\' && i + 1 < src.length) {
+      const nx = src[i + 1];
+      if (!inClass && nx === 's') {
+        i++;                                   // 吃掉 `s`
+        const q = src[i + 1];
+        if (q === '*' || q === '+' || q === '?') i++;   // 连带量词
+        continue;
+      }
+      out += ch + nx;
+      i++;
+      continue;
+    }
+    if (ch === '[') inClass = true;
+    else if (ch === ']') inClass = false;
+    if (!inClass && (ch === ' ' || ch === '\t')) continue;
+    out += ch;
+  }
+  return out;
 }
 
 /** 注入被拦时的回答：中性、不解释内部结构、不给二次尝试的暗示 */

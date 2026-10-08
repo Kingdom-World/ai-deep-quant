@@ -27,6 +27,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { titleSim, titleEquivalent, SIM_GATE } = require('../shared/source-match.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const OUT_FILE = path.join(ROOT, 'data', 'source-verification.json');
@@ -92,19 +93,6 @@ async function byTitle(title, year) {
   }
 }
 
-/** 标题相似度（0-1）：用于判断"检索到的这篇是不是我们引的那篇" */
-function titleSim(a, b) {
-  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, ' ').trim();
-  const A = norm(a), B = norm(b);
-  if (!A || !B) return 0;
-  if (A === B) return 1;
-  // 词级 Jaccard：标题被期刊名/DOI 污染时仍能给出有意义的分数
-  const sa = new Set(A.split(' ')), sb = new Set(B.split(' '));
-  let inter = 0;
-  for (const w of sa) if (sb.has(w)) inter++;
-  const union = sa.size + sb.size - inter;
-  return union ? inter / union : 0;
-}
 
 /**
  * 逐字段比对：返回 [{field, ours, theirs, verdict}]
@@ -257,12 +245,7 @@ async function main() {
         //    vs 权威「Asset Management」（10.1093/acprof…，实测）。
         //    若不放行，等于逼人把正确引用砍成残缺形式——正是"制造噪声"的老坑。
         //    规则：一方是另一方的**前缀**（去掉副标题后）即判 match。
-        const titleEq = (() => {
-          const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ').trim();
-          const a = norm(ref.title), b = norm(rec.theirs.title);
-          if (!a || !b) return false;
-          return a === b || a.startsWith(b) || b.startsWith(a);
-        })();
+const titleEq = titleEquivalent(ref.title, rec.theirs.title);
         if (ref.title && !titleEq && titleSim(ref.title, rec.theirs.title) < 0.5) {
           rec.status = 'title-mismatch';
           rec.diffs.push({ field: 'title~', ours: ref.title, theirs: rec.theirs.title, verdict: 'mismatch' });

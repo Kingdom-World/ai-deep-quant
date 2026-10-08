@@ -66,6 +66,12 @@ function normalizeHost(raw) {
   }
   const pct = h.indexOf('%');
   if (pct > 0) h = h.slice(0, pct);
+  // 🔴 去掉**尾部的点**（2026-10-08 审查发现并复现的绕过）：
+  //   按 DNS 规范，`localhost.` ≡ `localhost`、`10.0.0.1.` ≡ `10.0.0.1`
+  //   （尾点是合法 FQDN 写法，解析器会忽略）—— 而我们的字符串判定会
+  //   因多一个点而**全部落空**：实测 `metadata.google.internal.` / `10.0.0.1.`
+  //   / `127.0.0.1.` 六种写法 6/6 全放行，等于把整套防护变成摆设。
+  while (h.endsWith('.')) h = h.slice(0, -1);
   return h;
 }
 

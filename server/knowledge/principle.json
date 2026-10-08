@@ -12,20 +12,46 @@
       "applicability": "设计因子时先问：信号是否只是某个已知风险暴露的代理？控制暴露后的 alpha 是否仍显著。",
       "limitations": "EMH 无法被直接检验（信息集不可观测）；强式版本在定义上不可证伪。把它当定律使用会否证研究本身。",
       "source": "Fama, E. F. (1970). Efficient Capital Markets: A Review of Theory and Empirical Work. Journal of Finance, 25(2), 383–417. DOI: 10.2307/2325486.",
-      "tags": ["EMH", "有效市场", "半强式", "信息效率", "alpha"],
-      "related": ["principle-capm", "principle-apt", "principle-disposition", "method-nice-vs-meaningful"]
+      "tags": [
+        "EMH",
+        "有效市场",
+        "半强式",
+        "信息效率",
+        "alpha"
+      ],
+      "related": [
+        "principle-capm",
+        "principle-apt",
+        "principle-disposition",
+        "method-nice-vs-meaningful"
+      ]
     },
     {
       "id": "principle-capm",
       "title": "资本资产定价模型（CAPM）",
       "summary": "预期收益 = 无风险利率 + β × 市场风险溢价；只有系统性风险被定价。",
-      "body": "Sharpe(1964) / Lintner(1965) / Mossin(1966) 同期提出。核心结论有两层：① 投资者只对系统性风险（β）要求补偿，非系统性风险可以通过分散化消除；② 任何资产的预期超额收益应与 β 线性相关。这条原理是整个因子体系的参照系——一个策略的 alpha 通常定义为「收益减去按 CAPM/B Fama-French 预期的那部分」，即对风险暴露的残差。实践含义是：不要用高收益证明策略有效，要先问「这份收益是不是市场暴露换来的」。本平台回测中的等权基准与超额收益计算即建立在「先剥离共同暴露、再看增量」这一原则上。",
+      "body": "Sharpe(1964) / Lintner(1965) / Mossin(1966) 同期提出。核心结论有两层：① 投资者只对系统性风险（β）要求补偿，非系统性风险可以通过分散化消除；② 任何资产的预期超额收益应与 β 线性相关。这条原理是整个因子体系的参照系——一个策略的 alpha 通常定义为「收益减去按 CAPM 或 Fama-French 预期的那部分」，即对风险暴露的残差。实践含义是：不要用高收益证明策略有效，要先问「这份收益是不是市场暴露换来的」。本平台回测中的等权基准与超额收益计算即建立在「先剥离共同暴露、再看增量」这一原则上。",
       "formula": "E[R_i] = R_f + β_i · (E[R_m] − R_f)；α 即实际收益对 CAPM 预测的回归残差",
       "applicability": "评估任何策略前先估 β 与因子暴露；控制后仍为正的部分才值得称为 alpha。",
       "limitations": "CAPM 假设单因子、beta 线性、无摩擦，现实中对收益分布（肥尾、偏斜）的刻画很弱；样本期依赖明显。",
       "source": "Sharpe, W. F. (1964). Capital Asset Prices: A Theory of Market Equilibrium under Conditions of Risk. Journal of Finance, 19(3), 425–442. DOI: 10.2307/2977928.",
-      "tags": ["CAPM", "beta", "风险溢价", "alpha", "CAPM"],
-      "related": ["principle-emh", "paper-fama-french-1993", "basis-benchmark", "principle-apt", "cycle-juglar", "principle-diversification", "case-2022-rate-hike"]
+      "tags": [
+        "CAPM",
+        "beta",
+        "风险溢价",
+        "alpha"
+      ],
+      "related": [
+        "basis-benchmark",
+        "case-2022-rate-hike",
+        "cycle-juglar",
+        "paper-fama-french-1993",
+        "principle-apt",
+        "principle-diversification",
+        "principle-emh",
+        "term-alpha",
+        "term-beta"
+      ]
     },
     {
       "id": "principle-apt",
@@ -36,8 +62,19 @@
       "applicability": "新因子入库前，先做对现有因子集合的回归，看增量 R² 与残差方向。",
       "limitations": "因子的选择与数目带有主观性；因子高度共线时回归系数极不稳定，统计推断不可靠。",
       "source": "Ross, S. A. (1976). Arbitrage Theory of Capital Asset Pricing. Journal of Economic Theory, 13(3), 341-360. DOI: 10.1016/0022-0531(76)90046-6.",
-      "tags": ["APT", "多因子", "风险归因", "因子暴露"],
-      "related": ["principle-capm", "term-ic", "principle-emh"]
+      "tags": [
+        "APT",
+        "多因子",
+        "风险归因",
+        "因子暴露"
+      ],
+      "related": [
+        "principle-capm",
+        "principle-emh",
+        "term-beta",
+        "term-factor-exposure",
+        "term-ic"
+      ]
     },
     {
       "id": "principle-disposition",
@@ -48,8 +85,18 @@
       "applicability": "构造反转因子时，把它理解为对处置效应的直接定价；也解释小盘/低流动性标的的截面差异。",
       "limitations": "行为解释与风险补偿难以分离——同一现象既可解读为偏差，也可解读为未被定价的风险。",
       "source": "Shefrin, I., & Statman, M. (1985). The Disposition to Sell Winners Too Early and Ride Losers Too Long. Journal of Finance, 40(3), 777-790. DOI: 10.1111/j.1540-6261.1985.tb05002.x.",
-      "tags": ["行为金融", "处置效应", "损失厌恶", "反转", "前景理论"],
-      "related": ["principle-emh", "term-momentum-factor", "method-time-series-momentum"]
+      "tags": [
+        "行为金融",
+        "处置效应",
+        "损失厌恶",
+        "反转",
+        "前景理论"
+      ],
+      "related": [
+        "principle-emh",
+        "term-momentum-factor",
+        "method-time-series-momentum"
+      ]
     },
     {
       "id": "principle-diversification",
@@ -60,8 +107,19 @@
       "applicability": "构造因子组合时，协方差估计窗口要与预测窗口分离，并用收缩或因子协方差抑制噪声放大。",
       "limitations": "正态假设与协方差稳定性在危机中失效（此时相关性趋同，见 case-1987-crash）；优化解对输入极敏感。",
       "source": "Markowitz, H. (1952). Portfolio Selection. Journal of Finance, 7(1), 77-91. 关于 1/N 常优于优化组合：DeMiguel, V., Garlappi, L., & Uppal, R. (2009). Optimal versus Naive Diversification. Review of Financial Studies, 22(5), 1915-1953. DOI: 10.2307/2975974.",
-      "tags": ["分散化", "有效前沿", "均值方差", "协方差", "1/N"],
-      "related": ["principle-capm", "method-sample-length", "principle-risk-parity", "case-ltcm-1998"]
+      "tags": [
+        "分散化",
+        "有效前沿",
+        "均值方差",
+        "协方差",
+        "1/N"
+      ],
+      "related": [
+        "principle-capm",
+        "method-sample-length",
+        "principle-risk-parity",
+        "case-ltcm-1998"
+      ]
     },
     {
       "id": "principle-risk-parity",
@@ -72,8 +130,17 @@
       "applicability": "给因子组合做风险预算：与其均衡资金，不如均衡因子风险贡献。",
       "limitations": "对协方差估计敏感；危机中相关性上升会削弱分散化收益；隐含杠杆需求可能超出实际承受力。",
       "source": "Asness, C., Frazzini, A., & Pedersen, L. (2012). Leverage Aversion and Risk Parity. Financial Analysts Journal, 68(1), 47-59. DOI: 10.2469/faj.v68.n1.1.",
-      "tags": ["风险平价", "风险贡献", "风险预算", "分散化", "杠杆"],
-      "related": ["principle-diversification", "case-2008-crisis"]
+      "tags": [
+        "风险平价",
+        "风险贡献",
+        "风险预算",
+        "分散化",
+        "杠杆"
+      ],
+      "related": [
+        "principle-diversification",
+        "case-2008-crisis"
+      ]
     },
     {
       "id": "principle-illiquidity",
@@ -84,8 +151,18 @@
       "applicability": "任何高换手策略都应报告：剔除最小成交额分位后的收益是否仍然存在。",
       "limitations": "指标对微观结构假设敏感；历史流动性与未来冲击可能非线性，极端市况下失效。",
       "source": "Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56. DOI: 10.1016/s1386-4181(01)00024-6. 另见 Amihud, Y. & Mendelson, H. (1986). Asset Pricing and the Bid-Ask Spread. Journal of Financial Economics, 17(2), 223-249.",
-      "tags": ["流动性", "Amihud", "换手", "冲击成本", "规模因子"],
-      "related": ["basis-slippage", "case-2015-ashare", "case-2013-funding-squeeze"]
+      "tags": [
+        "流动性",
+        "Amihud",
+        "换手",
+        "冲击成本",
+        "规模因子"
+      ],
+      "related": [
+        "basis-slippage",
+        "case-2015-ashare",
+        "case-2013-funding-squeeze"
+      ]
     }
   ]
 }

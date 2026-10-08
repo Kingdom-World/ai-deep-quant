@@ -8,120 +8,471 @@
       "title": "PIT（Point-In-Time，时点数据）",
       "body": "PIT 指「在历史每一时点，只使用当时真实可获得的信息」的数据组织方式。以财务数据为例：某公司 2023 年报披露日为 2024-04-25，则 2024-04-25 之前的任何回测决策都不得使用该年报数据。若用「按报告期归属」（如把 2023 年报数据标注为 2023-12-31 可用）就会产生前视偏差（look-ahead bias），使回测收益虚高。本项目自建 PIT：财务记录按 pubDate（披露日）只增不改，回测取数时按「决策日不早于 pubDate」过滤。",
       "source": "教材：Marcos López de Prado《Advances in Financial Machine Learning》(Wiley, 2018) 第 7 章 Cross-Validation in Finance 关于 look-ahead bias 的论述；实践对照：Baostock 日线接口字段 pubDate（披露日）定义。",
-      "tags": ["PIT", "时点数据", "前视偏差", "look-ahead", "财务", "pubDate"],
-      "related": ["method-lookahead", "basis-financial-pubdate", "paper-lopez-de-prado-2018", "method-reproducibility"]
+      "tags": [
+        "PIT",
+        "时点数据",
+        "前视偏差",
+        "look-ahead",
+        "财务",
+        "pubDate"
+      ],
+      "related": [
+        "method-lookahead",
+        "basis-financial-pubdate",
+        "paper-lopez-de-prado-2018",
+        "method-reproducibility"
+      ]
     },
     {
       "id": "term-qfq",
       "title": "前复权与后复权（qfq / hfq）",
       "body": "复权是消除除权除息造成的价格跳空，使收益率序列可比。前复权（qfq）以最新价为基准向前调整历史价格，当前价与真实市价一致，适合看图与短线；后复权（hfq）以上市首日为基准向后调整，历史价格不变，适合长周期收益统计。关键取舍：复权价格是人造的，不能用于计算真实持仓市值与成交金额；而做涨跌幅类断言时，直接用不复权 close 比值会在除权日误报，必须使用官方 pctChg 字段。本项目归档口径为不复权价 + 复权因子（可复现）。",
       "source": "实践准则：上海证券交易所《交易规则》除权除息价格计算规定；数据接口文档：Baostock 日线接口 adjustflag 与 pctChg 字段定义（baostock.com 日线数据接口文档）。",
-      "tags": ["前复权", "后复权", "qfq", "hfq", "复权因子", "除权除息", "pctChg"],
-      "related": ["method-adjust-illusion", "basis-pctchg"]
+      "tags": [
+        "前复权",
+        "后复权",
+        "qfq",
+        "hfq",
+        "复权因子",
+        "除权除息",
+        "pctChg"
+      ],
+      "related": [
+        "method-adjust-illusion",
+        "basis-pctchg"
+      ]
     },
     {
       "id": "term-ic",
       "title": "IC（Information Coefficient，信息系数）",
       "body": "IC 衡量因子值与下期收益之间的相关性，是因子预测能力的核心度量。常用两种：Pearson IC（线性相关，对极端值敏感）与 Rank IC / Spearman IC（秩相关，稳健，量化实践更常用）。逐期计算得到 IC 序列后，可导出 IC 均值（方向与强度）、IC 标准差（稳定性）与 IC 大于 0 占比（胜率）。判断经验：IC 均值绝对值在 0.03~0.05 量级已具备一定选股能力，0.1 以上较为优秀——但须结合 IR 与显著性检验共同判断，单看 IC 均值易被少数极端期误导。",
       "source": "教材：丁鹏《量化投资：策略与技术》(电子工业出版社) 因子有效性检验章节；论文：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章 The Fundamental Law of Active Management 关于 IC 与信息比率的理论推导。",
-      "tags": ["IC", "信息系数", "Rank IC", "Spearman", "因子有效性"],
-      "related": ["term-ir", "method-multiple-testing", "paper-grinold-kahn-2000", "term-spearman", "method-layer-monotonic", "principle-apt"]
+      "tags": [
+        "IC",
+        "信息系数",
+        "Rank IC",
+        "Spearman",
+        "因子有效性"
+      ],
+      "related": [
+        "method-layer-monotonic",
+        "method-multiple-testing",
+        "paper-grinold-kahn-2000",
+        "principle-apt",
+        "term-alpha",
+        "term-information-coefficient",
+        "term-ir",
+        "term-spearman"
+      ]
     },
     {
       "id": "term-ir",
       "title": "IR（Information Ratio，信息比率）",
       "body": "在因子研究中，IR 通常指 IC 均值与 IC 标准差之比（ICIR）：IR = mean(IC) / std(IC)，刻画因子预测能力相对其波动的大小，等价于 IC 序列的 t 统计量按 √T 缩放。注意与绩效指标中的信息比率区分——后者是组合超额收益均值与跟踪误差之比（Grinold & Kahn 定义）。实践中 ICIR 大于 0.3 常被视为因子稳定的参考线，但阈值应结合样本期长度与显著性检验判定，不可教条套用。",
       "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 6 章；Clarke, de Silva & Thorley《Minimum-Variance Portfolios in the U.S. Equity Market》(Journal of Portfolio Management, 2006) 对 IC 到 IR 转换的讨论。",
-      "tags": ["IR", "信息比率", "ICIR", "跟踪误差", "因子稳定"],
-      "related": ["term-ic", "term-stats-significance", "paper-grinold-kahn-2000"]
+      "tags": [
+        "IR",
+        "信息比率",
+        "ICIR",
+        "跟踪误差",
+        "因子稳定"
+      ],
+      "related": [
+        "paper-grinold-kahn-2000",
+        "term-ic",
+        "term-information-coefficient",
+        "term-stats-significance"
+      ]
     },
     {
       "id": "term-newey-west",
       "title": "Newey-West 调整（HAC 标准误）",
       "body": "回归或均值检验中，若残差存在异方差与自相关（时序数据几乎必然），普通 OLS 标准误会低估真实标准误，导致 t 值虚高、把噪声当成显著。Newey-West（1987）提出异方差自相关一致（HAC）协方差矩阵估计，通过对不同滞后的自协方差加权（常用 Bartlett 核，权重随滞后线性衰减）来修正。关键参数是滞后阶数 L：取太小无法消除自相关，太大损失效率。常用经验法则 L = floor(4 × (T/100)^(2/9))。当 L = 0 时 Newey-West 退化为普通（异方差稳健）标准误。",
       "source": "原始论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708。实现参考：statsmodels 库 statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式 DOI: 10.2307/1913610.；教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 12 章 Serial Correlation and Heteroskedasticity in Time Series Regressions。",
-      "tags": ["Newey-West", "HAC", "标准误", "自相关", "异方差", "显著性"],
-      "related": ["term-stats-significance", "method-multiple-testing", "paper-newey-west-1987", "paper-harvey-liu-zhu-2016"]
+      "tags": [
+        "Newey-West",
+        "HAC",
+        "标准误",
+        "自相关",
+        "异方差",
+        "显著性"
+      ],
+      "related": [
+        "term-stats-significance",
+        "method-multiple-testing",
+        "paper-newey-west-1987",
+        "paper-harvey-liu-zhu-2016"
+      ]
     },
     {
       "id": "term-stats-significance",
       "title": "统计显著性与 t / p 值",
       "body": "检验某因子的平均收益是否真的不为零时，构造 t = mean(r) / (s/√T)，其中 r 为逐期收益序列、s 为样本标准差、T 为期数。t 的绝对值越大越不可能是偶然。p 值为原假设为真时出现当前或更极端结果的概率，p 小于 0.05 常称显著（5% 水平）。三个常见陷阱：① 忽略自相关导致 t 虚高（须用 Newey-West 修正）；② 多重比较（同时检验大量因子，必然有若干显著是巧合）；③ 样本过短，t 分布的近似不成立。学术界常用 |t| 不小于 2（约 p<0.05）与 |t| 不小于 3（Harvey 等提出的更高门槛）作为参考线。",
       "source": "教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 4 章假设检验；论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68（提出 |t|>3 的更高门槛以应对多重比较）。 DOI: 10.1093/rfs/hhv059.",
-      "tags": ["t检验", "p值", "显著性", "假设检验", "t统计量"],
-      "related": ["term-newey-west", "method-multiple-testing", "paper-harvey-liu-zhu-2016", "term-ir", "method-sample-length", "paper-newey-west-1987", "paper-benjamini-hochberg-1995"]
+      "tags": [
+        "t检验",
+        "p值",
+        "显著性",
+        "假设检验",
+        "t统计量"
+      ],
+      "related": [
+        "term-newey-west",
+        "method-multiple-testing",
+        "paper-harvey-liu-zhu-2016",
+        "term-ir",
+        "method-sample-length",
+        "paper-newey-west-1987",
+        "paper-benjamini-hochberg-1995"
+      ]
     },
     {
       "id": "term-sharpe",
       "title": "夏普比率（Sharpe Ratio）",
       "body": "夏普比率 = (组合收益率 − 无风险利率) / 收益率标准差，衡量每承担一单位总波动获得的超额回报。注意三点：① 分母是总风险（含非系统性风险），不是跟踪误差；② 对收益率序列的自相关与偏度敏感，高频/持有期短的策略会因序列相关而虚高，需做年化与自相关调整；③ 比较夏普必须在同一频率、同一区间、同一无风险利率口径下进行。年化常用 Sharpe_annual = Sharpe_period × √(每年期数)，但该公式假设收益独立同分布，日内或高频数据需谨慎。",
       "source": "原始论文：Sharpe, W.F. (1966). Mutual Fund Performance. Journal of Business, 39(1), 119-138 DOI: 10.1086/294846.；教材：Bodie, Kane & Marcus《Investments》第 5 章风险与收益度量；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52（关于自相关调整）。 DOI: 10.2469/faj.v58.n4.2453.",
-      "tags": ["夏普比率", "Sharpe", "风险调整收益", "年化"],
-      "related": ["term-maxdrawdown", "term-annualized", "term-volatility"]
+      "tags": [
+        "夏普比率",
+        "Sharpe",
+        "风险调整收益",
+        "年化"
+      ],
+      "related": [
+        "term-maxdrawdown",
+        "term-annualized",
+        "term-volatility"
+      ]
     },
     {
       "id": "term-maxdrawdown",
       "title": "最大回撤（Maximum Drawdown）",
       "body": "最大回撤指净值曲线从某一历史高点到其后最低点的最大跌幅：MDD = max over t of ((峰值 − 当前值) / 峰值)。它刻画最坏情况下从顶到底亏多少，是风险承受力的直观指标，且与前视无关（只依赖历史路径）。与夏普的差异：夏普看波动，回撤看路径极值——两个策略夏普相同，回撤可能差异巨大。常见误用：用最大回撤与最大回撤持续期混为一谈；回撤持续期指从谷底恢复到前高所需时间，往往比跌幅本身更折磨人。",
       "source": "教材：Bacon, C.R.《Practical Portfolio Performance Measurement and Attribution》(2nd ed., Wiley, 2008) 第 4 章回撤度量；Magdon-Ismail, M., Atiya, A. F., Pratap, A. & Abu-Mostafa, Y. S. (2004). On the Maximum Drawdown of a Brownian Motion. Journal of Applied Probability, 41(1), 147-161. DOI: 10.1239/jap/1077134674（回撤的解析性质；Risk Magazine 2004 那篇业界文章与本文同源，但 Risk 不在 Crossref 收录范围）。",
-      "tags": ["最大回撤", "MDD", "回撤持续期", "风险"],
-      "related": ["term-sharpe", "method-circuitbreaker", "case-1987-crash", "case-2020-liquidity"]
+      "tags": [
+        "最大回撤",
+        "MDD",
+        "回撤持续期",
+        "风险"
+      ],
+      "related": [
+        "term-sharpe",
+        "method-circuitbreaker",
+        "case-1987-crash",
+        "case-2020-liquidity"
+      ]
     },
     {
       "id": "term-annualized",
       "title": "年化收益率（Annualized Return）",
       "body": "把非一年期的收益率折算为年度口径，便于横向比较。单期复利年化：Annualized = (1 + R_total)^(365/days) − 1（日历日）或 (1 + R_total)^(252/tradingDays) − 1（交易日）。关键陷阱：用简单线性外推（R_total × 365/days）在短样本上会严重高估；样本越短，年化数字越不可信（一个月翻倍年化后是天文数字）。汇报时应同时给出样本区间与期数，避免年化幻觉。",
       "source": "教材：Bodie, Kane & Marcus《Investments》第 5 章收益率计算；CFA Institute《Global Investment Performance Standards (GIPS)》关于年化收益率计算与披露要求。",
-      "tags": ["年化收益率", "annualized", "复利", "收益率"],
-      "related": ["term-sharpe", "method-sample-length"]
+      "tags": [
+        "年化收益率",
+        "annualized",
+        "复利",
+        "收益率"
+      ],
+      "related": [
+        "term-sharpe",
+        "method-sample-length"
+      ]
     },
     {
       "id": "term-turnover",
       "title": "换手率与交易成本",
       "body": "组合换手率指一定期间内买卖金额占组合资产的比例，反映策略的交易频率。换手直接影响净收益：净值 = 毛收益 − 换手带来的成本（佣金 + 印花税 + 过户费 + 滑点 + 冲击成本）。高换手策略在毛收益上可能亮眼，但被成本吞噬后可能转负——这正是成本敏感度检验的意义。计算时须注意：单边换手与双边换手的口径差异、调仓日部分换手（因子排序变动小）的处理。",
       "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》(2nd ed., McGraw-Hill, 2000) 第 9 章 Trading Costs, Turnover, and Taxes；Frazzini, A., Israel, R. & Moskowitz, T.J. (2018). Trading Costs. SSRN Working Paper（机构交易成本的实证估计）。",
-      "tags": ["换手率", "turnover", "交易成本", "滑点", "成本敏感度"],
-      "related": ["basis-fee-cn", "method-cost-sensitivity", "paper-grinold-kahn-2000", "paper-almgren-chriss-2001", "basis-limit-guard-depth"]
+      "tags": [
+        "换手率",
+        "turnover",
+        "交易成本",
+        "滑点",
+        "成本敏感度"
+      ],
+      "related": [
+        "basis-fee-cn",
+        "method-cost-sensitivity",
+        "paper-grinold-kahn-2000",
+        "paper-almgren-chriss-2001",
+        "basis-limit-guard-depth"
+      ]
     },
     {
       "id": "term-spearman",
       "title": "Spearman 秩相关（Rank Correlation）",
       "body": "Spearman 秩相关系数是把两组数据各自转换为排名后计算 Pearson 相关，公式等价于对秩做线性相关。特点：只依赖顺序、对单调非线性关系稳健、对极端值不敏感——因此成为 Rank IC 与分层单调性检验的标准工具。取值范围 [−1, 1]。注意：秩相同（tie）时需用平均秩处理；样本量小时临界值表与正态近似有差异。分层回测中常用它衡量层序与层收益的单调强度。",
       "source": "教材：Conover, W.J.《Practical Nonparametric Statistics》(3rd ed., Wiley, 1999) 第 5 章秩相关方法；Spearman, C. (1904). The Proof and Measurement of Association between Two Things. American Journal of Psychology, 15(1), 72-101。 DOI: 10.2307/1412159.",
-      "tags": ["Spearman", "秩相关", "Rank IC", "单调性", "非参数"],
-      "related": ["term-ic", "method-layer-monotonic"]
+      "tags": [
+        "Spearman",
+        "秩相关",
+        "Rank IC",
+        "单调性",
+        "非参数"
+      ],
+      "related": [
+        "method-layer-monotonic",
+        "term-ic",
+        "term-information-coefficient"
+      ]
     },
     {
       "id": "term-volatility",
       "title": "波动率（Volatility）",
       "body": "波动率通常指收益率序列的标准差，是最基础的离散度度量。年化：σ_annual = σ_daily × √252。要点：① 波动率是对称的（上涨与下跌同样计入），故不区分方向；② 历史波动率与隐含波动率（期权市场反推）是两回事；③ 波动率具有聚集性（GARCH 效应），简单固定窗口估计会滞后于市场状态切换；④ 因子低波动异象即指低波动股票长期风险调整收益优于高波动股票（Baker, Bradley & Wurgler 2011）。",
       "source": "教材：Hull, J.C.《Options, Futures, and Other Derivatives》第 15 章波动率估计；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly. Financial Analysts Journal, 67(1), 40-54。 DOI: 10.2469/faj.v67.n1.4.",
-      "tags": ["波动率", "volatility", "标准差", "低波动异象", "GARCH"],
-      "related": ["term-sharpe", "method-layer-monotonic"]
+      "tags": [
+        "波动率",
+        "volatility",
+        "标准差",
+        "低波动异象",
+        "GARCH"
+      ],
+      "related": [
+        "method-layer-monotonic",
+        "term-beta",
+        "term-sharpe"
+      ]
     },
     {
       "id": "term-momentum-factor",
       "title": "动量因子（Momentum）",
       "body": "动量因子指过去一段时间收益率较高的股票在未来一段时间继续表现较好（或反之，视市场与周期而定），源于 Jegadeesh & Titman (1993) 的经典发现（美股 3~12 个月形成期、持有期策略显著）。常见构造：mom{n} = 过去 n 个交易日累计收益（或对数收益）。重要提示：动量在中国 A 股市场并不稳定，短期（数日至数周）常表现为反转（reverse）；本项目实测 mom 因子在所选样本上呈现高分组收益低于低分组，即动量失效/反转特征——这是数据结论，不是模型错误，须如实呈现。",
       "source": "原始论文：Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91。中国市场研究：Cheema, M.A. & Nartea, G.V. (2017). Momentum Returns and Information Uncertainty: Evidence from China. Pacific-Basin Finance Journal。 DOI: 10.1111/j.1540-6261.1993.tb04702.x.",
-      "tags": ["动量", "momentum", "反转", "因子", "Jegadeesh"],
-      "related": ["method-cross-section", "method-layer-monotonic", "paper-jegadeesh-titman-1993", "paper-fama-french-1993", "principle-disposition", "cycle-a-share-style", "method-time-series-momentum"]
+      "tags": [
+        "动量",
+        "momentum",
+        "反转",
+        "因子",
+        "Jegadeesh"
+      ],
+      "related": [
+        "cycle-a-share-style",
+        "method-cross-section",
+        "method-layer-monotonic",
+        "method-time-series-momentum",
+        "paper-fama-french-1993",
+        "paper-jegadeesh-titman-1993",
+        "principle-disposition",
+        "term-cross-sectional-vs-time-series"
+      ]
     },
     {
       "id": "term-limit-up-down",
       "title": "涨跌停与涨停板规则",
       "body": "A 股实行价格涨跌幅限制：主板 ±10%、创业板与科创板 ±20%、ST/*ST 主板 ±5%、北交所 ±30%；新股上市首日等特殊情形另有规定。判定基准是前一交易日收盘价（prevClose，经除权除息调整）。回测与模拟盘的取舍得注意：① 一字板意味着当日无法成交，若回测允许在涨停价买入会造成买得到的幻觉；② 触板当日挂单是否成交取决于排队撮合，简化模型通常保守处理（触发即拒单或挂起）；③ 涨跌停幅度由板块决定，跨市场（港股无涨跌幅限制、美股有熔断）不可套用。本项目在 matcher 层统一实现该守卫，依赖 quote.prevClose，缺失时 fail-open。",
       "source": "官方规则：上海证券交易所《交易规则》第 3.4 节价格涨跌幅限制；深圳证券交易所《交易规则》相应条款；《北京证券交易所交易规则》涨跌幅规定。",
-      "tags": ["涨跌停", "涨停板", "限价", "prevClose", "主板", "创业板", "科创板"],
-      "related": ["basis-limit-guard", "method-silent-fallback"]
+      "tags": [
+        "涨跌停",
+        "涨停板",
+        "限价",
+        "prevClose",
+        "主板",
+        "创业板",
+        "科创板"
+      ],
+      "related": [
+        "basis-limit-guard",
+        "method-silent-fallback"
+      ]
     },
     {
       "id": "term-equal-weight",
       "title": "等权基准（Equal Weight Benchmark）",
       "body": "等权基准指每只成分股分配相同权重（1/N），定期再平衡。用途：作为没有选股能力的参照线——如果策略跑不赢等权组合，说明选股未创造价值。相比市值加权，等权基准：① 天然偏向小市值与波动（rebalancing 效应），长期收益常高于市值加权指数；② 更能反映广撒网的可实现收益。做因子评估时用等权更公平（避免市值因子混入）。注意：等权再平衡本身产生换手成本，基准也应计成本才可比。",
       "source": "教材：Grinold, R.C. & Kahn, R.N.《Active Portfolio Management》第 2 章基准选择；研究：DeMiguel, V., Garlappi, L. & Uppal, R. (2009). Optimal Versus Naive Diversification: How Inefficient is the 1/N Portfolio Strategy? Review of Financial Studies, 22(5), 1915-1953. DOI: 10.1093/rfs/hhm075（1/N 基准的稳健性论证）。",
-      "tags": ["等权", "基准", "equal weight", "1/N", "再平衡"],
-      "related": ["method-benchmark-choice", "method-cross-section", "paper-grinold-kahn-2000", "basis-benchmark"]
+      "tags": [
+        "等权",
+        "基准",
+        "equal weight",
+        "1/N",
+        "再平衡"
+      ],
+      "related": [
+        "method-benchmark-choice",
+        "method-cross-section",
+        "paper-grinold-kahn-2000",
+        "basis-benchmark"
+      ]
+    },
+    {
+      "id": "term-beta",
+      "category": "term",
+      "title": "Beta（市场暴露系数）",
+      "body": "Beta 衡量资产收益对市场组合收益的敏感度，即 Cov(R_i, R_m)/Var(R_m)。含义是：市场涨 1% 时该资产平均涨 β%。β=1 与市场同步，β>1 放大波动，β<1 钝化，β<0 反向。三个常被忽略的要点：① β 是**统计估计量**，样本期不同会得到不同值，短窗口估出的 β 极不稳定；② β 不是常数——同一只股票的 β 会随市场状态（牛/熊、高/低波动）漂移，条件 β 与无条件 β 常显著不同；③ 在因子模型里 β 对应的只是「市场」这一个因子，剥离市场 β 之后剩下的残差收益才是通常所说的 alpha。本平台的等权基准与超额收益计算即建立在先剥离共同暴露的原则上。",
+      "summary": "资产对市场组合的敏感度；是统计估计量且随时间漂移，剥离 β 后的残差才是 alpha。",
+      "formula": "β_i = Cov(R_i, R_m) / Var(R_m)",
+      "applicability": "组合风险归因、对冲比率确定、因子暴露分析；需明确样本期与频率。",
+      "limitations": "样本期敏感；非平稳（随市场状态漂移）；单因子假设忽略了其他风险维度；对低频数据估计噪声大。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：本平台预置模板是动量/反转族，没有「按 β 排序构建组合」的模板。要演示 β 需先有市值或协方差估计管道，属于 Phase 5 中性化预处理的范围。现在挂任何模板都会让学生把动量因子误当 β 暴露。",
+      "source": "原始论文：Sharpe, W.F. (1964). Capital Asset Prices: A Theory of Market Equilibrium under Conditions of Risk. Journal of Finance, 19(3), 425-442（同时期 Lintner, J. (1965). The Valuation of Risk Assets and the Selection of Risky Investments in Stock Portfolios and Capital Budgets. Review of Economics and Statistics, 47(1), 13-37. DOI: 10.2307/1924119. 与 Mossin, J. (1966). Equilibrium in a Capital Asset Market. Econometrica, 34(4), 768-783. DOI: 10.2307/1910098. 独立提出，故常合称 CAPM）。DOI: 10.2307/2977928.；教材：Bodie, Kane & Marcus《Investments》第 7-9 章关于 β 估计与指数模型；Roll, R. (1977). A Critique of the Asset Pricing Theory's Tests: Part I. Journal of Financial Economics, 4(2), 129-176. DOI: 10.1016/0304-405x(77)90009-5.（关于「市场组合不可观测」的根本批评）",
+      "tags": [
+        "beta",
+        "β",
+        "市场暴露",
+        "系统性风险",
+        "敏感度"
+      ],
+      "related": [
+        "principle-apt",
+        "principle-capm",
+        "term-alpha",
+        "term-factor-exposure",
+        "term-volatility"
+      ]
+    },
+    {
+      "id": "term-alpha",
+      "category": "term",
+      "title": "Alpha（超额收益）",
+      "body": "Alpha 是回归截距项：在 R_i − R_f = α + β(R_m − R_f) + ε 中，α 表示「无法被市场暴露解释的那部分收益」。实务里常见的三种含义必须分清：① **Jensen's alpha**——CAPM 单因子回归的截距；② **多因子 alpha**——Fama-French 三因子或更多因子回归的截距，比单因子 alpha 小得多，因为它扣掉了规模与价值暴露带来的收益；③ **纯统计量**——alpha 的显著性与它的经济意义是两件事，一个 t 值很高的 alpha 可能来自数据窥探或未建模的风险暴露。分界点在于：因子模型里加多少因子，alpha 就少多少——所以「有 alpha」这个结论永远相对于某个模型成立，脱离模型谈 alpha 没有意义。",
+      "summary": "无法被指定因子模型解释的收益；其大小取决于模型含哪些因子，脱离模型无意义。",
+      "formula": "R_i − R_f = α + β(R_m − R_f) + ε；α 即回归截距",
+      "applicability": "策略有效性评估、基金业绩归因；必须先声明基准模型。",
+      "limitations": "对模型选择敏感（换因子集 alpha 变）；统计显著不等于可持续；存在数据窥探导致的虚假 alpha。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：演示 alpha 需要**多因子基准**（至少市场 + 规模 + 价值），本平台预置模板只有动量族单因子，跑出来的「超额」实际是相对等权基准的动量暴露，不是 alpha。会让结论误导，故不挂。",
+      "source": "原始论文：Jensen, M.C. (1968). The Performance of Mutual Funds in the Period 1945-1964. Journal of Finance, 23(2), 389-416（Jensen's alpha 出处）。DOI: 10.1111/j.1540-6261.1968.tb00815.x.；多因子版本见 Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56。DOI: 10.1016/0304-405X(93)90023-5.；Fama, E.F. & French, K.R. (2010). Luck versus Skill in the Cross-Section of Mutual Fund Returns. Journal of Finance, 65(5), 1915-1947（关于 alpha 显著性的统计判据；2026-10-08 Crossref 检索该正式版无 DOI 记录，仅见 SSRN 与 CFA Digest 摘要版，故不配标识）。",
+      "tags": [
+        "alpha",
+        "α",
+        "超额收益",
+        "Jensen alpha",
+        "业绩归因"
+      ],
+      "related": [
+        "principle-capm",
+        "term-beta",
+        "term-ic"
+      ]
+    },
+    {
+      "id": "term-information-coefficient",
+      "category": "term",
+      "title": "Rank IC 与 Pearson IC 的区别",
+      "body": "因子值与未来收益的相关性有两种算法，实务中几乎只用 Rank IC，原因有三：① **对极端值免疫**——因子值常有肥尾（如市盈率的负值与极大值），Pearson 相关会被少数极端点主导，Rank IC 只看排序，不受影响；② **对单调变换免疫**——Rank IC 对任意单调变换不变（取对数、标准化、去极值都改不了它），这意味着 Rank IC 衡量的是「因子排序能力」，而排序正是选股实际使用的信息；③ **A 股适配性**——财务指标与行情数据常有异常值，用 Pearson 会让结论被少数样本绑架。判据：如果因子与收益是**非线性单调**关系（很常见），Rank IC 仍能捕捉，Pearson 会低估。代价是 Rank IC 丢失了「差多远」的幅度信息，若策略依赖幅度（如加权配置）则需另做处理。",
+      "summary": "Rank IC 对极端值与单调变换免疫，衡量排序能力；Pearson 会被肥尾主导。A 股实务多用 Rank IC。",
+      "formula": "Rank IC = corr(rank(factor), rank(future_return))；Pearson IC = corr(factor, future_return)",
+      "applicability": "因子有效性检验的日常工具；分层回测的前置指标。",
+      "limitations": "丢失幅度信息；对样本量敏感（小样本排序不稳）；不能直接用于依赖幅度的加权策略。",
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "把同一因子分别按 Rank 与 Pearson 计算 IC 并对比：在含极端值的样本上 Pearson 会被拉偏，Rank 保持稳定。学生应观察两者差异随极端值比例的变化。",
+      "source": "方法论文：Spearman, C. (1904). The Proof and Measurement of Association between Two Things. American Journal of Psychology, 15(1), 72-101（秩相关原始定义）。DOI: 10.2307/1412159.；因子检验实务见 Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 6 章 Fundamental Law（IC 与 IR 的关系）与第 12 章关于信号加权的讨论。ISBN 978-0070248823。",
+      "tags": [
+        "Rank IC",
+        "IC",
+        "秩相关",
+        "因子有效性",
+        "信息系数"
+      ],
+      "related": [
+        "term-ic",
+        "term-spearman",
+        "term-ir"
+      ]
+    },
+    {
+      "id": "term-factor-exposure",
+      "category": "term",
+      "title": "因子暴露（Factor Exposure / Loading）",
+      "body": "因子暴露回答「这个组合在多大程度上暴露于某类风险因子」。两种获取方式必须分清：① **回归暴露**——把组合收益对因子收益做时序回归，得到的斜率即暴露（用于事后归因）；② **特征暴露**——直接按因子定义对持仓加权（如持仓的平均市值分位数），用于事前构建与约束。二者的差别在于：回归暴露度量的是**实际风险敏感度**，特征暴露度量的是**按定义应有**的暴露，若因子定义与实际收益关联弱，两者会分叉。工程上的关键点：暴露是**组合层面可加**的——组合暴露 = 各持仓暴露的加权和（权重取持仓市值占比），这使得「约束组合对某因子的暴露」成为线性约束，可以在构建时直接施加。中性化即让某暴露为 0。",
+      "summary": "组合对某风险因子的敏感度；回归暴露（实际）与特征暴露（应有）常分叉；组合层面可加。",
+      "formula": "组合暴露 = Σ w_i · exposure_i（特征口径）；或时序回归斜率（回归口径）",
+      "applicability": "风险归因、组合构建约束、中性化处理的前置概念。",
+      "limitations": "两个口径会分叉；暴露随市场状态漂移；因子共线性时暴露估计不稳。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：本平台当前无行业/市值数据管道（计划书 Phase 5 才接入），无法演示真实暴露计算。挂模板只能演示「等权组合对动量的暴露」，覆盖面太窄且易让学生误以为暴露就是因子值本身。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 3 章关于风险模型的讨论。ISBN 978-0070248823.；Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56。DOI: 10.1016/0304-405X(93)90023-5.；实践视角见 Ang, A. (2014). Asset Management: A Systematic Approach to Factor Investing. Oxford University Press. ISBN 978-0199959327（专著整体见 10.1093/acprof:oso/9780199959327.001.0001）。",
+      "tags": [
+        "因子暴露",
+        "exposure",
+        "loading",
+        "风险归因",
+        "中性化"
+      ],
+      "related": [
+        "method-layer-monotonic",
+        "principle-apt",
+        "term-beta",
+        "term-zscore"
+      ]
+    },
+    {
+      "id": "term-cross-sectional-vs-time-series",
+      "category": "term",
+      "title": "截面 vs 时序（Cross-Sectional vs Time-Series）",
+      "body": "量化策略的两种根本形态，混淆它们是最常见的概念错误。**截面**：在每个时间点对所有标的做比较排序（如「今天按动量给全市场排名，买前 10%」），研究的对象是**同一时刻不同标的的差异**；**时序**：对单个标的沿时间轴判断（如「这只股票自己的 20 日动量近期是否转正」），研究的对象是**同一标的在不同时刻的变化**。两者对应的检验方法完全不同：截面用 IC、分层回测（在每个调仓日横切）；时序用自相关、regime 划分、单序列回测。最容易犯的错是把时序结论套到截面上——「动量在过去二十年有效」是时序结论，「今天该买哪只」是截面问题，前者的有效性不能推出后者。本平台的 M1 截面回测引擎与 Backtrader 风格的时序回测是两套并存的口径。",
+      "summary": "截面=同一时刻不同标的比较；时序=同一标的不同时刻变化。检验方法与结论不可互推。",
+      "formula": "",
+      "applicability": "选择研究方法时的第一道分叉；决定回测引擎与检验指标。",
+      "limitations": "混淆两者会导致方法学错误（用截面指标评估时序策略）；部分策略同时含两个维度（如横截面动量 + 时序择时）。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：本平台当前只有截面引擎（M1），没有时序回测引擎，无法在同一界面演示两者差异。挂截面模板只能演示「截面是什么」，演示不了「两者的区别」，正是本条要讲的核心。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 2-3 章（截面框架与风险模型）。ISBN 978-0070248823.；时序视角见 Moskowitz, T., Ooi, Y.H. & Pedersen, L.H. (2012). Time Series Momentum. Journal of Financial Economics, 104(2), 228-250。DOI: 10.1016/j.jfineco.2011.11.003.；Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. Journal of Finance, 48(1), 65-91（截面动量）。DOI: 10.1111/j.1540-6261.1993.tb04702.x.；本项目 server/crosssect.cjs（T-1 收盘排名、T 开盘成交、整手与同费率口径）。",
+      "tags": [
+        "截面",
+        "时序",
+        "cross-sectional",
+        "time-series",
+        "方法论"
+      ],
+      "related": [
+        "method-cross-section",
+        "method-time-series-momentum",
+        "term-momentum-factor"
+      ]
+    },
+    {
+      "id": "term-zscore",
+      "category": "term",
+      "title": "标准化与 Z-Score",
+      "body": "Z-Score 标准化把因子值变换为 (x − μ)/σ，使不同量纲的因子可直接加权。截面场景下的 μ、σ 必须取**同一时刻的横截面**统计量（而非全时段），否则会引入前视偏差——用全样本均值标准化，等于让今天的值知道了未来的分布信息。三个实务要点：① **先去极值再标准化**——极值既污染 μ 也放大 σ，常用中位数绝对偏差（MAD）替代标准差，或做分位截断（winsorize，如 1%/99%）；② **标准化不改变排序**，因此对纯排序选股的策略毫无影响，只影响依赖幅度加权的策略；③ **中性化≠标准化**——标准化是尺度的平移缩放，中性化是消除与某变量的相关性，前者不改变因子间相关结构，后者会。评测时若只做标准化不做中性化，得出的因子有效性包含行业/市值暴露的贡献。",
+      "summary": "Z=(x−μ)/σ；截面标准化必须用时点横截面统计量，否则引入前视偏差；去极值应先做。",
+      "formula": "z = (x − μ_cross) / σ_cross（μ、σ 取同一调仓日的横截面）",
+      "applicability": "多因子合成前的预处理；不同量纲因子加权。",
+      "limitations": "对极端值敏感（应先去极值）；不改变排序故对排序策略无效；不等于中性化。",
+      "teachingModel": "multi-mom",
+      "teachingNote": "开启与关闭标准化各跑一次双周期动量模型：观察组合收益率曲线是否完全一致（若只按排序选股则应当一致）。学生应理解「标准化对排序策略无影响」这一反直觉结论，并思考它在什么情况下才会有影响。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 6 章关于信号处理与标准化的讨论。ISBN 978-0070248823.；去极值方法见 Huber, P.J. (1964). Robust Estimation of a Location Parameter. Annals of Mathematical Statistics, 35(1), 73-101。DOI: 10.1214/aoms/1177703732.；本项目 shared/modelspec.cjs 的 transforms 白名单（zscore 算子定义）。",
+      "tags": [
+        "标准化",
+        "zscore",
+        "Z-Score",
+        "去极值",
+        "预处理"
+      ],
+      "related": [
+        "method-adjust-illusion",
+        "method-layer-monotonic",
+        "term-factor-exposure",
+        "term-winsorize"
+      ]
+    },
+    {
+      "id": "term-winsorize",
+      "category": "term",
+      "title": "去极值（Winsorize / Truncate）",
+      "body": "去极值处理因子的肥尾。两种做法的**数学后果完全不同**，不能混用：① **Winsorize（缩尾）**——把超出分位阈值的值**替换**为该阈值（如 99 分位的值），样本量不变、排序不变；② **Truncate（截断）**——把超阈值的样本**删除**，样本量减少、排序可能改变。实务上因子处理一律用 Winsorize：删样本等于人为改变 universe，会造成「某些股票在某些日子消失」的不可解释现象。阈值选择见三种通行做法：固定分位（1%/99%）、中位数 ± n×MAD（n 常取 3 或 5）、固定标准差倍数。判据：若因子分布近似正态，三种差别不大；若明显右偏（如市值、成交量），MAD 法更稳健，因为它不假设对称分布。",
+      "summary": "Winsorize 是缩尾（改值不改样本），Truncate 是截断（删样本）；因子处理应用前者。MAD 法对偏态更稳健。",
+      "formula": "Winsorize: x' = clip(x, Q_α, Q_{1−α})；MAD 法: x' = clip(x, median ± n·MAD)",
+      "applicability": "因子预处理第一步；对肥尾分布的必要处理。",
+      "limitations": "阈值选择有主观性；过度处理会抹掉真实信号（如小市值效应本身就在尾部）；MAD 在极偏态下仍可能失效。",
+      "teachingModel": "multi-mom",
+      "teachingNote": "对同一因子分别跑：不去极值 / 1% Winsorize / Truncate 三种处理，对比组合收益与**样本量变化**。学生应观察到 Truncate 会让持仓数随日期波动，而 Winsorize 不会。",
+      "source": "方法论文：Huber, P.J. (1964). Robust Estimation of a Location Parameter. Annals of Mathematical Statistics, 35(1), 73-101。DOI: 10.1214/aoms/1177703732.；Winsor 法之名源于 Hastings, C., Mosteller, F., Tukey, J.W. & Winsor, C.P. (1947). Low Moments for Small Samples: A Comparative Study of Order Statistics. Annals of Mathematical Statistics, 18(3), 413-426。DOI: 10.1214/aoms/1177730388.；实践见 Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 6 章。ISBN 978-0070248823。",
+      "tags": [
+        "Winsorize",
+        "去极值",
+        "缩尾",
+        "截断",
+        "MAD",
+        "预处理"
+      ],
+      "related": [
+        "term-zscore",
+        "method-layer-monotonic",
+        "method-parameter-robust"
+      ]
     }
   ]
 }

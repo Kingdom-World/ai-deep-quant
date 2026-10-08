@@ -206,18 +206,37 @@ test('真实内容库：过滤器 count 与实际可检索条数逐类对齐（�
 
 // ═══ 三、存量零回归 ══════════════════════════════════════════════
 
-test('③ 存量 49 条全部仍在且 id 唯一（新增层不得挤掉旧内容）', () => {
-  const s = kb.stats();
-  assert.strictEqual(s.byCategory.term, 15, 'term 应仍为 15');
-  assert.strictEqual(s.byCategory.method, 16, 'method 应为 16（14 存量 + 2 从 principle 移入）');
-  assert.strictEqual(s.byCategory.basis, 10, 'basis 应仍为 10');
-  assert.strictEqual(s.byCategory.paper, 10, 'paper 应仍为 10');
+test('③ 存量条目全部仍在且 id 唯一（新增层不得挤掉旧内容）', () => {
+  // 🔴 修法说明（2026-10-08 扩容时暴露）：
+  //   原写法是 `assert.strictEqual(s.byCategory.term, 15)` —— **锁死绝对数量**。
+  //   它想守的是"存量不得被挤掉"，但写成了"不许增长"：任何合法扩容都会让它红，
+  //   而红之后最省事的做法是**改数字**，于是这条门就退化成"跟着现状改"的摆设。
+  //   ⇒ 改为断言**存量 id 仍存在**（精确守住原意），数量只做下界约束。
   const all = kb.search('', { limit: 9999 }).items;
-  const ids = all.map((e) => e.id);
-  assert.strictEqual(new Set(ids).size, ids.length, 'id 必须全局唯一');
+  const ids = new Set(all.map((e) => e.id));
+  assert.strictEqual(ids.size, all.length, 'id 必须全局唯一');
+
+  // 存量基线的**锚点 id**（选各层最有代表性的；扩容不得删掉任何一个）
+  const ANCHORS = [
+    'term-sharpe', 'term-ic', 'term-pit',           // term 层
+    'method-cross-section', 'method-lookahead',      // method 层
+    'basis-fee-cn', 'basis-calendar',                // basis 层
+    'paper-fama-french-1993', 'paper-newey-west-1987', // paper 层
+    'principle-capm', 'principle-emh',               // principle 层
+    'case-2008-crisis', 'cycle-kitchin',             // case / cycle 层
+  ];
+  const lost = ANCHORS.filter((a) => !ids.has(a));
+  assert.deepStrictEqual(lost, [], `存量条目丢失：${lost.join(', ')}`);
+
+  // 各层只设**下界**（不得低于扩容前水平），不设上界 —— 扩容是合法的
+  const FLOOR = { term: 15, method: 16, basis: 10, paper: 10, principle: 7, case: 8, cycle: 4 };
+  for (const [cat, floor] of Object.entries(FLOOR)) {
+    const n = kb.stats().byCategory[cat] || 0;
+    assert.ok(n >= floor, `${cat} 层 ${n} 条 < 下界 ${floor}（存量被挤掉了？）`);
+  }
   // 存量 id 前缀不变
   for (const p of ['term-', 'method-', 'basis-', 'paper-']) {
-    assert.ok(ids.some((i) => i.startsWith(p)), `存量前缀 ${p} 丢失`);
+    assert.ok([...ids].some((i) => i.startsWith(p)), `存量前缀 ${p} 丢失`);
   }
 });
 

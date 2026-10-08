@@ -97,7 +97,14 @@ function main() {
       add('🔴', tag, '有 teachingModel 但无 teachingNote（学生不知道要观察什么）');
     }
     if (!e.teachingModel && e.teachingNote) {
-      add('🟡', tag, '有 teachingNote 但无 teachingModel（说明文字没有落点）');
+      // 🔴 "故意不挂"是**既定的正确设计**，不是遗漏（本项目明令：
+      //   不适配时置 null 并说明理由，不得硬凑一个模型）。
+      //    实测 case-ltcm-1998 的 note 开头就是「🔴 故意不挂教学模型：…」。
+      //    ⇒ 只有**没有说明理由**的才提醒；有理由的视为合规。
+      const explained = /故意不挂|不挂教学模型|无可挂|不适用|暂不挂/.test(String(e.teachingNote));
+      if (!explained) {
+        add('🟡', tag, '有 teachingNote 但无 teachingModel（且未说明理由 —— 是忘了还是不适配？）');
+      }
     }
     // ⑧ tags 非空且无重复
     if (!Array.isArray(e.tags) || !e.tags.length) add('🟡', tag, 'tags 为空（影响检索召回）');
@@ -156,5 +163,13 @@ function main() {
   return byLevel['🔴'].length ? 1 : 0;
 }
 
-const code = main();
-process.exitCode = code;
+// 🔴 出口分两态（2026-10-08 修）：直接运行 → 设 exitCode 并结束；
+//   被 require（如 add-entries 的写后自校验）→ **只返回结果，不碰 exitCode**。
+//   早先无条件 `process.exitCode = code` ⇒ 被 require 时会污染调用方的退出码，
+//   让「写入成功」变成「写入失败」的假象（本机不能 spawn 子进程，只能 require，
+//   所以这个分态是必须的）。
+if (require.main === module) {
+  process.exitCode = main();
+} else {
+  module.exports = { lint: main, lintOnce: () => main() };
+}

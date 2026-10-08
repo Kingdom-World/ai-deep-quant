@@ -62,7 +62,20 @@ function main() {
   let entries;
   try {
     entries = JSON.parse(fs.readFileSync(abs, 'utf8'));
-  } catch (e) { die(`JSON 解析失败：${e.message}`); }
+  } catch (e) {
+    // 🔴 诊断辅助（2026-10-08 加）：这个错误**我犯了两次** ——
+    //   body 里写中文引号时误用了英文双引号 `"…"`，直接把 JSON 字符串打断。
+    //   原始报错只说"position N"，定位要数半天。这里主动指出最可能的原因。
+    const raw = fs.readFileSync(abs, 'utf8');
+    const line = raw.slice(0, e.message.match(/\d+/) ? Number((e.message.match(/position (\d+)/) || [])[1] || 0) : 0)
+      .split('\n').length;
+    console.error(`🔴 JSON 解析失败：${e.message}`);
+    console.error(`   位置约在第 ${line} 行。`);
+    console.error('   🔴 最常见原因：中文语境里写了**英文双引号**（"…"）——');
+    console.error('      它会提前闭合 JSON 字符串。请改用「」或 『』。');
+    console.error('      检查命令：node tools/lint-json-quotes.cjs <文件>');
+    process.exit(1);
+  }
   if (!Array.isArray(entries) || !entries.length) die('顶层必须是**非空数组**');
 
   // ── 载入既有 id ──
@@ -74,6 +87,27 @@ function main() {
     const d = JSON.parse(fs.readFileSync(p, 'utf8'));
     docs[cat] = { path: p, doc: d };
     for (const e of d.entries || []) existing.add(e.id);
+  }
+
+  // ── 🔴 引号风格预检（2026-10-08：同一个错误我犯了两次）──
+  //   中文语境里写 `"…"` 会提前闭合 JSON 字符串。与其写坏后数 position 定位，
+  //   不如写前扫一遍。判据在 lint-json-quotes 里（窄判据，实测 0 误报）。
+  try {
+    const { lintQuotes } = require(path.join(__dirname, 'lint-json-quotes.cjs'));
+    const bad = lintQuotes(abs);
+    if (bad.quotes.length) {
+      console.error(`\n🔴 检测到 ${bad.quotes.length} 处中文语境误用英文双引号（会打断 JSON）：`);
+      for (const q of bad.quotes.slice(0, 5)) {
+        console.error(`   第 ${q.line} 行: …${q.snippet}…`);
+      }
+      console.error('\n   → 请改用「」或 『』。未写入任何内容。');
+      process.exit(1);
+    }
+  } catch (e) {
+    if (String(e.message || e).includes('Cannot find module')) {
+      /* 检查器缺失不阻塞（但会提示） */
+      console.warn('  ⚠️ 未找到 lint-json-quotes，跳过引号预检');
+    } else { throw e; }
   }
 
   // ── 逐条校验（写前）──
@@ -126,25 +160,38 @@ function main() {
 
   // ── 落盘：按分类分组，追加到对应文件 ──
   //
-  // 🔴 自动补齐**反向链接**（2026-10-08 实测踩过）：
-  //   新条目写 `related: [旧条目]` 时，旧条目若没有回指，就破坏了既有的
-  //   「双向闭合」契约（test/knowledge.test.cjs 的【可达性】断言会红）。
-  //   手写时几乎必然遗漏（本批 7 条就漏了 21 处）⇒ 工具自动补：
-  //   凡是新条目指向的**既有**条目，都在其 related 里加上新条目 id
-  //   （排序后写回，避免 diff 抖动；已是双向的不重复添加）。
+  // 🔴 两轮补链（2026-10-08 实测：第一版只补了"新 → 旧"，漏了"新 → 新"）：
+  //   本批 10 条里 `term-t-plus-one → term-order-types` 与
+  //   `term-rebalance-frequency → term-t-plus-one` 两条**都在本批内新增**，
+  //   第一版逻辑把它们跳过了（只查了既有的 allEntries）⇒ 测试红。
+  //   ⇒ 两轮：① 新 → 旧（补到既有条目上）② 新 → 新（在**本批内**互补）。
   const allEntries = new Map();   // id → { entry, file, doc }
   for (const [cat, t] of Object.entries(docs)) {
     for (const e of t.doc.entries || []) allEntries.set(e.id, { entry: e, path: t.path, doc: t.doc });
   }
-  const touched = new Set();      // 需要回写的文件
+  const touched = new Set();      // 需要回写的**既有**文件
+
+  // 轮次 ①：新条目 → 既有条目
   for (const e of entries) {
     for (const r of e.related || []) {
       const hit = allEntries.get(r);
-      if (!hit) continue;          // 指向本次新增的条目：那批自己会带 related
+      if (!hit) continue;
       const rel = hit.entry.related || (hit.entry.related = []);
       if (!rel.includes(e.id)) { rel.push(e.id); rel.sort(); touched.add(hit.path); }
     }
   }
+
+  // 轮次 ②：本批内部互指（新 → 新）
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  for (const e of entries) {
+    for (const r of e.related || []) {
+      const other = byId.get(r);
+      if (!other) continue;                     // 不是本批的，轮次①已处理
+      const rel = other.related || (other.related = []);
+      if (!rel.includes(e.id)) { rel.push(e.id); rel.sort(); }
+    }
+  }
+
   // 先回写被追加了反向链接的**既有**文件
   for (const p of touched) {
     const doc = Object.values(docs).find((t) => t.path === p).doc;

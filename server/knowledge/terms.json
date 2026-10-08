@@ -17,10 +17,11 @@
         "pubDate"
       ],
       "related": [
-        "method-lookahead",
         "basis-financial-pubdate",
+        "method-lookahead",
+        "method-reproducibility",
         "paper-lopez-de-prado-2018",
-        "method-reproducibility"
+        "term-lookahead-vs-survivorship"
       ]
     },
     {
@@ -81,7 +82,8 @@
         "paper-grinold-kahn-2000",
         "term-ic",
         "term-information-coefficient",
-        "term-stats-significance"
+        "term-stats-significance",
+        "term-tracking-error"
       ]
     },
     {
@@ -98,10 +100,11 @@
         "显著性"
       ],
       "related": [
-        "term-stats-significance",
         "method-multiple-testing",
+        "paper-harvey-liu-zhu-2016",
         "paper-newey-west-1987",
-        "paper-harvey-liu-zhu-2016"
+        "term-autocorrelation",
+        "term-stats-significance"
       ]
     },
     {
@@ -138,8 +141,11 @@
         "年化"
       ],
       "related": [
-        "term-maxdrawdown",
         "term-annualized",
+        "term-autocorrelation",
+        "term-calmar-ratio",
+        "term-maxdrawdown",
+        "term-sortino-ratio",
         "term-volatility"
       ]
     },
@@ -155,10 +161,13 @@
         "风险"
       ],
       "related": [
-        "term-sharpe",
-        "method-circuitbreaker",
         "case-1987-crash",
-        "case-2020-liquidity"
+        "case-2020-liquidity",
+        "method-circuitbreaker",
+        "term-calmar-ratio",
+        "term-sharpe",
+        "term-sortino-ratio",
+        "term-value-at-risk"
       ]
     },
     {
@@ -191,10 +200,12 @@
       ],
       "related": [
         "basis-fee-cn",
+        "basis-limit-guard-depth",
         "method-cost-sensitivity",
-        "paper-grinold-kahn-2000",
         "paper-almgren-chriss-2001",
-        "basis-limit-guard-depth"
+        "paper-grinold-kahn-2000",
+        "term-liquidity",
+        "term-rebalance-frequency"
       ]
     },
     {
@@ -230,7 +241,9 @@
       "related": [
         "method-layer-monotonic",
         "term-beta",
-        "term-sharpe"
+        "term-sharpe",
+        "term-sortino-ratio",
+        "term-value-at-risk"
       ]
     },
     {
@@ -253,6 +266,7 @@
         "paper-fama-french-1993",
         "paper-jegadeesh-titman-1993",
         "principle-disposition",
+        "term-autocorrelation",
         "term-cross-sectional-vs-time-series"
       ]
     },
@@ -272,7 +286,8 @@
       ],
       "related": [
         "basis-limit-guard",
-        "method-silent-fallback"
+        "method-silent-fallback",
+        "term-order-types"
       ]
     },
     {
@@ -367,8 +382,9 @@
       ],
       "related": [
         "term-ic",
+        "term-ir",
         "term-spearman",
-        "term-ir"
+        "term-tracking-error"
       ]
     },
     {
@@ -472,6 +488,257 @@
         "term-zscore",
         "method-layer-monotonic",
         "method-parameter-robust"
+      ]
+    },
+    {
+      "id": "term-value-at-risk",
+      "category": "term",
+      "title": "VaR（Value at Risk，在险价值）",
+      "body": "VaR 回答「在给定置信水平下，未来某段时间内最多亏多少」。例：95% 日 VaR = 100 万，含义是「正常市况下，100 天里约有 5 天单日亏损会超过 100 万」。三个必须分清的点：① **VaR 不是最大损失**——它是一条分位线，超过它的那 5% 里亏多少 VaR 完全没说（这正是 2008 年 VaR 被广泛批评的原因）；② **参数法 vs 历史模拟 vs 蒙特卡洛**结果常差很多：参数法假设正态，会系统性低估肥尾风险；历史模拟依赖样本期（若样本里没有极端日，估出的 VaR 会过小）；③ **VaR 不满足次可加性**——两个组合各自的 VaR 加起来可能小于合并后的 VaR，这会鼓励「分散化反而更危险」的错误结论。因此实务上常与 CVaR（条件 VaR，即超过 VaR 后的平均损失）配对使用。",
+      "summary": "给定置信度下的最大预期损失分位线；不是最大损失、常低估肥尾、不满足次可加性。",
+      "formula": "P(L > VaR_α) = 1 − α；CVaR_α = E[L | L > VaR_α]",
+      "applicability": "风险限额设定、监管资本计量（巴塞尔）；必须同时声明置信水平与持有期。",
+      "limitations": "不告诉尾部有多深；参数法低估肥尾；不满足次可加性；样本依赖明显。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：本平台预置模板是多因子选股（动量族），产出的是组合收益序列而非风险计量。演示 VaR 需要引入分布假设与置信水平参数，属于指标计算而非模型回测，挂模板会让学生误以为「跑一次回测就得到 VaR」。",
+      "source": "方法论文：Jorion, P. (2007). Value at Risk: The New Benchmark for Managing Financial Risk (3rd ed.). McGraw-Hill. ISBN 978-0071464956.；历史与批评见 Artzner, P., Delbaen, F., Eber, J.M. & Heath, D. (1999). Coherent Measures of Risk. Mathematical Finance, 9(3), 203-228。DOI: 10.1111/1467-9965.00068.（提出次可加性等一致性公理）。",
+      "tags": [
+        "VaR",
+        "在险价值",
+        "风险计量",
+        "CVaR",
+        "分位"
+      ],
+      "related": [
+        "term-maxdrawdown",
+        "term-volatility"
+      ]
+    },
+    {
+      "id": "term-tracking-error",
+      "category": "term",
+      "title": "跟踪误差（Tracking Error）",
+      "body": "跟踪误差衡量组合收益相对基准的偏离程度，是**主动管理风险**的标准度量。注意它有两种口径且常被混用：① **事后（ex-post）**——实际收益序列的主动收益标准差（r_p − r_b 的标准差），用历史数据算；② **事前（ex-ante）**——用风险模型与当前持仓预测的主动风险（√(w_activeᵀ Σ w_active)），用持仓与协方差矩阵算。两者的数值常差很多：事后反映过去做了什么，事前反映现在持有什么。关键区别：**跟踪误差 ≠ 主动收益**——跟踪误差高不意味着收益高，它只衡量偏离幅度（可正可负）。信息比率 IR = 主动收益 / 跟踪误差，把两者联系起来。年化时注意基准频率（日跟踪误差 × √252）。",
+      "summary": "组合相对基准的偏离幅度（主动风险）；有事后/事前两种口径且常差很多。不等于主动收益。",
+      "formula": "TE_ex-post = std(r_p − r_b)；TE_ex-ante = √(w_activeᵀ Σ w_active)；IR = 主动收益 / TE",
+      "applicability": "指数增强与相对收益策略的核心约束；也用于评估「偏离是否值得」。",
+      "limitations": "两种口径不可混用；年化需明确基准频率；对基准选择敏感（换基准 TE 就变）。",
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "把同一模型的回测收益与等权基准做差，观察主动收益序列的标准差（即事后 TE）与其均值之比——这个比值就是信息比率。学生应注意到：模型可能跑赢基准但 TE 很大（说明这不是「稳定跑赢」而是「赌了一把」）。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 2 章与第 6 章（主动管理框架与 Fundamental Law）。ISBN 978-0070248823.；术语定义见 CFA Institute (2010). Global Investment Performance Standards (GIPS)。",
+      "tags": [
+        "跟踪误差",
+        "tracking error",
+        "主动风险",
+        "信息比率",
+        "指数增强"
+      ],
+      "related": [
+        "term-ir",
+        "term-information-coefficient",
+        "basis-benchmark"
+      ]
+    },
+    {
+      "id": "term-calmar-ratio",
+      "category": "term",
+      "title": "Calmar 比率与回撤类指标",
+      "body": "Calmar 比率 = 年化收益率 / 最大回撤，衡量「每承受一单位最大回撤换来多少年化收益」。它补充了夏普比率的一个盲区：夏普用**波动率**做分母，把向上波动也当风险惩罚，而回撤类指标只惩罚下行。两者会给出不同的策略排序——高波动但持续上涨的策略夏普不高但 Calmar 很高。三个使用要点：① 分子必须是年化收益、分母是最大回撤（同为百分比，量纲对齐），若分子用累计收益会得到没有意义的结果；② **最大回撤是单点极值**，样本期稍变就会变（比标准差脆弱得多），因此 Calmar 常需配合回撤持续期一起看；③ 短样本期内的 Calmar 极不可靠（一次深回撤就决定全部）。同类还有 Sterling（用平均回撤）与 MAR 比率。",
+      "summary": "年化收益 / 最大回撤；只惩罚下行，与夏普会给出不同排序。分母是单点极值，脆弱。",
+      "formula": "Calmar = 年化收益率 / |最大回撤|",
+      "applicability": "回撤敏感型策略评估（如绝对收益、目标风险）；与夏普互补使用。",
+      "limitations": "最大回撤是单点极值、样本敏感；短样本不可靠；不反映回撤持续期与恢复时间。",
+      "teachingModel": "mom-rev-combo",
+      "teachingNote": "同时输出夏普与 Calmar，观察两者对同一模型排序是否一致。学生应找出「夏普低但 Calmar 高」的情形并解释原因：向上波动被夏普惩罚，但不影响回撤类指标。",
+      "source": "教材：Bacon, C.R. (2008). Practical Portfolio Performance Measurement and Attribution (2nd ed.). John Wiley & Sons. 第 4-5 章（回撤类指标与风险调整收益）。ISBN 978-0470059289.；Magdon-Ismail, M., Atiya, A.F., Pratap, A. & Abu-Mostafa, Y.S. (2004). On the Maximum Drawdown of a Brownian Motion. Journal of Applied Probability, 41(1), 147-161。DOI: 10.1239/jap/1077134674.（回撤的解析性质）。",
+      "tags": [
+        "Calmar",
+        "最大回撤",
+        "回撤",
+        "风险调整收益",
+        "Sterling"
+      ],
+      "related": [
+        "term-maxdrawdown",
+        "term-sharpe"
+      ]
+    },
+    {
+      "id": "term-sortino-ratio",
+      "category": "term",
+      "title": "Sortino 比率（下行风险调整收益）",
+      "body": "Sortino 比率把夏普比率的分母从「总波动」换成「下行波动」：只统计低于目标收益（通常取 0 或无风险利率）的那部分收益的离散度。动机很直接——**向上的波动是收益不是风险**，用总波动做分母会惩罚那些「偶尔大涨」的策略。计算要点：① 分母用**下偏标准差**（downside deviation），只把低于目标值 r_target 的收益计入，其余记 0（不是剔除）；② 公式里的目标收益 MAR（minimum acceptable return）必须声明，取 0 与取无风险利率会得到不同结果；③ 样本里若下行期很少，分母会趋近 0，计算会不稳定（Sortino 会异常变大）。与夏普的关系：Sortino ≥ 夏普在收益分布右偏时成立，左偏时相反。",
+      "summary": "分母换成下行波动；动机是向上波动不该算风险。分母过小时不稳定。",
+      "formula": "Sortino = (R_P − MAR) / σ_down，σ_down = √(E[(R_P − MAR)² · 1{R_P<MAR}])",
+      "applicability": "收益分布右偏的策略（如趋势跟踪、期权卖方）评估；比夏普更贴近投资人感受。",
+      "limitations": "MAR 取值主观且影响结果；下行样本少时分母趋零 ⇒ 数值不稳定；仍依赖收益分布。",
+      "teachingModel": "mom-rev-combo",
+      "teachingNote": "对比同一模型的夏普与 Sortino：观察两者大小关系，并检查收益分布是右偏还是左偏。学生应验证「右偏时 Sortino ≥ 夏普」这一结论是否在自身数据上成立。",
+      "source": "原始文献：Sortino, F.A. & Price, L.N. (1994). Performance Measurement in a Downside Risk Framework. Journal of Investing, 3(3), 59-64。DOI: 10.3905/joi.3.3.59.；教材：Bacon, C.R. (2008). Practical Portfolio Performance Measurement and Attribution (2nd ed.). John Wiley & Sons. ISBN 978-0470059289.；下行风险统计基础见 Bawa, V.S. & Lindenberg, E.B. (1977). Capital Market Equilibrium in a Mean-Lower Partial Moment Framework. Journal of Financial Economics, 5(2), 189-200。DOI: 10.1016/0304-405x(77)90017-4.",
+      "tags": [
+        "Sortino",
+        "下行风险",
+        "下行波动",
+        "风险调整收益",
+        "MAR"
+      ],
+      "related": [
+        "term-sharpe",
+        "term-volatility",
+        "term-maxdrawdown"
+      ]
+    },
+    {
+      "id": "term-order-types",
+      "category": "term",
+      "title": "委托类型（限价/市价/最优五档等）",
+      "body": "A 股委托类型与撮合规则直接决定回测可成交性，是回测与实盘偏差的主要来源。核心类型：① **限价委托**——指定价格，只在该价或更优成交，A 股主板**只有限价与市价两类**（无止损单、无冰山单，与美股不同）；② **市价委托**——不指定价格，沪深两市细分不同（沪市有最优五档即时成交剩余撤销、最优五档即时成交剩余转限价；深市另有本方最优、对手方最优等），细节差异会改变大单的成交结果；③ **撤单**——当日有效（T+1 制度下当日买入不可卖出，但撤单随时可做）。回测必须建模的三件事：**涨跌停不可成交**（涨停时买单排队、跌停时卖单排队，价格触及不等于成交）、**停牌不可交易**、**最小变动单位**（A 股 0.01 元）与**整手**（100 股）。本平台撮合按「次一交易日开盘价 + 整手 + 同费率」口径处理。",
+      "summary": "A 股仅限价/市价两类；回测必须建模涨跌停不可成交、停牌、整手与最小变动单位。",
+      "formula": "",
+      "applicability": "回测可成交性建模；实盘下单类型选择。",
+      "limitations": "不同市场规则差异大（沪深市价类型不同、科创板/创业板另有价格笼子）；排队优先级无法精确模拟。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：委托类型属于交易机制，不是因子/策略。挂模板无法演示「涨停时买单不成交」这类机制——那需要撮合层的模拟，属于回测引擎能力而非模型定义。",
+      "source": "上交所与深交所交易规则（含《上海证券交易所交易规则》与《深圳证券交易所交易规则》关于委托类型与价格笼子的规定）。；科创板与创业板的价格笼子规则见各板块交易特别规定。；本项目 server/paper/broker.cjs（撮合实现：次一交易日开盘价、整手、同费率口径）。",
+      "tags": [
+        "委托",
+        "限价",
+        "市价",
+        "涨跌停",
+        "整手",
+        "撮合"
+      ],
+      "related": [
+        "basis-limit-guard",
+        "basis-limit-guard-depth",
+        "term-limit-up-down",
+        "term-t-plus-one"
+      ]
+    },
+    {
+      "id": "term-t-plus-one",
+      "category": "term",
+      "title": "T+1 交易制度与资金交收",
+      "body": "A 股的 T+1 有两个层面，混淆会导致回测错误：① **股份 T+1**——当日买入的股票**次日才能卖出**（当日买入当日不可卖），这意味着日内回转交易（股票）不被允许，也意味着「当日调仓」在实盘上做不到双边；② **资金 T+0（可用）但 T+1（可取）**——卖出所得资金当日可用于再买入，但要次日才能提现。对回测的直接影响：**换仓必须跨日**——若回测假设「当日收盘卖出 A 并买入 B」，实盘上资金虽可用但股份不可卖（若 A 是当日买的），故正确口径是「以 T-1 收盘信号决定、T 日开盘调仓」。另有例外：**ETF 与可转债支持 T+0**（当日买入可当日卖出），这常被误当成股票规则。本平台撮合口径即采用 T-1 收盘排名、T 开盘成交。",
+      "summary": "股票当日买入次日才可卖（日内回转不可）；卖出资金当日可用次日可取。回测换仓必须跨日。",
+      "formula": "",
+      "applicability": "回测换仓频率设计；判断策略是否可实盘执行。",
+      "limitations": "ETF/可转债是 T+0，与股票规则不同；融资融券与期权另有规则；跨境标的更复杂。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：T+1 是制度约束而非策略要素。挂模板只会跑出「按此口径的收益」，演示不了「若不遵守 T+1 会怎样」（那需要构造违规口径的对照回测，属引擎能力）。",
+      "source": "《上海证券交易所交易规则》与《深圳证券交易所交易规则》关于当日买入证券不得当日卖出的规定。；本项目 server/crosssect.cjs（T-1 收盘排名、T 开盘成交、整手与同费率口径）。；ETF 与可转债的 T+0 规定见各交易所关于交易型开放式基金与可转换公司债券交易实施细则。",
+      "tags": [
+        "T+1",
+        "交易日制度",
+        "日内回转",
+        "资金交收",
+        "回测口径"
+      ],
+      "related": [
+        "basis-calendar",
+        "method-cross-section",
+        "term-order-types",
+        "term-rebalance-frequency"
+      ]
+    },
+    {
+      "id": "term-liquidity",
+      "category": "term",
+      "title": "流动性（Liquidity）与冲击成本",
+      "body": "流动性是「以多快速度、多大代价完成交易」的能力，四个维度常被混为一谈：① **紧度（tightness）**——买卖价差，衡量立即成交的成本；② **深度（depth）**——各价位挂单量，衡量大单可吸收的量；③ **弹性（resiliency）**——价格被冲击后恢复的速度；④ **即时性（immediacy）**——成交速度。对量化的实际约束：**冲击成本随单笔下单量非线性增长**（大致按平方根律），这意味着策略容量有上限——同一个策略在小资金下有效，大资金下会被自己的交易成本吃掉收益。建模要点：成本 = 固定成本（佣金+印花税+过户费）+ 价差成本 + 冲击成本；前两项容易建模，冲击成本必须依赖流动性与下单量估计。本平台当前撮合按「零滑点 + 固定费率」处理，属保守简化（高估收益），评估容量时需另行建模。",
+      "summary": "四维度（紧度/深度/弹性/即时性）；冲击成本非线性增长 ⇒ 策略容量有上限。",
+      "formula": "总成本 = 固定费率成本 + 价差成本 + 冲击成本（约 ∝ √(下单量/日均成交量)）",
+      "applicability": "策略容量评估、交易成本建模、换手率控制。",
+      "limitations": "四维度难以同时量化；冲击成本模型依赖市场状态；当前平台撮合未建模冲击（高估收益）。",
+      "teachingModel": "flow-cleaned-mom",
+      "teachingNote": "对比「清洗流动性差的标的」与「不清洗」两个版本：观察换手率与收益差。学生应理解成本对高换手策略的侵蚀，并思考为什么本平台的零滑点假设会高估收益。",
+      "source": "原始论文：Kyle, A.S. (1985). Continuous Auctions and Insider Trading. Econometrica, 53(6), 1315-1335。DOI: 10.2307/1913210.（流动性四维度的经典框架）。；Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56。DOI: 10.1016/s1386-4181(01)00024-6.（非流动性度量）。；冲击成本平方根律见 Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39。",
+      "tags": [
+        "流动性",
+        "liquidity",
+        "冲击成本",
+        "容量",
+        "买卖价差"
+      ],
+      "related": [
+        "principle-illiquidity",
+        "method-cost-sensitivity",
+        "term-turnover"
+      ]
+    },
+    {
+      "id": "term-autocorrelation",
+      "category": "term",
+      "title": "自相关与序列相关（Autocorrelation）",
+      "body": "自相关衡量序列与其自身滞后版本的关联，在量化里影响三件事：① **显著性检验**——收益序列若有自相关，普通 t 检验的标准误会被低估（Newey-West 调整正是为此），得出「显著」的结论可能是假的；② **夏普比率的年化**——年化公式 Sharpe_annual = Sharpe_period × √(期数) 假设收益**独立同分布**，若存在正自相关，实际年化夏普会高于公式值（风险被低估），负自相关则相反；③ **波动率估计**——正自相关时，用日频波动年化会低估真实长期波动。一阶自相关的方向有经济含义：**动量**策略赚钱意味着收益正自相关，**反转**策略赚钱意味着负自相关——两者不可能同时长期成立（除非在不同时间尺度上）。检验用 Ljung-Box 或 Durbin-Watson。",
+      "summary": "影响显著性检验、夏普年化、波动估计；正自相关=动量，负自相关=反转。",
+      "formula": "ρ_k = Cov(r_t, r_{t−k}) / Var(r_t)；Ljung-Box Q 统计量检验联合显著性",
+      "applicability": "回测统计推断、夏普年化校正、动量/反转策略的机理判断。",
+      "limitations": "一阶自相关无法刻画长记忆；非平稳序列的自相关不可靠；高频数据受微观结构噪声干扰。",
+      "teachingModel": "mom20-baseline",
+      "teachingNote": "对回测收益序列做一阶自相关检验，并与模型的动量/反转方向对照。学生应验证：动量模型的收益序列是否呈现正自相关，反转模型是否相反；再检查夏普年化公式在本数据上是否高估。",
+      "source": "方法论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 46(6), 1431-1463。DOI: 10.2307/1913610.（HAC 标准误）。；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52。DOI: 10.2469/faj.v58.n4.2453.（自相关下的夏普年化校正）。；检验方法见 Ljung, G.M. & Box, G.E.P. (1978). On a Measure of Lack of Fit in Time Series Models. Biometrika, 65(2), 297-303。DOI: 10.1093/biomet/65.2.297.",
+      "tags": [
+        "自相关",
+        "序列相关",
+        "autocorrelation",
+        "Ljung-Box",
+        "动量"
+      ],
+      "related": [
+        "term-newey-west",
+        "term-sharpe",
+        "term-momentum-factor"
+      ]
+    },
+    {
+      "id": "term-lookahead-vs-survivorship",
+      "category": "term",
+      "title": "前视偏差 vs 幸存者偏差",
+      "body": "两类最容易混的回测偏差，来源完全不同：① **前视偏差（look-ahead bias）**——用了当时**不可能知道**的信息。典型形态：用年报数据但没按披露日对齐（财报 4 月才披露，却在 1 月就用了）、用当日收盘价做当日开盘的决策、用**事后确定**的指数成分股名单（那年的名单是后来才定的）、用复权价计算当时的价格（复权因子含未来信息）。② **幸存者偏差（survivorship bias）**——样本里**只剩活下来的标的**。典型形态：用「当前上市的股票」回溯十年前，退市的、被并购的都没了，而这些恰恰常是表现差的，于是收益被系统性高估。两者的判别方法不同：前视偏差靠**逐笔检查数据可用时点**（每个字段问「这个时点能拿到吗」）；幸存者偏差靠**检查股票池是否含已退市标的**（看是否有退市股、看股票池是否随时间变化）。本平台 PIT 术语条目与本条互补。",
+      "summary": "前视=用了当时拿不到的信息；幸存者=样本只剩活下来的。判别方法不同，都会高估收益。",
+      "formula": "",
+      "applicability": "回测可信度的两项基础检查；策略上线前的必查项。",
+      "limitations": "两者常同时存在（叠加放大高估）；完整消除需历史成分股与退市股数据（数据源成本高）。",
+      "teachingModel": null,
+      "teachingNote": "🔴 故意不挂教学模型：本平台归档仅含当前核心池（209 只），**本身就带幸存者偏差**（不含退市股）。挂模板会让学生把带偏的结果当基准学，反而强化错误认知——本条的正确答案是「知道数据有偏」，而非「跑出一个数」。",
+      "source": "方法论文：López de Prado, M. (2018). Advances in Financial Machine Learning. John Wiley & Sons. 第 7 章（Cross-Validation in Finance）与第 11 章关于回测陷阱的讨论。ISBN 978-1119482086.；Bailey, D.H., Borwein, J.M., López de Prado, M. & Zhu, Q.J. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471。DOI: 10.1090/noti1105.；本项目 term-pit 条目（PIT 时点数据）与本条互补。",
+      "tags": [
+        "前视偏差",
+        "幸存者偏差",
+        "look-ahead",
+        "survivorship",
+        "回测陷阱"
+      ],
+      "related": [
+        "term-pit",
+        "method-lookahead",
+        "method-adjust-illusion"
+      ]
+    },
+    {
+      "id": "term-rebalance-frequency",
+      "category": "term",
+      "title": "调仓频率与信号半衰期",
+      "body": "调仓频率不是「越勤越好」也不是「越懒越好」，它应与**信号半衰期**匹配。三个决定因素：① **信号衰减速度**——动量因子的信息半衰期通常数周到数月，若每天调仓，大部分交易是在交易噪声；短周期反转信号半衰期仅数日，月度调仓会错过大部分信息；② **成本侵蚀**——频率翻倍意味着换手率翻倍，固定成本（佣金+印花税+过户费）随之翻倍。存在一个**最优频率**：边际信息增益 = 边际成本，超过它收益递减；③ **A 股 T+1 约束**——股票当日买入次日才可卖，这限定了最高可行频率（不能日内双边调仓）。实践判据：先算不同频率下的收益与换手率（频率扫描），找收益/成本比最高的点；若曲线平坦则取低频（成本更低且更稳健）。注意**频率提升会放大数据窥探**：可选的调仓日越多，越容易挑到「历史最优」的那一个。",
+      "summary": "应与信号半衰期匹配；存在由成本决定的最优频率；频率越高越易数据窥探。",
+      "formula": "",
+      "applicability": "策略参数选择；换手率控制；容量评估的前置。",
+      "limitations": "信号半衰期难以精确测量；最优频率随市场状态变化；频率扫描本身引入多重检验问题。",
+      "teachingModel": "multi-mom",
+      "teachingNote": "用同一模型扫描不同调仓频率（如 5/10/20 日），记录收益率、换手率与成本后净值。学生应找出收益/换手率的拐点，并观察「频率最高的那一档是否也是成本侵蚀最严重的」。",
+      "source": "教材：Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management (2nd ed.). McGraw-Hill. 第 9 章关于交易成本的讨论。ISBN 978-0070248823.；成本与频率的权衡见 Frazzini, A., Israel, R. & Moskowitz, T.J. (2018). Trading Costs. SSRN Working Paper。DOI: 10.2139/ssrn.3229719.；本项目 term-turnover 条目与 method-cost-sensitivity 条目与本条互补。",
+      "tags": [
+        "调仓频率",
+        "rebalance",
+        "信号半衰期",
+        "换手率",
+        "交易成本"
+      ],
+      "related": [
+        "term-turnover",
+        "method-cost-sensitivity",
+        "term-t-plus-one"
       ]
     }
   ]

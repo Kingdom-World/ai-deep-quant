@@ -122,6 +122,21 @@ function main() {
   const dup = ids.filter((v, i, a) => a.indexOf(v) !== i);
   for (const d of new Set(dup)) add('🔴', d, 'id 重复');
 
+  // 🔴 双向闭合（2026-10-08 加）：`related` 必须**互相**指向。
+  //   这条门原来只在 test/knowledge.test.cjs 里，而测试是**事后**才发现；
+  //   放进 lint 后变成**写前/写后**可查（add-entries 会调用 lint）。
+  //   实测教训：本批 10 条里漏了 2 处"新条目之间互指"——工具只补了"新→旧"。
+  const idSet2 = new Set(ids);
+  for (const e of items) {
+    for (const r of e.related || []) {
+      if (!idSet2.has(r)) continue;                      // 悬空另测
+      const other = items.find((x) => x.id === r);
+      if (other && !(other.related || []).includes(e.id)) {
+        add('🔴', e.id, `单向关联（${r} 未回指 ${e.id}）—— related 必须双向闭合`);
+      }
+    }
+  }
+
   // 文献不得是孤岛（paper 必须被至少一条非 paper 条目引用）
   const papers = items.filter((e) => e.category === 'paper');
   for (const p of papers) {

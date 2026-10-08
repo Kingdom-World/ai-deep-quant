@@ -16,10 +16,11 @@
         "样本外"
       ],
       "related": [
-        "term-pit",
         "basis-financial-pubdate",
+        "method-cross-section",
         "paper-lopez-de-prado-2018",
-        "method-cross-section"
+        "term-lookahead-vs-survivorship",
+        "term-pit"
       ]
     },
     {
@@ -36,6 +37,7 @@
       ],
       "related": [
         "basis-pctchg",
+        "term-lookahead-vs-survivorship",
         "term-qfq",
         "term-zscore"
       ]
@@ -118,12 +120,14 @@
         "冲击成本"
       ],
       "related": [
-        "term-turnover",
+        "basis-fee-cn",
         "basis-slippage",
         "method-parameter-robust",
-        "paper-grinold-kahn-2000",
         "paper-almgren-chriss-2001",
-        "basis-fee-cn"
+        "paper-grinold-kahn-2000",
+        "term-liquidity",
+        "term-rebalance-frequency",
+        "term-turnover"
       ]
     },
     {
@@ -174,7 +178,8 @@
         "paper-jegadeesh-titman-1993",
         "term-cross-sectional-vs-time-series",
         "term-equal-weight",
-        "term-momentum-factor"
+        "term-momentum-factor",
+        "term-t-plus-one"
       ]
     },
     {

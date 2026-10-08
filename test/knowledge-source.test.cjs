@@ -153,3 +153,49 @@ test('真实全库：任何条目的 source 都不得解析出空的 kind（分�
     }
   }
 });
+// ─────────────────────────────────────────────────────────────
+// detectKind 回归（2026-10-07 修复）
+//
+// 🔴 缺陷形态：真期刊论文被判成 `report` ⇒ 被 DOI 补全流程**跳过**。
+//    这是"漏"不是"错"，比误判更难发现（不报错、不污染数据，只是少做了一件事）。
+//    两个根因：① 词表尾 `\b` 匹配不上派生词（`econometric` ⊄ `Econometrica`）
+//              ② 缩写刊名不在词表（`JRSS-B`）
+// ─────────────────────────────────────────────────────────────
+
+test('detectKind：派生词刊名要判为 journal（尾 \\b 的坑）', () => {
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  // `econometric\b` 匹配不上 Econometrica（后随 a 仍是词字符）
+  assert.strictEqual(p('Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 46(6), 1431-1463.'), 'journal');
+  // `science\b` 同样漏掉 Sciences
+  assert.strictEqual(p('Some Author (2000). A Title. Journal of Financial Sciences, 5(1), 1-10.'), 'journal');
+});
+
+test('detectKind：缩写刊名要判为 journal', () => {
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  assert.strictEqual(p('Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B, 57(1), 289-300'), 'journal');
+});
+
+test('detectKind：财经类期刊名要判为 journal（Risk Magazine / Portfolio Management）', () => {
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  assert.strictEqual(p('Magdon-Ismail, M. & Atiya, A. (2004). Maximum Drawdown. Risk Magazine, 17(10), 99-102.'), 'journal');
+  assert.strictEqual(p('Bailey, D. H. & López de Prado, M. (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5), 94-107.'), 'journal');
+});
+
+test('🔴 detectKind：出版社信号必须先于期刊词表（否则书被判成期刊）', () => {
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  // `Active Portfolio Management` 的 management 命中期刊词表 ⇒ 若顺序反了会判 journal
+  assert.strictEqual(p('Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management: A Quantitative Approach (2nd ed.). McGraw-Hill.'), 'book');
+  assert.strictEqual(p('Lowenstein, R. (2000). When Genius Failed. Random House.'), 'book');
+  assert.strictEqual(p('Shiller, R. J. (2000). Irrational Exuberance. Princeton University Press.'), 'book');
+  assert.strictEqual(p('Gorton, G. B. (2010). Slapped by the Invisible Hand. Oxford University Press.'), 'book');
+});
+
+test('detectKind：工作论文优先于出版社判定（SSRN Working Paper 不能被判成书）', () => {
+  assert.strictEqual(S.parseSource('Frazzini, A., Israel, R. & Moskowitz, T.J. (2018). Trading Costs. SSRN Working Paper').refs[0].kind, 'report');
+});
+
+test('detectKind：中文官方文档/接口文档仍判 report（不能被误判成期刊）', () => {
+  const p = (t) => S.parseSource(t).refs[0].kind;
+  assert.strictEqual(p('Baostock 日线数据接口 field=pctChg 定义（涨跌幅，以百分数表示）'), 'report');
+  assert.strictEqual(p('上海证券交易所与深圳证券交易所 2015 年 7-8 月关于临时停市与交易异常的公告'), 'report');
+});

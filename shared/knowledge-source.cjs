@@ -122,10 +122,30 @@ function detectKind(t) {
   if (/\b(ISBN)\b/i.test(t)) return 'book';
   // 教材章节：出现「第 N 章 / Chapter N」且同段有出版社
   if (/第\s*\d+\s*章|Chapter\s*\d+|Ch\.\s*\d+/i.test(t)) return 'chapter';
-  // 期刊卷期页：`Journal, 29(1), 5-68` 或 `Journal, 99(6), 2533-2551`
-  if (/\b(journal|review|quarterly|economics|finance|science|reports|annals|notices|econometric)\b[^.;]{0,40},?\s*\d+\s*\(/i.test(t)) return 'journal';
-  if (/\b(journal|review|quarterly|economics|finance)\b/i.test(t)) return 'journal';
-  if (/\b(Press|Publishing|出版社)\b/i.test(t)) return 'book';
+  // 🔴 期刊刊名匹配的三条实测教训（都导致真期刊论文被判成 report、
+  //    进而被 DOI 补全流程**跳过**——是"漏"而不是"错"，更难发现）：
+  //   ① **尾 `\b` 会漏掉派生词**：`econometric\b` 匹配不上 `Econometrica`
+  //      （后随 `a` 仍是词字符，词边界不成立）；`science\b` 漏掉 `Sciences`。
+  //      ⇒ 词表项一律**不加尾 `\b`**，用词首前缀匹配。
+  //   ② **缩写刊名不在词表里**：`JRSS-B`（Journal of the Royal Statistical
+  //      Society B）是标准缩写，词表无 `journal` 故漏判。
+  //      ⇒ 显式收录常见缩写。
+  //   ③ 词表再加若干本领域常见刊名首词（econometrica / biometrica / ssrn 等）。
+  // 🔴 出版社信号必须**先于**期刊词表判 —— 否则 `Active Portfolio Management`
+  //    这类书名里的 `management` 会命中期刊词表，把**书**判成期刊
+  //    （实测踩过；书被判成期刊后会走 DOI 补全 = 给书伪造 DOI 的入口）。
+  //    但需排除"期刊名里含 Press 的情况"不成立，故出版社信号放前面是安全的。
+  const PUBLISHERS = ['Press', 'Publishing', 'Publishers?', 'Wiley', 'McGraw-?Hill', 'Springer',
+    'Pearson', 'Elsevier', 'Random House', 'Princeton', 'Harvard Business', 'MIT Press',
+    'Oxford', 'Cambridge University', 'John Wiley', 'FT Press', 'Penguin', 'Harper',
+    'Simon & Schuster', '出版社'];
+  if (new RegExp(`\\b(${PUBLISHERS.join('|')})`, 'i').test(t) && !/\bWorking Paper\b/i.test(t)) return 'book';
+  const JOURNALS = 'journal|review|quarterly|economics|finance|science|reports|annals|notices|'
+    + 'econometric|biometric|statistic|psychometr|management|banking|financial|'
+    + 'jrss|jf|jfe|rfs|aer|qje|jpe|ssrn|risk|portfolio|forecast';
+  // 期刊卷期页：`Journal, 29(1), 5-68`（词首前缀 + 40 字符内出现卷期括号）
+  if (new RegExp(`(${JOURNALS})[^.;]{0,40},?\\s*\\d+\\s*\\(`, 'i').test(t)) return 'journal';
+  if (new RegExp(`\\b(${JOURNALS})`, 'i').test(t)) return 'journal';
   if (/^https?:\/\//.test(t)) return 'web';
   return 'report';
 }

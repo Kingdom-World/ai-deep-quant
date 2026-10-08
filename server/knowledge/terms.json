@@ -39,7 +39,7 @@
       "id": "term-newey-west",
       "title": "Newey-West 调整（HAC 标准误）",
       "body": "回归或均值检验中，若残差存在异方差与自相关（时序数据几乎必然），普通 OLS 标准误会低估真实标准误，导致 t 值虚高、把噪声当成显著。Newey-West（1987）提出异方差自相关一致（HAC）协方差矩阵估计，通过对不同滞后的自协方差加权（常用 Bartlett 核，权重随滞后线性衰减）来修正。关键参数是滞后阶数 L：取太小无法消除自相关，太大损失效率。常用经验法则 L = floor(4 × (T/100)^(2/9))。当 L = 0 时 Newey-West 退化为普通（异方差稳健）标准误。",
-      "source": "原始论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708。实现参考：statsmodels 库 statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式；教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 12 章 Serial Correlation and Heteroskedasticity in Time Series Regressions。",
+      "source": "原始论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708。实现参考：statsmodels 库 statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式 DOI: 10.2307/1913610.；教材：Wooldridge《Introductory Econometrics: A Modern Approach》第 12 章 Serial Correlation and Heteroskedasticity in Time Series Regressions。",
       "tags": ["Newey-West", "HAC", "标准误", "自相关", "异方差", "显著性"],
       "related": ["term-stats-significance", "method-multiple-testing", "paper-newey-west-1987", "paper-harvey-liu-zhu-2016"]
     },

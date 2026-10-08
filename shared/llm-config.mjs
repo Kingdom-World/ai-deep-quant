@@ -31,6 +31,55 @@ export const SUGGESTED_MODELS = {
   custom: [], // 自定义端点的模型名只有使用者自己知道，保持为空
 };
 
+// ─────────────────────────────────────────────────────────────
+// 能力标注（§12.6 欠账 #4）
+//
+//   🔴 为什么必须显式标注而非默认：
+//     用户会理所当然地认为"接了 AI 就能看图"。实测 `glm-4.7-flash`
+//     **不支持视觉输入**（返回 400 / code 1210，`content.type` 仅接受 `['text']`），
+//     而它是本平台的默认推荐模型（免费白名单首位）。
+//     ⇒ 不标注 = 用户传图必失败且不知道为什么。
+//
+//   🔴 判定纪律：**只标"实测确认支持"的模型，其余一律不标**。
+//     不写"推测支持"、不写"应该可以"——能力标注错了比不标更糟
+//     （用户会照着标注去用，然后失败）。
+//     依据：智谱官方多模态系列命名（`-v` 后缀 = vision）+ 实测。
+// ─────────────────────────────────────────────────────────────
+
+/** 支持视觉输入的模型（**实测/官方多模态系列确认**） */
+export const VISION_CAPABLE_MODELS = new Set([
+  // 智谱多模态系列（官方多模态产品线，`v` = vision）
+  'glm-4.1v-thinking-flash',
+  'glm-4.6v-flash',
+  'glm-4v-flash',
+  'glm-4v-plus',
+]);
+
+/**
+ * 模型是否支持视觉输入。
+ * 🔴 **未知一律返回 false**（fail closed）：宁可少标也不误标 ——
+ *    误标会让用户按错误前提去用（"我以为它能看图"），比不标更糟。
+ * @param {string} model 模型名（大小写不敏感）
+ * @returns {boolean}
+ */
+export function supportsVision(model) {
+  return VISION_CAPABLE_MODELS.has(String(model || '').trim().toLowerCase());
+}
+
+/**
+ * 取模型的能力提示（用于 UI 徽标）；不支持/未知返回 null（不显示徽标）。
+ * @param {string} model
+ * @returns {{vision: true, label: string, title: string} | null}
+ */
+export function capabilityBadge(model) {
+  if (!supportsVision(model)) return null;
+  return {
+    vision: true,
+    label: '可读图',
+    title: '该模型支持视觉输入（可读截图/图片）。注：本平台的 AI 助手当前未开放上传图片的入口。',
+  };
+}
+
 export const STORAGE_KEY = 'aiq.llm.byok.v1';
 
 /** 把用户输入归一化为可用的配置对象；字段缺失返回带 errors 的结果 */

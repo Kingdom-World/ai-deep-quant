@@ -17,6 +17,8 @@ import('../shared/llm-config.mjs').then((mod) => {
     SUGGESTED_MODELS,
     STORAGE_KEY,
     TIER_NOTES,
+    supportsVision,
+    capabilityBadge,
   } = mod;
 
   /** 内存存储（模拟 localStorage） */
@@ -213,5 +215,31 @@ import('../shared/llm-config.mjs').then((mod) => {
     assert.ok(TIER_NOTES.byok.includes('不经过本站服务器'));
     assert.ok(TIER_NOTES.byok.includes('不保存'), 'BYOK 文案必须声明本站不保存 key');
     assert.ok(TIER_NOTES.platform.includes('仅管理员'));
+  });
+
+  // ── 能力标注（§12.6 欠账 #4） ──
+
+  test('视觉能力：只认实测/官方的多模态型号（fail closed）', () => {
+    // 实测 glm-4.7-flash 不支持（400 / code 1210）——它是默认推荐模型，绝不能误标
+    assert.strictEqual(supportsVision('glm-4.7-flash'), false, '默认推荐模型不支持视觉，不得误标');
+    assert.strictEqual(supportsVision('glm-4.1v-thinking-flash'), true, '官方多模态系列应识别');
+    assert.strictEqual(supportsVision('glm-4.6v-flash'), true);
+    // 大小写不敏感
+    assert.strictEqual(supportsVision('GLM-4.6V-Flash'), true);
+  });
+
+  test('🔴 未知模型一律 false（宁可少标不误标）', () => {
+    for (const m of ['unknown-model', 'gpt-4o', '', null, undefined, ' glm-4.7-flash ']) {
+      assert.strictEqual(supportsVision(m), false, `未知/不支持应返回 false：${JSON.stringify(m)}`);
+    }
+    // 前后空格要能归一（避免 ` glm-4.6v-flash` 被误判为未知）
+    assert.strictEqual(supportsVision(' glm-4.6v-flash '), true, 'trim 后应识别');
+  });
+
+  test('capabilityBadge：仅对支持视觉的模型给出徽标', () => {
+    assert.strictEqual(capabilityBadge('glm-4.7-flash'), null, '不支持则不给徽标（不显示不支持）');
+    const b = capabilityBadge('glm-4.6v-flash');
+    assert.ok(b && b.vision === true);
+    assert.ok(b.title.includes('未开放上传图片'), '文案须诚实说明当前无上传入口');
   });
 });

@@ -51,3 +51,12 @@ export declare function maskKey(key?: string): string;
 
 /** 档位说明文案（与方案书同口径，避免各处硬编码） */
 export declare const TIER_NOTES: { rule: string; byok: string; platform: string };
+
+/** 支持视觉输入的模型集合（实测/官方多模态系列确认；查询请用 supportsVision） */
+export declare const VISION_CAPABLE_MODELS: Set<string>;
+
+/** 模型是否支持视觉输入。🔴 未知一律 false（fail closed，宁可少标不误标） */
+export declare function supportsVision(model?: string): boolean;
+
+/** 能力徽标文案；不支持/未知返回 null（UI 不显示徽标） */
+export declare function capabilityBadge(model?: string): { vision: true; label: string; title: string } | null;

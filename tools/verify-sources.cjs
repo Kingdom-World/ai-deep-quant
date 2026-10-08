@@ -250,7 +250,20 @@ async function main() {
         rec.diffs = diffFields(ref, meta);
         const mismatched = rec.diffs.filter((d) => d.verdict === 'mismatch');
         // 标题单独判：DOI 命中但标题差很远 ⇒ 极可能是"DOI 配错了文章"
-        if (ref.title && titleSim(ref.title, rec.theirs.title) < 0.5) {
+        //
+        // 🔴 容差：**副标题关系**（与页码"前缀等价"同构）。
+        //    学术引用通行写法会带副标题，而 Crossref 常只存**主标题**：
+        //    Ang《Asset Management: A Systematic Approach to Factor Investing》
+        //    vs 权威「Asset Management」（10.1093/acprof…，实测）。
+        //    若不放行，等于逼人把正确引用砍成残缺形式——正是"制造噪声"的老坑。
+        //    规则：一方是另一方的**前缀**（去掉副标题后）即判 match。
+        const titleEq = (() => {
+          const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ').trim();
+          const a = norm(ref.title), b = norm(rec.theirs.title);
+          if (!a || !b) return false;
+          return a === b || a.startsWith(b) || b.startsWith(a);
+        })();
+        if (ref.title && !titleEq && titleSim(ref.title, rec.theirs.title) < 0.5) {
           rec.status = 'title-mismatch';
           rec.diffs.push({ field: 'title~', ours: ref.title, theirs: rec.theirs.title, verdict: 'mismatch' });
         } else if (mismatched.length) {

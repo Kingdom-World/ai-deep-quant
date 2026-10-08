@@ -26,6 +26,7 @@ import {
   createConfigStore,
   maskKey,
   TIER_NOTES,
+  capabilityBadge,
 } from '../../shared/llm-config.mjs';
 import { buildUserMessage, callDirect, DIRECT_ERRORS, BYOK_ROLES, rolePromptFor } from '../../shared/llm-direct.mjs';
 
@@ -835,6 +836,27 @@ function ByokPanel({ store, symbol, symbolName }: { store: any; symbol: string; 
             <option key={m} value={m} />
           ))}
         </datalist>
+        {/* 能力标注（§12.6 欠账 #4）：
+            🔴 不标注 = 用户以为"接了 AI 就能看图"，传图必失败且不知原因。
+            实测 glm-4.7-flash 不支持视觉（400/code 1210），而它是默认推荐模型。
+            🔴 只显示**确认支持**的徽标（fail closed）——不显示"不支持"徽标，
+               因为模型名可手填，对未知名字下"不支持"结论同样是误标。 */}
+        {(() => {
+          const badge = capabilityBadge(model);
+          if (!badge) return null;
+          return (
+            <span
+              title={badge.title}
+              style={{
+                padding: '3px 8px', fontSize: 11, borderRadius: 6,
+                color: '#a7f3d0', backgroundColor: 'rgba(16,185,129,0.12)',
+                border: '1px solid rgba(16,185,129,0.35)', whiteSpace: 'nowrap',
+              }}
+            >
+              {badge.label}
+            </span>
+          );
+        })()}
         <input
           value={key}
           onChange={(e) => setKey(e.target.value)}

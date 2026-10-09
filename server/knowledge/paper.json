@@ -25,7 +25,13 @@
       "body": "Campbell R. Harvey、Yan Liu 与 Heqing Zhu 发表于 Review of Financial Studies 的论文，提出面对「研究者在同一数据集上反复尝试」导致的多重比较问题时，沿用传统的 |t| ≥ 2 门槛远远不够，建议将截面因子研究的显著门槛提高到 |t| ≥ 3。论证要点：随着被检验因子数量增长，随机噪声中被判为「显著」的数量期望随之上升；若考虑学术发表偏倚，实际所需的门槛更高。本平台在统计检验输出中同时给出 |t| ≥ 2 与 |t| ≥ 3 两个判定（server/statstest.cjs 的 significant2 / significant3），正是为了不把「够 2 就算数」当作默认结论。",
       "source": "Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. DOI: 10.1093/rfs/hhv059。",
       "tags": ["论文", "多重比较", "数据窥探", "t 值门槛", "重复研究", "RFS"],
-      "related": ["term-stats-significance", "method-multiple-testing", "term-newey-west", "method-sample-length"]
+      "related": [
+        "method-anomaly-false-rejection",
+        "method-multiple-testing",
+        "method-sample-length",
+        "term-newey-west",
+        "term-stats-significance"
+      ]
     },
     {
       "id": "paper-grinold-kahn-2000",
@@ -70,6 +76,7 @@
       "source": "Bailey, D.H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094。同组作者另见：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5), 458-471。",
       "tags": ["论文", "通缩夏普", "选择偏差", "回测过拟合", "参数稳健性", "JPM"],
       "related": [
+        "method-anomaly-false-rejection",
         "method-benchmark-overfit",
         "method-lookahead-audit",
         "method-multiple-testing",
@@ -104,7 +111,7 @@
       "id": "paper-almgren-chriss-2001",
       "title": "Almgren & Chriss (2001) 最优执行与冲击成本",
       "body": "Robert Almgren 与 Neil Chriss 发表于 Journal of Risk 的论文，建立最优执行（optimal execution）的连续时间框架：在「快速交易承受较大冲击成本」与「缓慢交易承受较大价格风险」之间求最优权衡。给出的核心洞见是——交易成本不是固定的百分比，而是随下单量与市场流动性变化的函数，规模越大偏差越大。本平台据此在口径中明确声明：回测使用固定百分比滑点（默认 0.1%）是**保守近似**，并不建模真实冲击成本；因此任何策略的成本敏感度检验都应理解为下限估计，而非实盘成本的精算。",
-      "source": "Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041。",
+      "source": "Almgren, R. & Chriss, N. (2001). Optimal execution of portfolio transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041。",
       "tags": ["论文", "最优执行", "冲击成本", "滑点", "流动性", "交易成本建模"],
       "related": ["basis-slippage", "method-cost-sensitivity", "term-turnover"]
     }

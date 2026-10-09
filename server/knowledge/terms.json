@@ -18,6 +18,7 @@
       ],
       "related": [
         "basis-financial-pubdate",
+        "method-gross-profitability",
         "method-lookahead",
         "method-lookahead-audit",
         "method-reproducibility",
@@ -125,6 +126,7 @@
       "related": [
         "method-macobbeth-regression",
         "method-multiple-testing",
+        "method-robust-regression",
         "method-sample-length",
         "paper-benjamini-hochberg-1995",
         "paper-harvey-liu-zhu-2016",
@@ -169,6 +171,7 @@
         "case-2020-liquidity",
         "method-circuitbreaker",
         "method-low-risk-anomaly",
+        "method-momentum-crash",
         "term-calmar-ratio",
         "term-sharpe",
         "term-sortino-ratio",
@@ -207,6 +210,9 @@
         "basis-fee-cn",
         "basis-limit-guard-depth",
         "method-cost-sensitivity",
+        "method-institutional-frictions",
+        "method-microstructure-cost",
+        "method-rebalance-frequency",
         "paper-almgren-chriss-2001",
         "paper-grinold-kahn-2000",
         "term-liquidity",
@@ -244,6 +250,7 @@
         "GARCH"
       ],
       "related": [
+        "method-covariance-conditional",
         "method-covariance-shrinkage",
         "method-idiosyncratic-volatility",
         "method-layer-monotonic",
@@ -270,6 +277,7 @@
         "cycle-a-share-style",
         "method-cross-section",
         "method-layer-monotonic",
+        "method-momentum-crash",
         "method-persistence-attribution",
         "method-time-series-momentum",
         "paper-fama-french-1993",
@@ -295,6 +303,7 @@
       ],
       "related": [
         "basis-limit-guard",
+        "method-microstructure-cost",
         "method-silent-fallback",
         "term-order-types"
       ]
@@ -339,6 +348,7 @@
         "敏感度"
       ],
       "related": [
+        "method-black-litterman",
         "method-fama-french-3factor",
         "method-idiosyncratic-volatility",
         "method-low-risk-anomaly",
@@ -370,7 +380,9 @@
         "业绩归因"
       ],
       "related": [
+        "method-black-litterman",
         "method-fama-french-3factor",
+        "method-gross-profitability",
         "principle-capm",
         "term-beta",
         "term-ic"
@@ -423,6 +435,7 @@
       ],
       "related": [
         "method-fama-french-3factor",
+        "method-gross-profitability",
         "method-idiosyncratic-volatility",
         "method-layer-monotonic",
         "principle-apt",
@@ -477,6 +490,7 @@
       "related": [
         "method-adjust-illusion",
         "method-layer-monotonic",
+        "method-robust-regression",
         "term-factor-exposure",
         "term-winsorize"
       ]
@@ -502,9 +516,10 @@
         "预处理"
       ],
       "related": [
-        "term-zscore",
         "method-layer-monotonic",
-        "method-parameter-robust"
+        "method-parameter-robust",
+        "method-robust-regression",
+        "term-zscore"
       ]
     },
     {
@@ -527,7 +542,9 @@
         "分位"
       ],
       "related": [
+        "method-covariance-conditional",
         "method-idiosyncratic-volatility",
+        "method-momentum-crash",
         "term-maxdrawdown",
         "term-volatility"
       ]
@@ -670,7 +687,7 @@
       "limitations": "四维度难以同时量化；冲击成本模型依赖市场状态；当前平台撮合未建模冲击（高估收益）。",
       "teachingModel": "flow-cleaned-mom",
       "teachingNote": "对比「清洗流动性差的标的」与「不清洗」两个版本：观察换手率与收益差。学生应理解成本对高换手策略的侵蚀，并思考为什么本平台的零滑点假设会高估收益。",
-      "source": "原始论文：Kyle, A.S. (1985). Continuous Auctions and Insider Trading. Econometrica, 53(6), 1315-1335。DOI: 10.2307/1913210.（流动性四维度的经典框架）。；Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56。DOI: 10.1016/s1386-4181(01)00024-6.（非流动性度量）。；冲击成本平方根律见 Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041.",
+      "source": "原始论文：Kyle, A.S. (1985). Continuous Auctions and Insider Trading. Econometrica, 53(6), 1315-1335。DOI: 10.2307/1913210.（流动性四维度的经典框架）。；Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56。DOI: 10.1016/s1386-4181(01)00024-6.（非流动性度量）。；冲击成本平方根律见 Almgren, R. & Chriss, N. (2001). Optimal execution of portfolio transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041.",
       "tags": [
         "流动性",
         "liquidity",
@@ -679,8 +696,10 @@
         "买卖价差"
       ],
       "related": [
-        "principle-illiquidity",
         "method-cost-sensitivity",
+        "method-institutional-frictions",
+        "method-microstructure-cost",
+        "principle-illiquidity",
         "term-turnover"
       ]
     },
@@ -704,9 +723,10 @@
         "动量"
       ],
       "related": [
+        "method-covariance-conditional",
+        "term-momentum-factor",
         "term-newey-west",
-        "term-sharpe",
-        "term-momentum-factor"
+        "term-sharpe"
       ]
     },
     {
@@ -756,9 +776,10 @@
         "交易成本"
       ],
       "related": [
-        "term-turnover",
         "method-cost-sensitivity",
-        "term-t-plus-one"
+        "method-rebalance-frequency",
+        "term-t-plus-one",
+        "term-turnover"
       ]
     }
   ]

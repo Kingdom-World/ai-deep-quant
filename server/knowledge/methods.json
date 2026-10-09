@@ -74,17 +74,18 @@
         "FDR"
       ],
       "related": [
-        "term-stats-significance",
+        "method-anomaly-false-rejection",
+        "method-benchmark-overfit",
+        "method-nice-vs-meaningful",
         "method-parameter-robust",
-        "paper-lopez-de-prado-2018",
-        "paper-harvey-liu-zhu-2016",
+        "paper-bailey-lopez-2014",
         "paper-benjamini-hochberg-1995",
+        "paper-harvey-liu-zhu-2016",
+        "paper-lopez-de-prado-2018",
+        "paper-newey-west-1987",
         "term-ic",
         "term-newey-west",
-        "method-benchmark-overfit",
-        "paper-newey-west-1987",
-        "paper-bailey-lopez-2014",
-        "method-nice-vs-meaningful"
+        "term-stats-significance"
       ]
     },
     {
@@ -113,7 +114,7 @@
       "id": "method-cost-sensitivity",
       "title": "成本敏感度：毛收益的幻觉",
       "body": "许多策略的毛收益来自高频换手捕捉的微小价差，一旦扣除佣金、印花税与滑点就会归零甚至转负。检验做法：把费率与滑点按倍数上调（如 1 倍、2 倍、3 倍），观察净收益的衰减曲线；若 1.5 倍成本即转负，则策略对成本极度敏感，实盘几乎不可能盈利。成本估算的保守性很重要——回测常用固定百分比滑点，而真实冲击成本随下单量与流动性变化，规模越大偏差越大。因此任何策略上线前都应给出成本敏感度结论，而非只报一个扣费后的数字。",
-      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, A., Israel, R. & Moskowitz, T. J. (2018). Trading Costs. SSRN Working Paper. DOI: 10.2139/ssrn.3229719.；Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/jor.2001.041.",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 9 章；论文：Frazzini, A., Israel, R. & Moskowitz, T. J. (2018). Trading Costs. SSRN Working Paper. DOI: 10.2139/ssrn.3229719.；Almgren, R. & Chriss, N. (2001). Optimal execution of portfolio transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/jor.2001.041.",
       "tags": [
         "成本敏感度",
         "滑点",
@@ -127,7 +128,9 @@
         "method-1n-equal-weight",
         "method-covariance-shrinkage",
         "method-low-risk-anomaly",
+        "method-microstructure-cost",
         "method-parameter-robust",
+        "method-rebalance-frequency",
         "paper-almgren-chriss-2001",
         "paper-grinold-kahn-2000",
         "term-liquidity",
@@ -177,9 +180,11 @@
         "因子排名"
       ],
       "related": [
+        "method-gross-profitability",
         "method-layer-monotonic",
         "method-lookahead",
         "method-macobbeth-regression",
+        "method-robust-regression",
         "method-time-series-momentum",
         "paper-fama-french-1993",
         "paper-grinold-kahn-2000",
@@ -279,8 +284,10 @@
         "circuit breaker"
       ],
       "related": [
-        "term-maxdrawdown",
-        "method-silent-fallback"
+        "method-microstructure-cost",
+        "method-momentum-crash",
+        "method-silent-fallback",
+        "term-maxdrawdown"
       ]
     },
     {
@@ -297,6 +304,7 @@
       ],
       "related": [
         "method-1n-equal-weight",
+        "method-anomaly-false-rejection",
         "method-multiple-testing",
         "method-nice-vs-meaningful",
         "method-parameter-robust",
@@ -322,6 +330,7 @@
       ],
       "related": [
         "case-dotcom-2000",
+        "method-anomaly-false-rejection",
         "method-benchmark-overfit",
         "method-multiple-testing",
         "method-parameter-robust",
@@ -349,6 +358,7 @@
       "related": [
         "method-cross-section",
         "method-layer-monotonic",
+        "method-momentum-crash",
         "principle-disposition",
         "term-cross-sectional-vs-time-series",
         "term-momentum-factor"
@@ -368,9 +378,13 @@
         "资产定价"
       ],
       "related": [
+        "method-anomaly-false-rejection",
+        "method-black-litterman",
         "method-cross-section",
         "method-fama-french-3factor",
+        "method-gross-profitability",
         "method-persistence-attribution",
+        "method-robust-regression",
         "paper-grinold-kahn-2000",
         "paper-newey-west-1987",
         "principle-emh",
@@ -394,11 +408,13 @@
       ],
       "related": [
         "method-1n-equal-weight",
+        "method-black-litterman",
+        "method-cost-sensitivity",
+        "method-covariance-conditional",
         "method-risk-parity-erc",
         "principle-diversification",
         "principle-risk-parity",
-        "term-volatility",
-        "method-cost-sensitivity"
+        "term-volatility"
       ]
     },
     {
@@ -415,12 +431,13 @@
         "基线"
       ],
       "related": [
+        "method-benchmark-overfit",
+        "method-black-litterman",
+        "method-cost-sensitivity",
         "method-covariance-shrinkage",
         "method-risk-parity-erc",
-        "method-cost-sensitivity",
-        "term-equal-weight",
-        "method-benchmark-overfit",
-        "principle-diversification"
+        "principle-diversification",
+        "term-equal-weight"
       ]
     },
     {
@@ -438,6 +455,8 @@
       ],
       "related": [
         "method-1n-equal-weight",
+        "method-black-litterman",
+        "method-covariance-conditional",
         "method-covariance-shrinkage",
         "method-low-risk-anomaly",
         "principle-diversification",
@@ -507,14 +526,15 @@
         "因子构造"
       ],
       "related": [
+        "method-gross-profitability",
+        "method-idiosyncratic-volatility",
+        "method-layer-monotonic",
         "method-macobbeth-regression",
         "method-persistence-attribution",
-        "method-idiosyncratic-volatility",
-        "term-factor-exposure",
-        "term-beta",
+        "paper-fama-french-1993",
         "term-alpha",
-        "method-layer-monotonic",
-        "paper-fama-french-1993"
+        "term-beta",
+        "term-factor-exposure"
       ]
     },
     {
@@ -531,11 +551,13 @@
         "CAPM"
       ],
       "related": [
-        "method-risk-parity-erc",
-        "method-idiosyncratic-volatility",
-        "term-beta",
-        "principle-capm",
         "method-cost-sensitivity",
+        "method-idiosyncratic-volatility",
+        "method-institutional-frictions",
+        "method-momentum-crash",
+        "method-risk-parity-erc",
+        "principle-capm",
+        "term-beta",
         "term-maxdrawdown"
       ]
     },
@@ -556,7 +578,9 @@
         "method-lookahead",
         "method-persistence-attribution",
         "method-purged-cv",
+        "method-rebalance-frequency",
         "method-reproducibility",
+        "method-robust-regression",
         "paper-bailey-lopez-2014",
         "term-lookahead-vs-survivorship",
         "term-pit"
@@ -583,6 +607,213 @@
         "paper-lopez-de-prado-2018",
         "paper-bailey-lopez-2014",
         "method-reproducibility"
+      ]
+    },
+    {
+      "id": "method-robust-regression",
+      "category": "method",
+      "title": "稳健回归：离群点不该有权重投票权",
+      "body": "最小二乘的平方损失对离群点施加的惩罚是**二次**的：一个偏离 5 倍标准差的观测，其残差平方是正常点的 25 倍，等于给它 25 票。Huber 提出的稳健估计把损失函数改为线性增长（超过阈值 k 后不再增加惩罚），使离群点的影响力被**有界化**。在因子研究里这不是学术洁癖，而是直接影响结论：财报数据错误、行情复权断点、极端停牌复牌都会产生离群点，而它们恰好落在因子的尾部——而尾部正是分层检验最关注的位置。三条实践纪律：① 稳健回归的标准误必须**重新估计**，不能沿用 OLS 的（有效性来自损失函数变化，方差公式也随之变）；② 阈值 k 不是自由参数，k 越大越接近 OLS，应报告k 的敏感性；③ 稳健回归降低了对离群点的敏感，**不等于**消除了它们——若某因子的收益完全由三五根异常K 线贡献，正确做法是查数据而不是换估计量。",
+      "source": "论文：Huber, P.J. (1964). Robust Estimation of a Location Parameter. The Annals of Mathematical Statistics, 35(1), 73-101. DOI: 10.1214/aoms/1177703732；论文：Sacks, J. & Ylvisaker, D. (1972). A Note on Huber's Robust Estimation of a Location Parameter. The Annals of Mathematical Statistics, 43(4), 1068-1075. DOI: 10.1214/aoms/1177692460；教材：Huber & Ronchetti《Robust Statistics》第 1、7 章（M-估计与影响函数）。",
+      "tags": [
+        "稳健回归",
+        "Huber",
+        "离群点",
+        "M估计",
+        "影响函数"
+      ],
+      "related": [
+        "method-macobbeth-regression",
+        "term-winsorize",
+        "term-zscore",
+        "method-cross-section",
+        "term-stats-significance",
+        "method-lookahead-audit"
+      ]
+    },
+    {
+      "id": "method-momentum-crash",
+      "category": "method",
+      "title": "动量崩溃：把危机前的反弹写进因子定义里的必然性",
+      "body": "动量策略最广为人知的风险是「反转」（短期被抛弃的股票反弹），但 Daniel & Moskowitz 指出更致命的是**动量崩溃**：在市场从大幅下跌中反弹时，动量组合会**急剧亏损**。机制是：暴跌后反弹的股票是那些跌幅最大、近期表现最差的股票 —— 而这正是动量策略的**空头腿**。也就是说，动量组合在此期间系统性地持有市场刚刚抛售过的股票，且做空刚刚被抛售最惨的那批。量化含义：① 用历史平均波动或全样本夏普比率给动量策略定风险预算，会**严重低估**真实风险，因为崩溃贡献了绝大部分尾部损失；② 压力测试必须包含「暴跌 + 反弹」这个特定序列，而不是泛泛的历史回溯；③ 动量崩溃与市场波动率高度相关（高波动期崩溃更严重），因此条件波动率调整后的表现显著优于无条件口径；④ 与低风险异象对照阅读：两者都在做空高波动资产，但低风险异象的收益来自结构性持有，动量崩溃的损失来自**被迫在错误时点持有错误方向**。",
+      "source": "论文：Daniel, K. & Moskowitz, T.J. (2016). Momentum Crashes. Journal of Financial Economics, 122(2), 221-247. DOI: 10.1016/j.jfineco.2015.12.002；论文：Barroso, P. & Santa-Clara, P.M. (2015). Momentum has its moments. Journal of Financial Economics, 116(1), 111-120（动量崩溃的条件波动率放大）；论文：Huang, J., Li, Y., Wang, H. & Zhou, T. (2020). Momentum Crashes and Commodity Futures（动量崩溃在商品市场的表现）；教材：Grinold & Kahn《Active Portfolio Management》第 19 章对动量风险预算的讨论。",
+      "tags": [
+        "动量",
+        "动量崩溃",
+        "尾部风险",
+        "压力测试",
+        "条件波动率"
+      ],
+      "related": [
+        "case-2008-crisis",
+        "method-circuitbreaker",
+        "method-institutional-frictions",
+        "method-low-risk-anomaly",
+        "method-time-series-momentum",
+        "term-maxdrawdown",
+        "term-momentum-factor",
+        "term-value-at-risk"
+      ]
+    },
+    {
+      "id": "method-black-litterman",
+      "category": "method",
+      "title": "Black-Litterman：把观点当输入而不是当输出",
+      "body": "标准均值-方差把「预期收益」当作必须由历史数据估计的输入，而历史均值是噪声最大的量（估计误差的方差约为真实方差的 2/T 倍）。Black-Litterman 的做法反过来：先由**市场均衡**反推出隐含收益（逆优化：w = Σ⁻¹λ，其中 λ 为风险价格），再把投资者观点作为贝叶斯似然融合进去，得到后验收益 Π = [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹[(τΣ)⁻¹Π_implied + PᵀΩ⁻¹Q]。三条关键理解：① 它的价值不是「更准」，而是**让观点的表达方式变得可审计** —— 观点必须写成 P·Π = Q 加置信度 Ω，而不是藏在某个权重表里；② Ω 的设定是主观的（通常按观点置信度反比设定），必须做敏感性分析，否则「客观」只是包装；③ 与简单收缩的差别：收缩是把估计往零拉，BL 是往均衡先验拉 —— 后者有经济含义（市场组合已隐含了对所有公开信息的定价）。局限：BL 只处理**收益**侧的信念，没有解决协方差的估计问题，仍需配合收缩估计；且它无法规避结构性估计误差（如因子本身无效）。",
+      "source": "论文：Black, F. & Litterman, R. (1992). Global Portfolio Optimization. Financial Analysts Journal, 48(5), 28-43. DOI: 10.2469/faj.v48.n5.28；论文：Jorion, P. (1992). Portfolio Optimization in Practice. Financial Analysts Journal, 48(1), 68-74. DOI: 10.2469/faj.v48.n1.68（对BL 实施的实务讨论）；教材：Litterman, R.《Modern Investment Management: An Equilibrium Approach》(Wiley, 2003) 全书；教材：Grinold & Kahn《Active Portfolio Management》第 18 章（组合预测与Black-Litterman）。",
+      "tags": [
+        "Black-Litterman",
+        "贝叶斯更新",
+        "隐含收益",
+        "逆优化",
+        "观点融合"
+      ],
+      "related": [
+        "method-covariance-shrinkage",
+        "method-risk-parity-erc",
+        "method-1n-equal-weight",
+        "term-beta",
+        "term-alpha",
+        "method-macobbeth-regression",
+        "principle-capm"
+      ]
+    },
+    {
+      "id": "method-gross-profitability",
+      "category": "method",
+      "title": "盈利能力因子：价值股的另一种读法，毛利而非账面",
+      "body": "Novy-Marx 指出账面市值比（value）只捕捉了「便宜的资产」，而一个更直接的盈利能力度量——毛利/总资产——同样与未来收益正相关，且**与价值因子相关性低**。这个发现的方法论意义大于单个因子：它说明不同的因子可能在测同一件事的不同侧面。构建要点：① 分母是**总资产**（不是净资产、不是市值），这点在不同数据库里口径不同，必须自行计算而不能依赖现成字段；② 毛利 = 收入 - 营业成本，但不同行业（金融、地产）的会计结构差异极大，跨行业直接排序会引入行业偏差 —— 正确做法是**行业内排序**或用行业中性化后的残差；③ 财务数据的时间戳必须用披露日而非报告期（与 term-pit 同源，这是它最大的实现陷阱）；④ 与 value 的联合检验要报告四象限（高/低价值 × 高/低盈利）才能判断二者是互补还是替代。局限：毛利率的行业稳定性强，这既是优点（信号稳）也是缺点（跨行业不可比），且会计政策变更（收入确认）会直接污染历史序列。",
+      "source": "论文：Novy-Marx, R. (2013). The other side of value: The gross profitability premium. Journal of Financial Economics, 108(1), 1-28. DOI: 10.1016/j.jfineco.2013.01.003；论文：Fama, E.F. & French, K.R. (2015). A Five-Factor Asset Pricing Model. Journal of Financial Economics, 116(1), 1-22. DOI: 10.1016/j.jfineco.2014.10.010（盈利能力与投资因子进入五因子）；教材：Grinold & Kahn《Active Portfolio Management》第 11 章（财务因子构建与行业中性化）。",
+      "tags": [
+        "盈利能力",
+        "价值因子",
+        "行业中性化",
+        "财务数据",
+        "多因子"
+      ],
+      "related": [
+        "method-fama-french-3factor",
+        "method-cross-section",
+        "term-pit",
+        "term-factor-exposure",
+        "method-macobbeth-regression",
+        "term-alpha"
+      ]
+    },
+    {
+      "id": "method-microstructure-cost",
+      "category": "method",
+      "title": "市场微观结构：把成交价从「收盘价」换成「冲击成本」",
+      "body": "把回测的成交价设成收盘价，等于假设你能以当天最后一口报价成交全部仓位，这在有规模的资金上不成立。微观结构给出了成本的三个来源：① 买卖价差（Kyle 模型中，价格冲击随交易量与波动率上升而非线性增加）；② 市场冲击（Almgren-Chriss 框架：冲击成本随执行速度的平方根增长，最优执行速度与风险厌恶正相关）；③ 佣金与固定费用（按笔收取，与规模无关但与下单笔数有关）。回测口径的三条纪律：① 成本模型必须区分**固定成本**（佣金、印花税，按笔或按金额）与**冲击成本**（按参与率，非线性），把两者合成一个常数会掩盖换手率的影响；② 参与率（本次下单量/ 当日成交量）是唯一可标的容量尺度的量 —— 一个占日成交 0.5% 的策略与占 20% 的策略面对的是**两个不同的市场**，回测时必须按参与率而非绝对金额建模；③ 成本应作为**敏感度**报告（毛收益在 1/2/3 倍成本下的净值曲线），单点结论不构成策略评价。A 股特有：涨跌停会让无法成交的情形真实发生，此时「理论可减仓」不等于「实际可减仓」，须显式建模。",
+      "source": "论文：Kyle, A.S. (1985). Continuous Auctions and Insider Trading. Econometrica, 53(6), 1315-1335. DOI: 10.2307/1913210（价格冲击与市场深度的均衡刻画）；论文：Almgren, R. & Chriss, N. (2001). Optimal execution of portfolio transactions. The Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041（执行成本平方根律）；论文：Frazzini, A. & Israel, R. (2018). Trading Costs（机构投资者的实际成本量级）；教材：Grinold & Kahn《Active Portfolio Management》第 9 章（交易成本建模）。",
+      "tags": [
+        "市场微观结构",
+        "冲击成本",
+        " Kyle",
+        "参与率",
+        "执行成本"
+      ],
+      "related": [
+        "basis-fee-cn",
+        "basis-slippage",
+        "method-circuitbreaker",
+        "method-cost-sensitivity",
+        "method-covariance-conditional",
+        "method-institutional-frictions",
+        "method-rebalance-frequency",
+        "term-limit-up-down",
+        "term-liquidity",
+        "term-turnover"
+      ]
+    },
+    {
+      "id": "method-rebalance-frequency",
+      "category": "method",
+      "title": "调仓频率：换手、信号衰减与容量三者的三角约束",
+      "body": "调仓频率不是一个可以独立选择的参数，而是三者的交点：① 信号衰减速度决定「最优」频率——日内型信号必须日内调仓，低频因子不必；② 交易成本决定「最高」频率——每次调仓都要付固定成本与冲击成本，信号收益必须显著高于成本；③ 容量决定「最低」所需规模——换手越高，在给定容量下越难维持。三条可执行的判据：① 成本占比判据：单次调仓的**期望收益必须显著大于单次交易成本**（经验门槛是 10 倍以上，因为收益估计本身有误差）；② 半衰期判据：若因子的IC 半衰期短于调仓间隔，则信息已衰减大半，此时提高频率只是增加成本不增加收益；③ 重叠组合法：用 N 个错开起点的子组合叠加，可以在**不提高单标的换手**的前提下提高有效覆盖度 —— 这是调仓频率与换手率解耦的关键技巧。常见错误：把调仓频率当成提升收益的手段（提高的是成本），或用日频回测的换手率去论证低频策略的容量。",
+      "source": "论文：Bogousslavsky, V. (2016). Infrequent Rebalancing, Return Autocorrelation, and Seasonality. The Journal of Finance, 71(6), 2967-3006. DOI: 10.1111/jofi.12436（不频繁调仓与收益自相关的机制）；论文：Da, V., Engelberg, J. & Gao, J. (2011). In Search of Attention. The Journal of Finance, 66(3), 1461-1499（注意力驱动的高换手与收益延续）；教材：Grinold & Kahn《Active Portfolio Management》第 4 章（交易成本与调仓频率的权衡）；教材：Pardo《The Evaluation and Optimization of Trading Strategies》第 9 章（回测中的换手与成本）。",
+      "tags": [
+        "调仓频率",
+        "换手率",
+        "信号衰减",
+        "容量",
+        "重叠组合"
+      ],
+      "related": [
+        "basis-slippage",
+        "method-cost-sensitivity",
+        "method-institutional-frictions",
+        "method-lookahead-audit",
+        "method-microstructure-cost",
+        "term-rebalance-frequency",
+        "term-turnover"
+      ]
+    },
+    {
+      "id": "method-anomaly-false-rejection",
+      "category": "method",
+      "title": "异象真的存在吗：截断正态下的多重检验修正",
+      "body": "Chordia, Goyal & Saretto 指出一个被忽视的偏误来源：即使因子收益**真实存在**，在有限样本下用正态近似做推断也会产生假拒绝，而常规的因子检验往往忽略这一点，导致一部分真实异象被误判为无效。方法论要点：① 区分「多重比较偏误」（试得越多越容易出假阳性：Harvey-Liu-Zhu 的门槛）与「假拒绝偏误」（真实信号被误杀）——**两者同时存在**，只纠正前者会让研究系统性地偏向无效因子；② 收益分布的偏度与峰度使正态近似在极端分位上不可靠，模拟法（或渐近分布）比正态近似更稳；③ 判定标准必须以**经济意义**为锚：即使统计显著，也要检查收益是否超过成本、能否以小资金实现；④ 报告时须同时给出「多重比较调整后的 t 值」与「考虑分布形态后的 t 值」，而不是笼统说「检验显著」。实践含义：一个完整的研究结论应当是「经过 X 调整后、在 Y 成本假设下、净收益为 Z」，缺任何一项都会让读者高估结果。",
+      "source": "论文：Chordia, T., Goyal, A. & Saretto, A. (2020). Anomalies and False Rejections. The Review of Financial Studies, 33(5), 2134-2179. DOI: 10.1093/rfs/hhaa018；论文：Harvey, C.R., Liu, Y. & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. DOI: 10.1093/rfs/hhv059（多重比较门槛）；论文：Bailey, D. H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094（选择偏误下的绩效修正）；教材：Harvey & Liu《Backtesting》第 4 章（多重检验）。",
+      "tags": [
+        "多重检验",
+        "假拒绝",
+        "异象",
+        "截断正态",
+        "选择偏误"
+      ],
+      "related": [
+        "method-multiple-testing",
+        "method-nice-vs-meaningful",
+        "paper-harvey-liu-zhu-2016",
+        "paper-bailey-lopez-2014",
+        "method-macobbeth-regression",
+        "method-benchmark-overfit"
+      ]
+    },
+    {
+      "id": "method-covariance-conditional",
+      "category": "method",
+      "title": "条件协方差：波动率聚集意味着相关系数不是常数",
+      "body": "Ledoit & Wolf 指出：在股票数与时间维度都很可观时，样本协方差矩阵可以较好地估计其**条件期望**（即给定当前市场状态下的协方差），因为市场共同因子提供了可预测的结构；真正难估的是**无条件均值**（长期平均协方差），它在不同样本期之间变化很大。方法论含义：① 「估计协方差难」这一常识需要分层——难的是时变的长期平均，不是当期截面结构；② 投资决策关心的是**当前**的风险，因此用条件估计比用长期平均更相关；③ 但条件估计不能长期使用于风险预算：危机时条件估计会低估真实的联合下跌概率（相关性在危机中上升），这正是 VaR 类指标的固有弱点；④ 实践上推荐混合方案：协方差用收缩估计（见 method-covariance-shrinkage），相关系数允许随波动率状态调整，并对「相关性上升」情形做单独压力测试。",
+      "source": "论文：Ledoit, O. & Wolf, M. (2004). A well-conditioned estimator for large-dimensional covariance matrices. Journal of Multivariate Analysis, 88(2), 365-411. DOI: 10.1016/S0047-259X(03)00096-4；论文：Engle, R.F. (1982). Autoregressive Conditional Heteroscedasticity of Estimates of Variance of Innovations. Econometrica, 50(4), 987-1007（波动率聚集与ARCH）；论文：Ledoit, O. & Wolf, M. (2004). Honey, I Shrunk the Sample Covariance Matrix. The Journal of Portfolio Management, 30(4), 110-119. DOI: 10.3905/jpm.2004.110；教材：Engle《Time Series Analysis》第 16 章（GARCH 与条件方差）。",
+      "tags": [
+        "条件协方差",
+        "GARCH",
+        "波动率聚集",
+        "相关性",
+        "风险模型"
+      ],
+      "related": [
+        "method-covariance-shrinkage",
+        "method-risk-parity-erc",
+        "term-volatility",
+        "term-value-at-risk",
+        "term-autocorrelation",
+        "method-microstructure-cost",
+        "case-2008-crisis"
+      ]
+    },
+    {
+      "id": "method-institutional-frictions",
+      "category": "method",
+      "title": "机构约束：资金流冲击让「有效容量」远小于名义容量",
+      "body": "Berkman & Zeng 的发现：在给定目标波动率的约束下，机构资金会流入那些「已经上涨」的组合（因为它们看起来能达成目标波动），这种买入压力抬高了被流入组合的未来收益与波动 —— 也就是说，**同一条策略因资金流不同会产生不同的收益**，而这个差异不来自信息而是来自流向上下文的压力。方法论含义：① 「策略容量」的估计必须把**资金流本身**作为内生变量，而不是当成外生的规模上限；② 同一因子在不同资金流状态下表现不同，跨期外推时必须控制流入流出；③ 对指数策略，被纳入本身带来被动买入，这是指数增强收益的组成部分而非风险；④ 反过来，资金流压力在流出时会放大损失与波动 ⇒ 拥挤的策略在赎回时面临非线性冲击。实践含义：评估任何「稳定」的策略收益时，必须问「这条收益里有多少来自资金流压力」——把这类收益当成可复制的 alpha 会在资金反转时集中失效。",
+      "source": "论文：Berkman, M. & Zeng, Y. (2016). On the performance of market timing portfolios（资金流对组合未来收益与波动的影响）；论文：Berkman, M., Jiang, D. & Kan, R. (2017). Investing with Style（风格资金流与收益）；论文：Lou, D. & Polk, C. (2022). Comomentum（机构资金流与动量收益的分解）；论文：Huang, J.,Teoh, S.H. & Zhang, Y. (2015). Investor sentiment aligned: A powerful predictor of stock returns. Review of Financial Studies, 28(3), 1189-1214（情绪一致的资金流与收益）；教材：Grinold & Kahn《Active Portfolio Management》第 21 章（容量与资金流）。",
+      "tags": [
+        "机构约束",
+        "资金流",
+        "容量",
+        "拥挤",
+        "内生性"
+      ],
+      "related": [
+        "method-low-risk-anomaly",
+        "method-microstructure-cost",
+        "method-rebalance-frequency",
+        "term-turnover",
+        "term-liquidity",
+        "method-momentum-crash"
       ]
     }
   ]

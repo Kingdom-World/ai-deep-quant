@@ -27,7 +27,14 @@
       "limitations": "危机样本极少，统计上无法给出可靠频率；强行拟合历史崩盘样本会引入选择偏差。",
       "source": "Gorton, G. B. (2010). Slapped by the Invisible Hand: The Panic of 2007（书内含『The Slump and the Crash』章节）. Oxford University Press. ISBN 978-0199734153（2026-10-08 Crossref 按该 ISBN 检索无记录，待人工核验）；危机中波动率与相关性的实证（完整出处：Brunnermeier, M. K. & Pedersen, L. H. (2009). Market Liquidity and Funding Liquidity. Review of Financial Studies, 22(6), 2201-2238（DOI: 10.1093/rfs/hhn098）另见 case-2020-liquidity 的出处栏。",
       "tags": ["2008", "金融危机", "杠杆", "波动率偏斜", "相关性"],
-      "related": ["case-1987-crash", "basis-slippage", "principle-risk-parity", "case-ltcm-1998"],
+      "related": [
+        "basis-slippage",
+        "case-1987-crash",
+        "case-ltcm-1998",
+        "method-covariance-conditional",
+        "method-momentum-crash",
+        "principle-risk-parity"
+      ],
       "teachingModel": "mom-rev-combo",
       "teachingNote": "动量与反转方向相反、互相对冲，本条观察的是「对冲掉了什么、没对冲掉什么」：2008 年两类因子同向失效时互不抵消，说明相关性上升会同时击穿多空两侧——这正是分散化在最需要它的时刻失效的实证。"
     },
@@ -41,7 +48,15 @@
       "limitations": "极端事件样本极少；无法据此估计常态下的成交冲击幅度。",
       "source": "上海证券交易所与深圳证券交易所 2015 年 7-8 月关于临时停市与交易异常的公告；中国证券监督管理委员会 2015 年 7 月 4 日关于暂缓首次公开发行股票并重启核查的公告。行情可在本平台归档中核对。",
       "tags": ["A股", "2015", "涨跌停", "停市", "成交约束"],
-      "related": ["basis-limit-guard", "basis-limit-guard-depth", "case-2020-liquidity", "cycle-merrill-clock", "cycle-a-share-style", "principle-illiquidity", "case-2013-funding-squeeze"],
+      "related": [
+        "basis-limit-guard",
+        "basis-limit-guard-depth",
+        "case-2020-liquidity",
+        "cycle-merrill-clock",
+        "cycle-a-share-style",
+        "principle-illiquidity",
+        "case-2013-funding-squeeze"
+      ],
       "teachingModel": "mom20-baseline",
       "teachingNote": "本条要检验的是**回测成交假设是否现实**：把 2015 年样本跑出来，看涨停守卫/跌停守卫触发了几次被拒成交。对照「假设收盘价可成交」的版本，两者收益差即为行政化出清被忽略的金额。"
     },

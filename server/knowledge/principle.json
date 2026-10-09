@@ -46,6 +46,7 @@
         "basis-benchmark",
         "case-2022-rate-hike",
         "cycle-juglar",
+        "method-black-litterman",
         "method-idiosyncratic-volatility",
         "method-low-risk-anomaly",
         "paper-fama-french-1993",

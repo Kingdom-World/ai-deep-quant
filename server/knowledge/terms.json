@@ -361,7 +361,7 @@
       "limitations": "对模型选择敏感（换因子集 alpha 变）；统计显著不等于可持续；存在数据窥探导致的虚假 alpha。",
       "teachingModel": null,
       "teachingNote": "🔴 故意不挂教学模型：演示 alpha 需要**多因子基准**（至少市场 + 规模 + 价值），本平台预置模板只有动量族单因子，跑出来的「超额」实际是相对等权基准的动量暴露，不是 alpha。会让结论误导，故不挂。",
-      "source": "原始论文：Jensen, M.C. (1968). The Performance of Mutual Funds in the Period 1945-1964. Journal of Finance, 23(2), 389-416（Jensen's alpha 出处）。DOI: 10.1111/j.1540-6261.1968.tb00815.x.；多因子版本见 Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56。DOI: 10.1016/0304-405X(93)90023-5.；Fama, E.F. & French, K.R. (2010). Luck versus Skill in the Cross-Section of Mutual Fund Returns. Journal of Finance, 65(5), 1915-1947（关于 alpha 显著性的统计判据；2026-10-08 Crossref 检索该正式版无 DOI 记录，仅见 SSRN 与 CFA Digest 摘要版，故不配标识）。",
+      "source": "原始论文：Jensen, M.C. (1968). The Performance of Mutual Funds in the Period 1945-1964. Journal of Finance, 23(2), 389-416（Jensen's alpha 出处）。DOI: 10.1111/j.1540-6261.1968.tb00815.x.；多因子版本见 Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56。DOI: 10.1016/0304-405X(93)90023-5.；Fama, E.F. & French, K.R. (2010). Luck versus Skill in the Cross-Section of Mutual Fund Returns. Journal of Finance, 65(5), 1915-1947. DOI: 10.1111/j.1540-6261.2010.01598.x.（关于 alpha 显著性的统计判据；注：2026-10-08 曾判此处「Crossref 无 DOI 记录、故不配标识」，2026-10-09 复查发现正式版 DOI 确实存在 —— 前次只检索到 SSRN 版与 CFA Digest 摘要版，属检索不足而非源不存在）",
       "tags": [
         "alpha",
         "α",
@@ -670,7 +670,7 @@
       "limitations": "四维度难以同时量化；冲击成本模型依赖市场状态；当前平台撮合未建模冲击（高估收益）。",
       "teachingModel": "flow-cleaned-mom",
       "teachingNote": "对比「清洗流动性差的标的」与「不清洗」两个版本：观察换手率与收益差。学生应理解成本对高换手策略的侵蚀，并思考为什么本平台的零滑点假设会高估收益。",
-      "source": "原始论文：Kyle, A.S. (1985). Continuous Auctions and Insider Trading. Econometrica, 53(6), 1315-1335。DOI: 10.2307/1913210.（流动性四维度的经典框架）。；Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56。DOI: 10.1016/s1386-4181(01)00024-6.（非流动性度量）。；冲击成本平方根律见 Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39。",
+      "source": "原始论文：Kyle, A.S. (1985). Continuous Auctions and Insider Trading. Econometrica, 53(6), 1315-1335。DOI: 10.2307/1913210.（流动性四维度的经典框架）。；Amihud, Y. (2002). Illiquidity and Stock Returns: Cross-Section and Time-Series Effects. Journal of Financial Markets, 5(1), 31-56。DOI: 10.1016/s1386-4181(01)00024-6.（非流动性度量）。；冲击成本平方根律见 Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. Journal of Risk, 3(2), 5-39. DOI: 10.21314/JOR.2001.041.",
       "tags": [
         "流动性",
         "liquidity",

@@ -60,6 +60,18 @@ jobs:
             exit 1
           }
 
+      - name: Knowledge source integrity (offline)
+        # 🔴 为什么加这一步（2026-10-09）：
+        #   知识库当周连续出现四类真缺陷 —— 幻觉引用、DOI 挂到另一篇论文、
+        #   两篇论文共用一个 DOI、官方标题与正式标题不符。根因是写入路径无拦截。
+        #   `verify-sources.cjs` 能抓这些，但它是**联网**工具，
+        #   Crossref 限流/抖动会让 CI 因"内容其实没问题"而红 ⇒ 不适合进 CI。
+        #   本步骤是**纯离线**自洽门（唯一 DOI 不跨标题/跨年份、DOI 形态、
+        #   说明文字不得混入 source），可安全阻断。
+        # ⚠️ 它**抓不到**幻觉引用（文献不存在但格式合规）——
+        #   那必须联网核验，仍在本地跑、由人判断。这是它的能力边界，不是遗漏。
+        run: node tools/check-source-integrity.cjs --ci
+
       - name: TypeScript check
         run: npx tsc -p tsconfig.app.json --noEmit
 

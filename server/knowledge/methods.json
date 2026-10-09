@@ -312,7 +312,7 @@
       "formula": "经济显著性 ≈ 年化超额 / 年化跟踪误差（信息比率），并需再扣交易成本",
       "applicability": "评估新因子的第一道关：把 t 值换算成年化超额对成本与换手的量级。",
       "limitations": "没有普适的 t 值门槛（取决于样本期、市场数、检验次数）；事后设定门槛同样存在选择性偏差。",
-      "source": "Harvey, C. R., Liu, Y., & Zhu, H. (2016). The Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. 另见 Bailey, Borwein, Lopez de Prado & Zhu (2014). The Deflated Sharpe Ratio. Journal of Portfolio Management, 40(5), 94-101. DOI: 10.1093/rfs/hhv059.",
+      "source": "Harvey, C. R., Liu, Y., & Zhu, H. (2016). ...and the Cross-Section of Expected Returns. Review of Financial Studies, 29(1), 5-68. DOI: 10.1093/rfs/hhv059. 另见 Bailey, D. H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094.（原出处把前一条 RFS 的 DOI 误挂在 DSR 名下——同一句里两个 DOI 对应两篇不同论文，已各自归位）",
       "tags": [
         "多重检验",
         "t值",
@@ -428,7 +428,7 @@
       "category": "method",
       "title": "风险平价与等风险贡献：让每个风险源都出力，而不是让每个资产都等权",
       "body": "风险平价（Risk Parity）要求每个资产对组合总风险的贡献相等：w_i·(Σw)_i / (w'Σw) = 1/N。它与等权、等市值加权的根本差别在于：波动率高的资产自动获得更小权重（σ_i ∝ 1/σ_i 的一阶近似），从而在**风险**维度上实现公平，而不是在**资金**维度上公平。ERC（等风险贡献）目标函数是凸的，可靠求解；ERC 组合在多数市场环境下是无约束均值方差有效前沿上的一个特定点（波动率最小化的端点组合），但这只是在无约束情形下的性质，不能推广为「风险平价总优于优化」。实践要点：① 必须用**协方差收缩**后的矩阵求 ERC，否则解会被噪声资产劫持；② 杠杆约束会破坏风险贡献等式：加了杠杆上限后应重新求解并**实测**风险贡献是否仍等，而不是假设；③ 与直接优化权重相比，ERC 只有一个自由参数（目标风险贡献），估计误差的影响面小得多——这是它在实证中稳健的真正原因。杠杆化的 ERC 会隐含做空波动率（Bet against beta 的形态），是收益的隐含来源而非免费午餐。",
-      "source": "论文：Asness, C.S., Frazzini, A. & Pedersen, L.H. (2012). Leverage Aversion and Risk Parity. Financial Analysts Journal, 68(1), 47-59. DOI: 10.2469/faj.v68.n1.1；论文：Frazzini, A. & Pedersen, L.H. (2014). Betting Against Beta. Journal of Financial Economics, 111(1), 1-25. DOI: 10.1016/j.jfineco.2013.10.005；教材：Maillard, F., Roncalli, T. & Teiletche, J.《On the Properties of Equally Weighted Risk Contribution Portfolios》(2010) 关于 ERC 权重与波动率的闭式关系。",
+      "source": "论文：Asness, C.S., Frazzini, A. & Pedersen, L.H. (2012). Leverage Aversion and Risk Parity. Financial Analysts Journal, 68(1), 47-59. DOI: 10.2469/faj.v68.n1.1；论文：Frazzini, A. & Pedersen, L.H. (2014). Betting Against Beta. Journal of Financial Economics, 111(1), 1-25. DOI: 10.1016/j.jfineco.2013.10.005；论文：Maillard, S., Roncalli, T. & Teiletche, J. (2010). The Properties of Equally Weighted Risk Contribution Portfolios. The Journal of Portfolio Management, 36(4), 60-70. DOI: 10.3905/jpm.2010.36.4.060（ERC 权重与波动率的解析关系；SSRN 版标题作 Equally-Weighted Risk Contributions Portfolios，期刊版为单数 Risk Contribution）。",
       "tags": [
         "风险平价",
         "ERC",
@@ -522,7 +522,7 @@
       "category": "method",
       "title": "低风险异象：杠杆约束会系统性地把组合推向高 Beta 端",
       "body": "Frazzini & Pedersen (2014) 发现按 Beta 排序的低 Beta 组合经杠杆调整后的收益**高于** CAPM 预测，扣杠杆后仍成立；而 Baker, Bradley & Wurgler (2011) 在无杠杆约束下几乎找不到低波动组合的超额收益。两个结论合起来才是完整机制：低风险异象不是「低波动股票便宜」这么简单，而是**约束的产物**——存在杠杆约束的投资者（禁止杠杆、限制赎回）会拥挤买入低 Beta 股票，把它们推高估值，从而未来收益偏低。没有杠杆约束时这个拥挤效应不存在，异象也基本消失。实践含义：① 用杠杆后的收益与不用杠杆的收益必须分别报告，混用会得出相反结论；② 回测中若允许对组合加杠杆，就必须检查持仓是否向低 Beta 端集中——这是「策略有效」与「策略拥挤」的分界；③ A 股散户结构与涨跌停制度会改变这个机制的作用强度，不能直接照搬美股结论。",
-      "source": "论文：Frazzini, A. & Pedersen, L.H. (2014). Betting Against Beta. Journal of Financial Economics, 111(1), 1-25. DOI: 10.1016/j.jfineco.2013.10.005；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: A Solution to the Low-Volatility Anomaly. Review of Financial Studies（无杠杆约束下低波动组合无显著超额收益）；教材：Grinold & Kahn《Active Portfolio Management》第 13 章对基准约束与增强指数的讨论。",
+      "source": "论文：Frazzini, A. & Pedersen, L.H. (2014). Betting Against Beta. Journal of Financial Economics, 111(1), 1-25. DOI: 10.1016/j.jfineco.2013.10.005；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly. Financial Analysts Journal, 67(1), 40-54. DOI: 10.2469/faj.v67.n1.4（无杠杆约束下低波动组合无显著超额收益；注：正式标题为 Understanding 而非早期流传的 A Solution to…，刊物亦非 Review of Financial Studies）；教材：Grinold & Kahn《Active Portfolio Management》第 13 章对基准约束与增强指数的讨论。",
       "tags": [
         "低风险异象",
         "杠杆约束",
@@ -544,7 +544,7 @@
       "category": "method",
       "title": "前视偏差审计：把每一条数据的时间语义问一遍",
       "body": "前视偏差不是「不小心用了未来数据」这么单一，它有几种形态，每种都需要不同的检查：① **口径型** —— 财报数据按公告日而非报告期使用最隐蔽：2024Q1 的财报在 2024 年 4 月才公告，用报告期当时间戳会把四个月的未来信息塞进历史。审计动作：每条财务数据必须有「该值何时可得」的字段，而不只是「该值属于哪一期」；② **修订型** —— 用今天看到的、已被事后修订过的历史值，等于用了修订信息。审计动作：归档必须保存**当时的原始快照**，不能事后回填；③ **筛选型** —— 用今天才知道的成分股名单（含已退市、被 ST 的股票）回测过去，是幸存者偏差的变体。审计动作：成分股名单必须逐期存档。④ **计算型** —— 因子值与收益对齐错位（用 T 日收盘算的因子配 T 日收益）。审计动作：所有时间戳必须有明确的 shift 并写进产物元数据。审计的唯一有效形式是**逐条数据的时间语义断言**：对每类字段断言「可得时间 >= 使用时间」，而不是通读代码找「看起来像未来数据」的地方。",
-      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 11 章回测的陷阱与数据对齐；论文：Bailey, D., Borwein, J., López de Prado, M. & Zhu, Q. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471（概率化回测缺陷与多重比较的统计根源）；论文：Loughran, T. & McDonald, B. (2011). When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks. Journal of Finance（财报时间戳错配导致的可复现性问题）；教材：CFA Institute《Equity Asset Valuation》第 2 章对财报可得日的处理。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 11 章回测的陷阱与数据对齐；论文：Bailey, D., Borwein, J., López de Prado, M. & Zhu, Q. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471. DOI: 10.1090/noti1105（概率化回测缺陷与多重比较的统计根源）；论文：Loughran, T. & McDonald, B. (2011). When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks. Journal of Finance, 66(1), 35-65. DOI: 10.1111/j.1540-6261.2010.01625.x（财报时间戳错配导致的可复现性问题）；教材：CFA Institute《Equity Asset Valuation》第 2 章对财报可得日的处理。",
       "tags": [
         "前视偏差",
         "幸存者偏差",
@@ -567,7 +567,7 @@
       "category": "method",
       "title": "带净化的交叉验证：普通 K 折在时序金融数据上会泄漏",
       "body": "标准 K 折交叉验证假设样本可任意切分且互相独立，在时序金融数据上这两个前提都不成立：训练集与验证集的时间区间重叠 ⇒ 验证期的信息通过重叠区泄漏进训练。净化的做法是把验证期前后的「污染区」一并从训练集剔除（purge），并在验证期之后再额外剔除一段（embargo）以覆盖标签的前视窗口。必须净化的三种情形：① 标签是多期累计收益（如未来 20 日），验证期末尾之后的训练样本天然包含该收益的前半段；② 特征计算用了滚动窗口，窗口跨越验证期边界；③ 样本本身有重叠（同一事件的多个滑窗样本被分到不同折）。判断标准很直接：**如果两折之间的时间间隔小于标签的最大前视长度，就必须净化**。反过来，若某流程声称做过时序交叉验证但没做这一步，应视为未验证——因为随机 K 折在时序数据上的乐观偏差恰好足以把无策略包装成有效策略。此外必须承认净化后的结果往往更差：净化后优势消失，说明之前的优势来自泄漏，而非来自信号。",
-      "source": "教材：López de Prado, M.《Advances in Financial Machine Learning》第 7 章（Cross-Validation in Finance：purged K-fold 与 embargo 的构造）；论文：López de Prado, M. (2018). Advances in Financial Machine Learning（书中给出的组合净化交叉验证 CPCV 框架）；论文：Bailey, D., Borwein, J., López de Prado, M. & Zhu, Q. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management（同一作者群对回测过拟合的系统性处理）。",
+      "source": "教材：López de Prado, M.《Advances in Financial Machine Learning》第 7 章（Cross-Validation in Finance：purged K-fold 与 embargo 的构造）；论文：López de Prado, M. (2018). Advances in Financial Machine Learning（书中给出的组合净化交叉验证 CPCV 框架）；论文：Bailey, D. H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094（同一作者群对回测过拟合的系统性处理）。",
       "tags": [
         "交叉验证",
         "净化",

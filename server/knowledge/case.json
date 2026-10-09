@@ -109,7 +109,7 @@
       "formula": "久期为 g 的资产对利率的敏感度约为负 g；贴现率上升则价格变动约为负 g 乘以利率变动",
       "applicability": "成长与价值轮动研究应把政策利率与实际利率作为解释变量纳入。",
       "limitations": "加息周期样本极少，风格归因难以与其他同期因素分离。",
-      "source": "美国联邦储备委员会 2022 年公开市场操作声明（FOMC statements, 2022）；关于利率与长期收益率的实证可参见 Campbell, J. Y. (2011). Estimating the Macroeconomic Determinants of Long-Term Yields（2026-10-07/10-08 两轮 Crossref 检索均查无此文；同刊同期亦无利率/期限结构论文。疑为幻觉引用，未配 DOI——宁缺勿伪造）. Journal of Finance, 66(6), 2253-2291.",
+      "source": "美国联邦储备委员会 2022 年公开市场操作声明（FOMC statements, 2022）；期限结构与长端利率的经典实证可参见 Campbell, J.Y. & Shiller, R.J. (1991). Yield Spreads and Interest Rate Movements: A Bird's Eye View. The Review of Economic Studies, 58(3), 495-514. DOI: 10.2307/2298008.（长端利率与预期短端利率的关系是期限溢价研究的基础；早前版本此处误引 Campbell, J.Y. (2011)《Estimating the Macroeconomic Determinants of Long-Term Yields》并附刊名卷期 66(6), 2253-2291，该文经两轮 Crossref 检索均查无此文，判定为幻觉引用；替换时拟用的 Campbell (1990) 同样查不到 JSTOR 记录，故改用可机器核验的 Campbell & Shiller (1991)，不为「看起来更相关」而选一条查不到的文献）",
       "tags": ["2022", "加息", "成长", "价值", "久期"],
       "related": ["cycle-a-share-style", "principle-capm"],
       "teachingModel": "mom-rev-combo",

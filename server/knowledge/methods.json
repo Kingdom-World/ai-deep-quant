@@ -18,6 +18,7 @@
       "related": [
         "basis-financial-pubdate",
         "method-cross-section",
+        "method-lookahead-audit",
         "paper-lopez-de-prado-2018",
         "term-lookahead-vs-survivorship",
         "term-pit"
@@ -103,6 +104,7 @@
         "method-cost-sensitivity",
         "method-multiple-testing",
         "method-nice-vs-meaningful",
+        "method-purged-cv",
         "paper-bailey-lopez-2014",
         "term-winsorize"
       ]
@@ -122,6 +124,9 @@
       "related": [
         "basis-fee-cn",
         "basis-slippage",
+        "method-1n-equal-weight",
+        "method-covariance-shrinkage",
+        "method-low-risk-anomaly",
         "method-parameter-robust",
         "paper-almgren-chriss-2001",
         "paper-grinold-kahn-2000",
@@ -144,6 +149,8 @@
       ],
       "related": [
         "method-cross-section",
+        "method-fama-french-3factor",
+        "method-idiosyncratic-volatility",
         "method-time-series-momentum",
         "paper-fama-french-1993",
         "paper-grinold-kahn-2000",
@@ -172,6 +179,7 @@
       "related": [
         "method-layer-monotonic",
         "method-lookahead",
+        "method-macobbeth-regression",
         "method-time-series-momentum",
         "paper-fama-french-1993",
         "paper-grinold-kahn-2000",
@@ -252,8 +260,10 @@
       ],
       "related": [
         "basis-fingerprint",
-        "term-pit",
-        "paper-lopez-de-prado-2018"
+        "method-lookahead-audit",
+        "method-purged-cv",
+        "paper-lopez-de-prado-2018",
+        "term-pit"
       ]
     },
     {
@@ -286,10 +296,12 @@
         "经济解释"
       ],
       "related": [
-        "method-parameter-robust",
+        "method-1n-equal-weight",
         "method-multiple-testing",
-        "paper-bailey-lopez-2014",
-        "method-nice-vs-meaningful"
+        "method-nice-vs-meaningful",
+        "method-parameter-robust",
+        "method-purged-cv",
+        "paper-bailey-lopez-2014"
       ]
     },
     {
@@ -309,11 +321,13 @@
         "Deflated Sharpe"
       ],
       "related": [
-        "principle-emh",
+        "case-dotcom-2000",
+        "method-benchmark-overfit",
         "method-multiple-testing",
         "method-parameter-robust",
-        "method-benchmark-overfit",
-        "case-dotcom-2000"
+        "method-persistence-attribution",
+        "method-purged-cv",
+        "principle-emh"
       ]
     },
     {
@@ -338,6 +352,237 @@
         "principle-disposition",
         "term-cross-sectional-vs-time-series",
         "term-momentum-factor"
+      ]
+    },
+    {
+      "id": "method-macobbeth-regression",
+      "category": "method",
+      "title": "Fama-MacBeth 两阶段回归：把时序收益问题变成截面定价问题",
+      "body": "第一步：对每个时期 t 做横截面回归 r_i,t = a_t + b_t * f_i,t-1 + e_i,t（因子值必须用滞后一期的已知值），得到因子每期溢价 b_t；第二步：用时间序列回归估计 b_t 的均值，标准误必须对 b_t 做 Newey-West 调整以处理序列相关。为什么必须两步：直接把时序收益对因子回归，隐含假设是「因子溢价恒定且与因子波动无关」，一旦溢价随状态变化，估计值就是加权平均而非真实溢价。判读要点：① t 统计量检验的是「平均溢价是否非零」，不检验「溢价是否稳定」，后者要看 b_t 的时序图与正负号比例；② b_t 的标准误远大于朴素 OLS，不做 Newey-West 会系统性高估显著性；③ 因子溢价必须用 t-1 或更早的数据构造，否则 b_t 已被前视污染，整套方法失效。局限：两阶段只给平均溢价，不回答「什么状态下溢价更高」——那需要分组或时变参数模型。",
+      "source": "论文：Fama, E.F. & MacBeth, J.D. (1973). Risk, Return, and Equilibrium: Empirical Tests. Journal of Political Economy, 81(3), 607-636. DOI: 10.1086/260061；教材：Grinold & Kahn《Active Portfolio Management》第 4 章（因子模型的统计推断）；论文：Newey, W. & West, K. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708. DOI: 10.2307/1913610。",
+      "tags": [
+        "Fama-MacBeth",
+        "横截面回归",
+        "因子溢价",
+        "Newey-West",
+        "资产定价"
+      ],
+      "related": [
+        "method-cross-section",
+        "method-fama-french-3factor",
+        "method-persistence-attribution",
+        "paper-grinold-kahn-2000",
+        "paper-newey-west-1987",
+        "principle-emh",
+        "term-ic",
+        "term-newey-west",
+        "term-stats-significance"
+      ]
+    },
+    {
+      "id": "method-covariance-shrinkage",
+      "category": "method",
+      "title": "协方差收缩：为什么样本协方差矩阵不能直接喂给优化器",
+      "body": "样本协方差矩阵在股票数远大于样本期数时是奇异的（行数 > 列数 ⇒ 矩阵不可逆），即便可逆也极度不稳定：个别噪声大的股票会获得荒谬的权重。Ledoit-Wolf 收缩法的做法是求一个最优常数，把样本协方差向结构化目标（单位方差矩阵或常相关矩阵）收缩：Σ* = (1-δ)·S + δ·F，δ 由样本量、维度与真实协方差与目标的距离共同决定。实践判据：① 股票数 / 样本期数 越大，δ 越接近 1，权重越向等权收敛——这不是「退化」，是数据不足以支撑精细估计时的正确行为；② 收缩后权重会明显变得「没那么极端」，这本身就是诊断信号：若收缩前后权重差异很小，说明你原本的优化结果本就在噪声区；③ 收缩系数应当按行业分组估计而非全市场统一，否则同质行业内的真实结构会被抹平。局限：常数收缩假设真实协方差结构强度对所有股票一致；非线性收缩方法（如 Ledoit-Wolf 2003 之后的迭代版本）放松该假设但计算量更大。",
+      "source": "论文：Ledoit, O. & Wolf, M. (2004). Honey, I Shrunk the Sample Covariance Matrix. The Journal of Portfolio Management, 30(4), 110-119. DOI: 10.3905/jpm.2004.110；教材：Ledoit, O. & Wolf, M.《Asset Allocation and the Components of Equity Risk》与《Efficient Portfolios from Sparse Data》关于收缩估计的综述。",
+      "tags": [
+        "协方差矩阵",
+        "收缩估计",
+        "均值方差",
+        "权重稳定性",
+        "组合构建"
+      ],
+      "related": [
+        "method-1n-equal-weight",
+        "method-risk-parity-erc",
+        "principle-diversification",
+        "principle-risk-parity",
+        "term-volatility",
+        "method-cost-sensitivity"
+      ]
+    },
+    {
+      "id": "method-1n-equal-weight",
+      "category": "method",
+      "title": "1/N 等权：把估计误差当作一等公民来对待",
+      "body": "在多资产配置的实证比较中（涵盖 14 个数据集、7 类对手方案），经过均值-方差优化的组合几乎总是输给简单的等权（1/N）策略。原因不是优化器写得不好，而是它太努力地估计了：样本均值误差大（时序短、噪声大），样本协方差误差更大，而优化器会把误差放大成极端权重。DeMiguel 等人的结论应当被读成「估计误差的惩罚可能超过优化收益」而不是「优化无用」。正确的用法是：① 优化只在**有独立估计优势**的维度上做（例如协方差做了收缩处理、均值用行业先验收缩）；② 对权重设上界（如单标的不超过 15%），把优化器从「自由发挥」约束到「只能在合理区间内微调」；③ 必须把等权作为**基线**一并回测，任何复杂方案跑不赢等权时就该怀疑自己的复杂度而不是怀疑数据。三条纪律：优化结果与等权基线的差异必须是**样本外**的（同一段样本内优化必然赢）；差异必须大到超过成本；必须有机制解释为什么你的优势维度恰好是可靠的。",
+      "source": "论文：DeMiguel, V., Garlappi, L. & Uppal, R. (2009). Optimal Versus Naive Diversification: How Inefficient is the 1/N Portfolio Strategy? Review of Financial Studies, 22(5), 1915-1953. DOI: 10.1093/rfs/hhm075；教材：DeMiguel, V., Garlappi, L. & Uppal, R.《Optimal Versus Naive Diversification》第 1-2 节对 1/N 优于优化的机制解释。",
+      "tags": [
+        "等权",
+        "1/N",
+        "均值方差",
+        "估计误差",
+        "基线"
+      ],
+      "related": [
+        "method-covariance-shrinkage",
+        "method-risk-parity-erc",
+        "method-cost-sensitivity",
+        "term-equal-weight",
+        "method-benchmark-overfit",
+        "principle-diversification"
+      ]
+    },
+    {
+      "id": "method-risk-parity-erc",
+      "category": "method",
+      "title": "风险平价与等风险贡献：让每个风险源都出力，而不是让每个资产都等权",
+      "body": "风险平价（Risk Parity）要求每个资产对组合总风险的贡献相等：w_i·(Σw)_i / (w'Σw) = 1/N。它与等权、等市值加权的根本差别在于：波动率高的资产自动获得更小权重（σ_i ∝ 1/σ_i 的一阶近似），从而在**风险**维度上实现公平，而不是在**资金**维度上公平。ERC（等风险贡献）目标函数是凸的，可靠求解；ERC 组合在多数市场环境下是无约束均值方差有效前沿上的一个特定点（波动率最小化的端点组合），但这只是在无约束情形下的性质，不能推广为「风险平价总优于优化」。实践要点：① 必须用**协方差收缩**后的矩阵求 ERC，否则解会被噪声资产劫持；② 杠杆约束会破坏风险贡献等式：加了杠杆上限后应重新求解并**实测**风险贡献是否仍等，而不是假设；③ 与直接优化权重相比，ERC 只有一个自由参数（目标风险贡献），估计误差的影响面小得多——这是它在实证中稳健的真正原因。杠杆化的 ERC 会隐含做空波动率（Bet against beta 的形态），是收益的隐含来源而非免费午餐。",
+      "source": "论文：Asness, C.S., Frazzini, A. & Pedersen, L.H. (2012). Leverage Aversion and Risk Parity. Financial Analysts Journal, 68(1), 47-59. DOI: 10.2469/faj.v68.n1.1；论文：Frazzini, A. & Pedersen, L.H. (2014). Betting Against Beta. Journal of Financial Economics, 111(1), 1-25. DOI: 10.1016/j.jfineco.2013.10.005；教材：Maillard, F., Roncalli, T. & Teiletche, J.《On the Properties of Equally Weighted Risk Contribution Portfolios》(2010) 关于 ERC 权重与波动率的闭式关系。",
+      "tags": [
+        "风险平价",
+        "ERC",
+        "风险贡献",
+        "杠杆",
+        "组合构建"
+      ],
+      "related": [
+        "method-1n-equal-weight",
+        "method-covariance-shrinkage",
+        "method-low-risk-anomaly",
+        "principle-diversification",
+        "principle-risk-parity",
+        "term-beta",
+        "term-volatility"
+      ]
+    },
+    {
+      "id": "method-idiosyncratic-volatility",
+      "category": "method",
+      "title": "特质波动率异象：高特质波动反而低收益，不能用系统风险定价解释",
+      "body": "Ang, Hodrick, Xing 与 Zhang 用 Fama-French 三因子模型分解个股收益，发现对**总体波动率冲击**敏感度高的股票平均收益更低；相对因子模型残差（特质波动率）高的股票平均收益更是低得离谱。这个结果难以用常规风险定价解释，因为后续研究（Battalio, Hatch & Plantinga 2010）发现特质波动率高主要来自**彩票型偏好**（investors prefer lottery-like payoffs），而非系统性风险定价差异。方法论上的三个要点：① 因子模型残差本身就是被检验的对象，必须先用既定因子模型剥离，且残差标准化处理会影响结论强度；② 报告结果时要同时给出「总波动率分解」与「相对因子模型的残差波动」两条口径，混用会造成机制误判；③ 控制 Beta 之后仍显著，才能说这是独立于 CAPM 的异象——只报告原始波动率与收益的负相关没有信息量。实践含义：把高波动股当「高 Beta 替代品」是错误的风险定价，它反映的是行为偏好，且该效应在小盘、低流动性样本中更强，因此样本筛选规则会影响结论强度。",
+      "source": "论文：Ang, A., Hodrick, R.J., Xing, Y. & Zhang, X. (2006). The Cross-Section of Volatility and Expected Returns. The Journal of Finance, 61(1), 259-299. DOI: 10.1111/j.1540-6261.2006.00836.x；论文：Battalio, J., Hatch, P. & Plantinga, M. (2010). An Equilibrium Understanding of the Idiosyncratic Volatility Anomaly. Review of Financial Studies（高特质波动来自彩票型偏好）；教材：Grinold & Kahn《Active Portfolio Management》关于特质风险与选股残余风险的讨论。",
+      "tags": [
+        "特质波动率",
+        "异象",
+        "彩票型偏好",
+        "因子残差",
+        "风险定价"
+      ],
+      "related": [
+        "method-fama-french-3factor",
+        "method-layer-monotonic",
+        "method-low-risk-anomaly",
+        "principle-capm",
+        "term-beta",
+        "term-factor-exposure",
+        "term-value-at-risk",
+        "term-volatility"
+      ]
+    },
+    {
+      "id": "method-persistence-attribution",
+      "category": "method",
+      "title": "业绩持续性归因：多少是真的技能，多少只是因子暴露",
+      "body": "早期研究（Elton, Gruber & Blake 1996；Hendricks, Patel & Zeckhauser 1993）报告共同因子与费用几乎完全解释了基金的风险调整业绩持续性，Carhart (1997) 用剔除幸存者偏差的样本进一步确认：所谓「hot hands」大多由**动量因子的一年期暴露**驱动，而非基金经理选股能力。这个归因链条的方法论价值超过它对基金业的结论：① 先用既定因子模型分解，再看残差是否存在持续性——顺序颠倒会把因子暴露误记为技能；② 归因必须用**无幸存者偏差**的样本，否则消失的基金本身就是「负持续性」的证据，导致对技巧的估计系统性偏高；③ 若残差持续性集中在最差基金的一端（Carhart 的发现），应解读为「持续性的失败」而非「持续性的成功」。对自建组合的启示：评价一条策略是否真的有技能，必须问「剥离已知因子暴露后，残差收益是否还能被同样方法重复获得」，而不是看组合总收益的 t 值。",
+      "source": "论文：Carhart, M.M. (1997). On Persistence in Mutual Fund Performance. The Journal of Finance, 52(1), 57-82. DOI: 10.1111/j.1540-6261.1997.tb03808.x；论文：Elton, E.J., Gruber, M.J. & Blake, C.R. (1996). The Persistence of Risk-Adjusted Mutual Fund Performance. The Journal of Business, 69(2), 133. DOI: 10.1086/209685；论文：Hendricks, D., Patel, J. & Zeckhauser, R. (1993). Hot Hands in Mutual Funds: Short-Run Persistence of Relative Performance, 1974-1988. The Journal of Finance, 48(1), 93-130. DOI: 10.1111/j.1540-6261.1993.tb04703.x；教材：Grinold & Kahn《Active Portfolio Management》第 5 章因子模型与业绩归因。",
+      "tags": [
+        "业绩持续性",
+        "业绩归因",
+        "幸存者偏差",
+        "因子暴露",
+        "技能识别"
+      ],
+      "related": [
+        "method-macobbeth-regression",
+        "method-fama-french-3factor",
+        "method-lookahead-audit",
+        "term-lookahead-vs-survivorship",
+        "term-momentum-factor",
+        "paper-bailey-lopez-2014",
+        "method-nice-vs-meaningful"
+      ]
+    },
+    {
+      "id": "method-fama-french-3factor",
+      "category": "method",
+      "title": "Fama-French 三因子：市场、规模、价值，以及它没抓住的东西",
+      "body": "Fama & French (1992) 的横截面回归发现市值与账面市值比有解释力，随后 (1993) 提出三因子模型：市场因子 + 规模因子（SMB）+ 价值因子（HML），并用 25 个规模-账面市值比组合的双重排序构造因子组合。后续 (2015) 补充了盈利能力与投资因子，形成五因子。方法论要点：① 因子构造是**排序法**（先按指标排序、再等权组合），不是回归残差——这决定了因子暴露的计算必须与构造口径一致；② 因子组合应做**多空虚拟组合**（高减低）度量因子收益，做多空都不可交易；但用于回归的因子收益序列通常取**可交易的**多头口径以避免不可实现收益，两种口径不可混用；③ 三因子模型解释了约九成的横截面收益方差，但不解释动量、流动性与波动率异象——这些恰恰是当前 A 股横截面 alpha 的主要来源，因此「通过三因子回归」不等于「没有 alpha」。使用时最常见的错误：把因子暴露为零的股票称作「无风险资产」，或把行业集中度当作风格暴露的替代。",
+      "source": "论文：Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56. DOI: 10.1016/0304-405x(93)90023-5；论文：Fama, E.F. & French, K.R. (1992). The Cross-Section of Expected Stock Returns. The Journal of Finance, 47(2), 427. DOI: 10.2307/2329112；论文：Fama, E.F. & French, K.R. (2015). A Five-Factor Asset Pricing Model. Journal of Financial Economics, 116(1), 1-22. DOI: 10.1016/j.jfineco.2014.10.010。",
+      "tags": [
+        "Fama-French",
+        "多因子模型",
+        "规模",
+        "价值",
+        "因子构造"
+      ],
+      "related": [
+        "method-macobbeth-regression",
+        "method-persistence-attribution",
+        "method-idiosyncratic-volatility",
+        "term-factor-exposure",
+        "term-beta",
+        "term-alpha",
+        "method-layer-monotonic",
+        "paper-fama-french-1993"
+      ]
+    },
+    {
+      "id": "method-low-risk-anomaly",
+      "category": "method",
+      "title": "低风险异象：杠杆约束会系统性地把组合推向高 Beta 端",
+      "body": "Frazzini & Pedersen (2014) 发现按 Beta 排序的低 Beta 组合经杠杆调整后的收益**高于** CAPM 预测，扣杠杆后仍成立；而 Baker, Bradley & Wurgler (2011) 在无杠杆约束下几乎找不到低波动组合的超额收益。两个结论合起来才是完整机制：低风险异象不是「低波动股票便宜」这么简单，而是**约束的产物**——存在杠杆约束的投资者（禁止杠杆、限制赎回）会拥挤买入低 Beta 股票，把它们推高估值，从而未来收益偏低。没有杠杆约束时这个拥挤效应不存在，异象也基本消失。实践含义：① 用杠杆后的收益与不用杠杆的收益必须分别报告，混用会得出相反结论；② 回测中若允许对组合加杠杆，就必须检查持仓是否向低 Beta 端集中——这是「策略有效」与「策略拥挤」的分界；③ A 股散户结构与涨跌停制度会改变这个机制的作用强度，不能直接照搬美股结论。",
+      "source": "论文：Frazzini, A. & Pedersen, L.H. (2014). Betting Against Beta. Journal of Financial Economics, 111(1), 1-25. DOI: 10.1016/j.jfineco.2013.10.005；论文：Baker, M., Bradley, B. & Wurgler, J. (2011). Benchmarks as Limits to Arbitrage: A Solution to the Low-Volatility Anomaly. Review of Financial Studies（无杠杆约束下低波动组合无显著超额收益）；教材：Grinold & Kahn《Active Portfolio Management》第 13 章对基准约束与增强指数的讨论。",
+      "tags": [
+        "低风险异象",
+        "杠杆约束",
+        "拥挤",
+        "Beta",
+        "CAPM"
+      ],
+      "related": [
+        "method-risk-parity-erc",
+        "method-idiosyncratic-volatility",
+        "term-beta",
+        "principle-capm",
+        "method-cost-sensitivity",
+        "term-maxdrawdown"
+      ]
+    },
+    {
+      "id": "method-lookahead-audit",
+      "category": "method",
+      "title": "前视偏差审计：把每一条数据的时间语义问一遍",
+      "body": "前视偏差不是「不小心用了未来数据」这么单一，它有几种形态，每种都需要不同的检查：① **口径型** —— 财报数据按公告日而非报告期使用最隐蔽：2024Q1 的财报在 2024 年 4 月才公告，用报告期当时间戳会把四个月的未来信息塞进历史。审计动作：每条财务数据必须有「该值何时可得」的字段，而不只是「该值属于哪一期」；② **修订型** —— 用今天看到的、已被事后修订过的历史值，等于用了修订信息。审计动作：归档必须保存**当时的原始快照**，不能事后回填；③ **筛选型** —— 用今天才知道的成分股名单（含已退市、被 ST 的股票）回测过去，是幸存者偏差的变体。审计动作：成分股名单必须逐期存档。④ **计算型** —— 因子值与收益对齐错位（用 T 日收盘算的因子配 T 日收益）。审计动作：所有时间戳必须有明确的 shift 并写进产物元数据。审计的唯一有效形式是**逐条数据的时间语义断言**：对每类字段断言「可得时间 >= 使用时间」，而不是通读代码找「看起来像未来数据」的地方。",
+      "source": "教材：Grinold & Kahn《Active Portfolio Management》第 11 章回测的陷阱与数据对齐；论文：Bailey, D., Borwein, J., López de Prado, M. & Zhu, Q. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471（概率化回测缺陷与多重比较的统计根源）；论文：Loughran, T. & McDonald, B. (2011). When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks. Journal of Finance（财报时间戳错配导致的可复现性问题）；教材：CFA Institute《Equity Asset Valuation》第 2 章对财报可得日的处理。",
+      "tags": [
+        "前视偏差",
+        "幸存者偏差",
+        "时间对齐",
+        "审计",
+        "复现"
+      ],
+      "related": [
+        "method-lookahead",
+        "method-persistence-attribution",
+        "method-purged-cv",
+        "method-reproducibility",
+        "paper-bailey-lopez-2014",
+        "term-lookahead-vs-survivorship",
+        "term-pit"
+      ]
+    },
+    {
+      "id": "method-purged-cv",
+      "category": "method",
+      "title": "带净化的交叉验证：普通 K 折在时序金融数据上会泄漏",
+      "body": "标准 K 折交叉验证假设样本可任意切分且互相独立，在时序金融数据上这两个前提都不成立：训练集与验证集的时间区间重叠 ⇒ 验证期的信息通过重叠区泄漏进训练。净化的做法是把验证期前后的「污染区」一并从训练集剔除（purge），并在验证期之后再额外剔除一段（embargo）以覆盖标签的前视窗口。必须净化的三种情形：① 标签是多期累计收益（如未来 20 日），验证期末尾之后的训练样本天然包含该收益的前半段；② 特征计算用了滚动窗口，窗口跨越验证期边界；③ 样本本身有重叠（同一事件的多个滑窗样本被分到不同折）。判断标准很直接：**如果两折之间的时间间隔小于标签的最大前视长度，就必须净化**。反过来，若某流程声称做过时序交叉验证但没做这一步，应视为未验证——因为随机 K 折在时序数据上的乐观偏差恰好足以把无策略包装成有效策略。此外必须承认净化后的结果往往更差：净化后优势消失，说明之前的优势来自泄漏，而非来自信号。",
+      "source": "教材：López de Prado, M.《Advances in Financial Machine Learning》第 7 章（Cross-Validation in Finance：purged K-fold 与 embargo 的构造）；论文：López de Prado, M. (2018). Advances in Financial Machine Learning（书中给出的组合净化交叉验证 CPCV 框架）；论文：Bailey, D., Borwein, J., López de Prado, M. & Zhu, Q. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management（同一作者群对回测过拟合的系统性处理）。",
+      "tags": [
+        "交叉验证",
+        "净化",
+        "embargo",
+        "数据泄漏",
+        "样本外"
+      ],
+      "related": [
+        "method-benchmark-overfit",
+        "method-nice-vs-meaningful",
+        "method-lookahead-audit",
+        "method-parameter-robust",
+        "paper-lopez-de-prado-2018",
+        "paper-bailey-lopez-2014",
+        "method-reproducibility"
       ]
     }
   ]

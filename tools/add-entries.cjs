@@ -56,6 +56,46 @@ if (!INPUT) {
 
 function die(msg) { console.error('🔴 ' + msg); process.exit(1); }
 
+// ── 按**既有文件的风格**序列化（2026-10-09）──
+// 🔴 问题：知识库各文件的数组风格**并不统一** ——
+//   paper.json 既有形态是**紧凑内联**（"tags": ["A", "B"]），其余文件是**展开多行**。
+//   早期一律 `JSON.stringify(doc, null, 2)` 会把 paper.json 全量重排，
+//   本轮只补了 41 个 related 项却产生 +166/-… 的噪声 diff（真实改动被淹没）。
+// 🔴 处置原则：**不假设统一风格，改为探测原文件**——
+//   原文里存在内联数组 ⇒ 用内联；否则用展开。
+//   这样每个文件改动后仍是「除本批改动外，其余逐字节不变」。
+//
+// 🔴🔴 判据必须用 `[^`\n]*` 而不是 `\s*`（2026-10-09 实测踩过）：
+//   `\s*` 会吃掉换行，于是**展开风格也被判成 inline** ——
+//   四个文件里三个被误判，terms.json 一口气少 400 行（把展开的数组压成内联）。
+//   真正的区别是「开括号与首个元素是否**同一行**」。
+function detectStyle(raw) {
+  return /"\w+":\s*\[[^\]\n]*"/.test(raw) ? 'inline' : 'expanded';
+}
+
+function serializeLike(raw, doc, style) {
+  if (style === 'expanded') return JSON.stringify(doc, null, 2) + '\n';
+  const enc = (v, indent) => {
+    if (Array.isArray(v)) {
+      if (!v.length) return '[]';
+      if (v.every((x) => typeof x === 'string')) {
+        const one = '[' + v.map((x) => JSON.stringify(x)).join(', ') + ']';
+        if (one.length <= 110 && !one.includes('\n')) return one;
+      }
+      const pad = indent + '  ';
+      return '[\n' + v.map((x) => pad + enc(x, pad)).join(',\n') + '\n' + indent + ']';
+    }
+    if (v && typeof v === 'object') {
+      const keys = Object.keys(v);
+      if (!keys.length) return '{}';
+      const pad = indent + '  ';
+      return '{\n' + keys.map((k) => pad + JSON.stringify(k) + ': ' + enc(v[k], pad)).join(',\n') + '\n' + indent + '}';
+    }
+    return JSON.stringify(v);
+  };
+  return enc(doc, '') + '\n';
+}
+
 function main() {
   const abs = path.isAbsolute(INPUT) ? INPUT : path.join(ROOT, INPUT);
   if (!fs.existsSync(abs)) die(`文件不存在：${abs}`);
@@ -84,8 +124,11 @@ function main() {
   for (const [cat, fn] of Object.entries(CATEGORY_FILE)) {
     const p = path.join(KB_DIR, fn);
     if (!fs.existsSync(p)) continue;
-    const d = JSON.parse(fs.readFileSync(p, 'utf8'));
-    docs[cat] = { path: p, doc: d };
+    const raw = fs.readFileSync(p, 'utf8');
+    const d = JSON.parse(raw);
+    // 🔴 记住原文件风格与原文：补链回写时必须按**该文件**的风格落盘，
+    //   否则紧凑文件会被整体展开，只改41 项却产生上百行噪声 diff。
+    docs[cat] = { path: p, doc: d, raw, style: detectStyle(raw) };
     for (const e of d.entries || []) existing.add(e.id);
   }
 
@@ -194,11 +237,12 @@ function main() {
 
   // 先回写被追加了反向链接的**既有**文件
   for (const p of touched) {
-    const doc = Object.values(docs).find((t) => t.path === p).doc;
-    const next = JSON.stringify(doc, null, 2) + '\n';
+    const found = Object.values(docs).find((t) => t.path === p);
+    const doc = found.doc;
+    const next = serializeLike(found.raw, doc, found.style);
     JSON.parse(next);
     fs.writeFileSync(p, next, 'utf8');
-    console.log(`  ${path.relative(ROOT, p)}: 已补反向链接`);
+    console.log(`  ${path.relative(ROOT, p)}: 已补反向链接（风格 ${found.style}）`);
   }
 
   for (const [cat, list] of Object.entries(byCat)) {
@@ -218,8 +262,8 @@ function main() {
       }
       doc.entries.push(ordered);
     }
-    // 写盘前最后一次 JSON 合法性确认
-    const next = JSON.stringify(doc, null, 2) + '\n';
+    // 写盘前最后一次 JSON 合法性确认（沿用该文件既有风格）
+    const next = serializeLike(raw, doc, detectStyle(raw));
     JSON.parse(next);
     fs.writeFileSync(target.path, next, 'utf8');
     console.log(`  ${path.relative(ROOT, target.path)}: ${before} → ${doc.entries.length}`);

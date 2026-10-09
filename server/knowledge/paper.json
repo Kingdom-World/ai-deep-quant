@@ -9,7 +9,7 @@
       "body": "Marcos López de Prado 著，Wiley 2018 年出版。金融机器学习领域的标准参考书之一。本库引用其两处：① 第 7 章 Cross-Validation in Finance 系统论述前视偏差（look-ahead bias）与金融数据的交叉验证陷阱，是 PIT 数据层与时间对齐方法论的直接来源；② 第 8 章 The Dangers of Backtesting 讨论回测过拟合与多重比较的危害；③ 第 1 章主张研究流程必须可复现。该书的立场与本平台一致：量化研究的主要风险不是模型不够复杂，而是研究者用不严谨的流程欺骗自己。",
       "source": "López de Prado, M. (2018). Advances in Financial Machine Learning. John Wiley & Sons. ISBN 978-1119482086。相关章节：第 1 章（可复现研究流程）、第 7 章（Cross-Validation in Finance）、第 8 章（The Dangers of Backtesting）。",
       "tags": ["教材", "金融机器学习", "前视偏差", "交叉验证", "回测过拟合", "López de Prado"],
-      "related": ["term-pit", "method-lookahead", "method-multiple-testing", "method-reproducibility"]
+      "related": ["method-lookahead", "method-multiple-testing", "method-purged-cv", "method-reproducibility", "term-pit"]
     },
     {
       "id": "paper-newey-west-1987",
@@ -17,7 +17,7 @@
       "body": "Whitney K. Newey 与 Kenneth D. West 发表于 Econometrica 的论文，提出异方差自相关一致（Heteroskedasticity and Autocorrelation Consistent, HAC）协方差矩阵估计量。核心贡献：在残差同时存在异方差与自相关时，给出标准误的相合估计，且保证估计量为半正定。金融时序数据几乎必然同时具备这两种特征，若沿用普通 OLS 标准误会系统性低估，导致 t 值虚高、把噪声判为显著。本平台的实现（server/statstest.cjs 的 seNeweyWest）采用 Bartlett 核，滞后阶数用 statsmodels 的经验法则 L = floor(4 × (T/100)^(2/9))，并在 L=0 时严格退化为普通标准误。",
       "source": "Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708. DOI: 10.2307/1913610。实现对照：statsmodels.stats.sandwich_covariance.cov_hac 的 lag 默认经验公式。",
       "tags": ["论文", "计量经济学", "HAC", "标准误", "自相关", "异方差", "Econometrica"],
-      "related": ["term-newey-west", "term-stats-significance", "method-multiple-testing"]
+      "related": ["method-macobbeth-regression", "method-multiple-testing", "term-newey-west", "term-stats-significance"]
     },
     {
       "id": "paper-harvey-liu-zhu-2016",
@@ -33,7 +33,19 @@
       "body": "Richard C. Grinold 与 Ronald N. Kahn 著，McGraw-Hill 第 2 版（2000 年）。主动管理领域的标准教材。本库引用其四处：① 第 2 章确立基准选择与主动管理框架（基准须可比、可实现、事前确定）；② 第 6 章 The Fundamental Law of Active Management 推导信息系数（IC）与信息比率（IR）之间的理论关系，是因子有效性度量的理论基础；③ 第 7 章给出因子组合构建与分层分析方法；④ 第 9 章 Trading Costs, Turnover, and Taxes 讨论换手与交易成本建模。需注意书中 IR 指组合超额收益与跟踪误差之比，与因子研究中常用的 ICIR（IC 均值/IC 标准差）不是同一个量。",
       "source": "Grinold, R.C. & Kahn, R.N. (2000). Active Portfolio Management: A Quantitative Approach for Producing Superior Returns and Controlling Risk (2nd ed.). McGraw-Hill. ISBN 978-0070248823。相关章节：第 2 章（基准选择）、第 6 章（Fundamental Law）、第 7 章（因子组合）、第 9 章（交易成本）。",
       "tags": ["教材", "主动管理", "信息系数", "信息比率", "基准选择", "交易成本", "因子组合"],
-      "related": ["term-ic", "term-ir", "term-turnover", "term-equal-weight", "basis-benchmark", "method-layer-monotonic", "method-cross-section", "basis-slippage", "method-cost-sensitivity", "method-benchmark-choice"]
+      "related": [
+        "basis-benchmark",
+        "basis-slippage",
+        "method-benchmark-choice",
+        "method-cost-sensitivity",
+        "method-cross-section",
+        "method-layer-monotonic",
+        "method-macobbeth-regression",
+        "term-equal-weight",
+        "term-ic",
+        "term-ir",
+        "term-turnover"
+      ]
     },
     {
       "id": "paper-jegadeesh-titman-1993",
@@ -57,7 +69,14 @@
       "body": "David H. Bailey 与 Marcos López de Prado 发表于 Journal of Portfolio Management 的论文，提出通缩夏普比率（Deflated Sharpe Ratio, DSR）。要解决的问题：当研究者在同一策略族中尝试了大量变体（不同参数、不同样本切分）后，选出表现最好的那个报告夏普比率，该数值必然包含选择偏差——即使真实夏普为零，试得足够多也总能挑出一个「看起来很高」的。DSR 依据尝试次数、各次夏普的标准差与样本长度，对观测到的夏普做收缩修正，并给出「考虑选择偏差后仍显著」的概率。这是对「参数稳健性三防」的统计补充。",
       "source": "Bailey, D.H. & López de Prado, M. (2014). The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality. Journal of Portfolio Management, 40(5), 94-107. DOI: 10.3905/jpm.2014.40.5.094。同组作者另见：Bailey, Borwein, López de Prado & Zhu (2014). Pseudo-Mathematics and Financial Charlatanism. Notices of the AMS, 61(5), 458-471。",
       "tags": ["论文", "通缩夏普", "选择偏差", "回测过拟合", "参数稳健性", "JPM"],
-      "related": ["method-benchmark-overfit", "method-parameter-robust", "method-multiple-testing"]
+      "related": [
+        "method-benchmark-overfit",
+        "method-lookahead-audit",
+        "method-multiple-testing",
+        "method-parameter-robust",
+        "method-persistence-attribution",
+        "method-purged-cv"
+      ]
     },
     {
       "id": "paper-fama-french-1993",
@@ -65,7 +84,13 @@
       "body": "Eugene F. Fama 与 Kenneth R. French 发表于 Journal of Financial Economics 的论文，提出市场、规模、价值三因子模型解释股票收益横截面差异。除因子结论本身外，本库更重视其**方法贡献**：论文系统使用「按特征排序分层、构造各层组合、比较多空收益差」的做法来检验因子有效性，这成为后续因子研究的标准范式。本平台的分层回测（按因子值分 5 层、各层等权、观察单调性与多空差）直接沿用该范式。该论文也是「因子须有经济解释」这一审慎立场的重要来源。",
       "source": "Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56. DOI: 10.1016/0304-405X(93)90023-5。",
       "tags": ["论文", "三因子模型", "分层组合", "横截面", "因子检验范式", "JFE"],
-      "related": ["method-layer-monotonic", "method-cross-section", "term-momentum-factor", "principle-capm"]
+      "related": [
+        "method-cross-section",
+        "method-fama-french-3factor",
+        "method-layer-monotonic",
+        "principle-capm",
+        "term-momentum-factor"
+      ]
     },
     {
       "id": "paper-wilder-1978",

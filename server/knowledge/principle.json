@@ -20,10 +20,11 @@
         "alpha"
       ],
       "related": [
-        "principle-capm",
+        "method-macobbeth-regression",
+        "method-nice-vs-meaningful",
         "principle-apt",
-        "principle-disposition",
-        "method-nice-vs-meaningful"
+        "principle-capm",
+        "principle-disposition"
       ]
     },
     {
@@ -45,6 +46,8 @@
         "basis-benchmark",
         "case-2022-rate-hike",
         "cycle-juglar",
+        "method-idiosyncratic-volatility",
+        "method-low-risk-anomaly",
         "paper-fama-french-1993",
         "principle-apt",
         "principle-diversification",
@@ -115,10 +118,13 @@
         "1/N"
       ],
       "related": [
-        "principle-capm",
+        "case-ltcm-1998",
+        "method-1n-equal-weight",
+        "method-covariance-shrinkage",
+        "method-risk-parity-erc",
         "method-sample-length",
-        "principle-risk-parity",
-        "case-ltcm-1998"
+        "principle-capm",
+        "principle-risk-parity"
       ]
     },
     {
@@ -138,8 +144,10 @@
         "杠杆"
       ],
       "related": [
-        "principle-diversification",
-        "case-2008-crisis"
+        "case-2008-crisis",
+        "method-covariance-shrinkage",
+        "method-risk-parity-erc",
+        "principle-diversification"
       ]
     },
     {

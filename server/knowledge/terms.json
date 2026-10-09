@@ -19,6 +19,7 @@
       "related": [
         "basis-financial-pubdate",
         "method-lookahead",
+        "method-lookahead-audit",
         "method-reproducibility",
         "paper-lopez-de-prado-2018",
         "term-lookahead-vs-survivorship"
@@ -57,6 +58,7 @@
       ],
       "related": [
         "method-layer-monotonic",
+        "method-macobbeth-regression",
         "method-multiple-testing",
         "paper-grinold-kahn-2000",
         "principle-apt",
@@ -100,6 +102,7 @@
         "显著性"
       ],
       "related": [
+        "method-macobbeth-regression",
         "method-multiple-testing",
         "paper-harvey-liu-zhu-2016",
         "paper-newey-west-1987",
@@ -120,13 +123,14 @@
         "t统计量"
       ],
       "related": [
-        "term-newey-west",
+        "method-macobbeth-regression",
         "method-multiple-testing",
-        "paper-harvey-liu-zhu-2016",
-        "term-ir",
         "method-sample-length",
+        "paper-benjamini-hochberg-1995",
+        "paper-harvey-liu-zhu-2016",
         "paper-newey-west-1987",
-        "paper-benjamini-hochberg-1995"
+        "term-ir",
+        "term-newey-west"
       ]
     },
     {
@@ -164,6 +168,7 @@
         "case-1987-crash",
         "case-2020-liquidity",
         "method-circuitbreaker",
+        "method-low-risk-anomaly",
         "term-calmar-ratio",
         "term-sharpe",
         "term-sortino-ratio",
@@ -239,7 +244,10 @@
         "GARCH"
       ],
       "related": [
+        "method-covariance-shrinkage",
+        "method-idiosyncratic-volatility",
         "method-layer-monotonic",
+        "method-risk-parity-erc",
         "term-beta",
         "term-sharpe",
         "term-sortino-ratio",
@@ -262,6 +270,7 @@
         "cycle-a-share-style",
         "method-cross-section",
         "method-layer-monotonic",
+        "method-persistence-attribution",
         "method-time-series-momentum",
         "paper-fama-french-1993",
         "paper-jegadeesh-titman-1993",
@@ -303,10 +312,11 @@
         "再平衡"
       ],
       "related": [
+        "basis-benchmark",
+        "method-1n-equal-weight",
         "method-benchmark-choice",
         "method-cross-section",
-        "paper-grinold-kahn-2000",
-        "basis-benchmark"
+        "paper-grinold-kahn-2000"
       ]
     },
     {
@@ -320,7 +330,7 @@
       "limitations": "样本期敏感；非平稳（随市场状态漂移）；单因子假设忽略了其他风险维度；对低频数据估计噪声大。",
       "teachingModel": null,
       "teachingNote": "🔴 故意不挂教学模型：本平台预置模板是动量/反转族，没有「按 β 排序构建组合」的模板。要演示 β 需先有市值或协方差估计管道，属于 Phase 5 中性化预处理的范围。现在挂任何模板都会让学生把动量因子误当 β 暴露。",
-      "source": "原始论文：Sharpe, W.F. (1964). Capital Asset Prices: A Theory of Market Equilibrium under Conditions of Risk. Journal of Finance, 19(3), 425-442（同时期 Lintner, J. (1965). The Valuation of Risk Assets and the Selection of Risky Investments in Stock Portfolios and Capital Budgets. Review of Economics and Statistics, 47(1), 13-37. DOI: 10.2307/1924119. 与 Mossin, J. (1966). Equilibrium in a Capital Asset Market. Econometrica, 34(4), 768-783. DOI: 10.2307/1910098. 独立提出，故常合称 CAPM）。DOI: 10.2307/2977928.；教材：Bodie, Kane & Marcus《Investments》第 7-9 章关于 β 估计与指数模型；Roll, R. (1977). A Critique of the Asset Pricing Theory's Tests: Part I. Journal of Financial Economics, 4(2), 129-176. DOI: 10.1016/0304-405x(77)90009-5.（关于「市场组合不可观测」的根本批评）",
+      "source": "原始论文：Sharpe, W.F. (1964). Capital Asset Prices: A Theory of Market Equilibrium under Conditions of Risk. Journal of Finance, 19(3), 425-442. DOI: 10.1111/j.1540-6261.1964.tb02865.x.；同期独立提出者：Lintner, J. (1965). The Valuation of Risk Assets and the Selection of Risky Investments in Stock Portfolios and Capital Budgets. Review of Economics and Statistics, 47(1), 13-37. DOI: 10.2307/1924119.；Mossin, J. (1966). Equilibrium in a Capital Asset Market. Econometrica, 34(4), 768-783. DOI: 10.2307/1910098.（三者常合称 CAPM）；教材：Bodie, Kane & Marcus《Investments》第 7-9 章关于 β 估计与指数模型；Roll, R. (1977). A Critique of the Asset Pricing Theory's Tests: Part I. Journal of Financial Economics, 4(2), 129-176. DOI: 10.1016/0304-405x(77)90009-5.（关于「市场组合不可观测」的根本批评）",
       "tags": [
         "beta",
         "β",
@@ -329,6 +339,10 @@
         "敏感度"
       ],
       "related": [
+        "method-fama-french-3factor",
+        "method-idiosyncratic-volatility",
+        "method-low-risk-anomaly",
+        "method-risk-parity-erc",
         "principle-apt",
         "principle-capm",
         "term-alpha",
@@ -356,6 +370,7 @@
         "业绩归因"
       ],
       "related": [
+        "method-fama-french-3factor",
         "principle-capm",
         "term-beta",
         "term-ic"
@@ -407,6 +422,8 @@
         "中性化"
       ],
       "related": [
+        "method-fama-french-3factor",
+        "method-idiosyncratic-volatility",
         "method-layer-monotonic",
         "principle-apt",
         "term-beta",
@@ -510,6 +527,7 @@
         "分位"
       ],
       "related": [
+        "method-idiosyncratic-volatility",
         "term-maxdrawdown",
         "term-volatility"
       ]
@@ -677,7 +695,7 @@
       "limitations": "一阶自相关无法刻画长记忆；非平稳序列的自相关不可靠；高频数据受微观结构噪声干扰。",
       "teachingModel": "mom20-baseline",
       "teachingNote": "对回测收益序列做一阶自相关检验，并与模型的动量/反转方向对照。学生应验证：动量模型的收益序列是否呈现正自相关，反转模型是否相反；再检查夏普年化公式在本数据上是否高估。",
-      "source": "方法论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 46(6), 1431-1463。DOI: 10.2307/1913610.（HAC 标准误）。；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52。DOI: 10.2469/faj.v58.n4.2453.（自相关下的夏普年化校正）。；检验方法见 Ljung, G.M. & Box, G.E.P. (1978). On a Measure of Lack of Fit in Time Series Models. Biometrika, 65(2), 297-303。DOI: 10.1093/biomet/65.2.297.",
+      "source": "方法论文：Newey, W.K. & West, K.D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. Econometrica, 55(3), 703-708。DOI: 10.2307/1913610.（HAC 标准误）。；Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, 58(4), 36-52。DOI: 10.2469/faj.v58.n4.2453.（自相关下的夏普年化校正）。；检验方法见 Ljung, G.M. & Box, G.E.P. (1978). On a Measure of Lack of Fit in Time Series Models. Biometrika, 65(2), 297-303。DOI: 10.1093/biomet/65.2.297.",
       "tags": [
         "自相关",
         "序列相关",
@@ -711,9 +729,11 @@
         "回测陷阱"
       ],
       "related": [
-        "term-pit",
+        "method-adjust-illusion",
         "method-lookahead",
-        "method-adjust-illusion"
+        "method-lookahead-audit",
+        "method-persistence-attribution",
+        "term-pit"
       ]
     },
     {

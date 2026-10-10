@@ -64,3 +64,53 @@ test('health 的子系统状态是三元结构（ok/status/reason），不是裸
   assert.match(body, /reason:/, 'degraded 必须带 reason（禁止静默降级）');
   assert.match(body, /ok: false/, '必须显式 ok:false（不靠 status 字符串推断）');
 });
+
+// ── 账号名可枚举这一类风险（2026-10-10 补）──
+// 🔴 背景：仓库是**公开**的，管理账号名缺省回退成 'admin'。
+//   只报 status:'enabled' 会让人以为鉴权就万无一失，
+//   实际上**账号名是公开的**，攻击者只差猜密码。
+//   ⇒ health 必须额外披露"账号名是否自定义"，这是管理员唯一会忘的事。
+test('🔴 health 鉴权开启时必须披露「账号名是否默认」（默认名可被枚举）', () => {
+  const i = SRC.indexOf("app.get('/api/health'");
+  const body = SRC.slice(i, i + 3200);
+  assert.match(body, /usernameCustomized/, '必须报 usernameCustomized');
+  // 必须引用单一源常量，而不是在 health 里重算（重算 = 会出现第二处口径）
+  assert.match(
+    body,
+    /usernameCustomized:\s*BOOTSTRAP_ADMIN_NAME_IS_CUSTOM/,
+    '必须引用单一源常量 BOOTSTRAP_ADMIN_NAME_IS_CUSTOM（不得在health 内重算）',
+  );
+  // 默认名时必须给可操作提示（与"降级必须显式"同源：不给提示等于没披露）
+  assert.match(body, /usernameCustomized[\s\S]{0,400}hint:/, '默认名时必须给出 hint');
+});
+
+test('🔴 health 不得回显管理账号名本身（只允许布尔 + 提示）', () => {
+  const i = SRC.indexOf("app.get('/api/health'");
+  const body = SRC.slice(i, i + 3200);
+  // ⚠️ 先剥掉注释：注释里的 'admin' 是「为什么要防它」的说明，**不构成回显**；
+  //   真正要防的是字符串字面量进入响应体。（本条第一次跑时误报了自己的注释。）
+  const code = body
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  // 出现 'admin' 字面量 = 把默认账号名回显给公网读者
+  assert.ok(
+    !/['"]admin['"]/.test(code),
+    'health 代码不得回显默认账号名 admin（公网端点只报"是否默认"）',
+  );
+  // 也不得把 SITE_USERNAME / SITE_PASSWORD 的值拼进响应
+  assert.ok(
+    !/process\.env\.SITE_(USERNAME|PASSWORD)/.test(code),
+    'health 不得直接读部署变量（应由单一源常量判定，避免泄漏变量名）',
+  );
+});
+
+test('单一源常量：BOOTSTRAP_ADMIN_NAME_IS_CUSTOM 的判定逻辑在鉴权常量旁', () => {
+  assert.match(
+    SRC,
+    /const BOOTSTRAP_ADMIN_NAME_IS_CUSTOM = Boolean\(process\.env\.SITE_USERNAME\)/,
+    '常量必须定义在 server/index.cjs 且判定口径单一',
+  );
+  // ⚠️ 不得出现第二处等价判定（两处口径 = 迟早分叉）
+  const hits = SRC.match(/BOOTSTRAP_ADMIN_NAME_IS_CUSTOM\s*=/g) || [];
+  assert.strictEqual(hits.length, 1, '该常量只能被定义一次');
+});

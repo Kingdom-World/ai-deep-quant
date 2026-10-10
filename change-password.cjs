@@ -32,7 +32,10 @@ async function main() {
   const [username, password] = process.argv.slice(2);
   if (!username || !password) {
     console.log('用法: node change-password.cjs <用户名> <新密码>');
-    console.log('示例: node change-password.cjs admin MyNewPass2026');
+    // ⚠️ 示例里用占位符，**不要写本机真实账号名**——
+    //   本仓库是公开的，写死账号名等于告诉 clone 的人默认管理员是谁。
+    //   实际账号请查 data/auth/users.json 或问管理员。
+    console.log('示例: node change-password.cjs <用户名> <新密码>');
     process.exit(1);
   }
   if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username.trim())) {

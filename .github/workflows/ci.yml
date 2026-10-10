@@ -72,6 +72,14 @@ jobs:
         #   那必须联网核验，仍在本地跑、由人判断。这是它的能力边界，不是遗漏。
         run: node tools/check-source-integrity.cjs --ci
 
+      - name: Public docs guard (offline)
+        # 🔴 仓库是 public，而README 曾经对外写了：鉴权变量名 +「密码留空即关闭」
+        #   + 真实部署地址 + 部署拓扑 + 内部阈值第二份副本。
+        #   每一处单看都像正常文档 ⇒ 人工逐行审会漏。
+        #   本步骤断言「公开面不得出现什么」，只扫**公开版 README**
+        #   （本地完整版不入库、不受约束）⇒ 改动对外文档即刻验证。
+        run: node tools/check-public-docs.cjs --ci
+
       - name: TypeScript check
         run: npx tsc -p tsconfig.app.json --noEmit
 

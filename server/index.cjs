@@ -120,6 +120,11 @@ loadEnvFile();
 
 const SITE_USERNAME = process.env.SITE_USERNAME || 'admin';
 const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
+// 🔴 管理账号名是否已被部署方自定义（2026-10-10 加，单一源）
+//   为什么要这个常量：health 端点要披露「账号名是不是默认的」，
+//   但那里**不允许出现 SITE_USERNAME 这个变量名**（会让读者知道改哪个变量能换管理员名），
+//   于是把判定收敛到这里，health 只引用布尔量。
+const BOOTSTRAP_ADMIN_NAME_IS_CUSTOM = Boolean(process.env.SITE_USERNAME);
 // ── 鉴权开关 与「引导管理员」解耦（2026-09-21）────────────────────
 //  原先 `AUTH_ENABLED = Boolean(SITE_PASSWORD)` 把两件事绑死：
 //    「是否开启鉴权」 ＝ 「是否用环境变量造一个管理员账号」。
@@ -1362,7 +1367,20 @@ app.get('/api/health', (req, res) => {
       //   运维扫一眼 /api/health 就能发现"公网部署却忘了开鉴权"。
       //   ⚠️ **只报布尔开关，不报账号/口令/域名等任何拓扑信息**（公开仓库保密红线）。
       auth: AUTH_ENABLED
-        ? { ok: true, status: 'enabled' }
+        ? {
+            ok: true,
+            status: 'enabled',
+            // 🔴 披露「账号名是否用了默认值」（2026-10-10 加）。
+            //   理由：管理账号名缺省时回退成 'admin'，而本仓库是公开的
+            //   ⇒ 任何 clone 的人都知道默认管理员叫什么。只说"已启用"会让人
+            //   误以为鉴权状态已足够，实际上**账号名可枚举**只差密码被猜中。
+            // 🔴 只回显布尔与提示，**绝不回显用户名本身**，
+            //   也不出现那个环境变量的名字（否则等于告诉读者"改它能换管理员名"）。
+            usernameCustomized: BOOTSTRAP_ADMIN_NAME_IS_CUSTOM,
+            ...(BOOTSTRAP_ADMIN_NAME_IS_CUSTOM
+              ? {}
+              : { hint: '管理账号使用默认名，建议在部署配置里改成一个非默认的名字。' }),
+          }
         : { ok: false, status: 'disabled', reason: '未启用鉴权（AUTH_ENABLED 未置 1 且未配置 SITE_PASSWORD）：管理类视图对任何访问者开放，请勿用于公网' },
     },
     time: new Date().toISOString(),

@@ -13,8 +13,11 @@
         "时点数据",
         "前视偏差",
         "look-ahead",
+        "lookahead",
         "财务",
-        "pubDate"
+        "pubDate",
+        "披露日",
+        "point-in-time"
       ],
       "related": [
         "basis-financial-pubdate",
@@ -743,8 +746,10 @@
       "source": "方法论文：López de Prado, M. (2018). Advances in Financial Machine Learning. John Wiley & Sons. 第 7 章（Cross-Validation in Finance）与第 11 章关于回测陷阱的讨论。ISBN 978-1119482086.；Bailey, D.H., Borwein, J.M., López de Prado, M. & Zhu, Q.J. (2014). Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance. Notices of the AMS, 61(5), 458-471。DOI: 10.1090/noti1105.；本项目 term-pit 条目（PIT 时点数据）与本条互补。",
       "tags": [
         "前视偏差",
+        "未来函数",
         "幸存者偏差",
         "look-ahead",
+        "lookahead",
         "survivorship",
         "回测陷阱"
       ],

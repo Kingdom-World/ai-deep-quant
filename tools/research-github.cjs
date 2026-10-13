@@ -111,9 +111,22 @@ async function repoTree(fullName, branch = 'main') {
 }
 
 async function readFile(fullName, filePath, branch = 'main') {
-  const d = await getJson(`/repos/${fullName}/contents/${filePath}?ref=${branch}`);
-  if (!d || d.type !== 'file' || !d.content) throw new Error(`${filePath} 不是可读文件或超出大小限制`);
-  return Buffer.from(d.content, d.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+  // 🔴 分支回退（2026-10-13 修）：`--read` 曾只试 main，
+  //   而 ant-design-pro 等老项目默认分支是 master ⇒ 404 后无提示，
+  //   使用者会以为"文件不存在"。⇒ 依次试 main/master，都失败才报错。
+  let lastErr = null;
+  for (const b of [branch, 'main', 'master']) {
+    try {
+      const d = await getJson(`/repos/${fullName}/contents/${filePath}?ref=${b}`);
+      if (d && d.type === 'file' && d.content) {
+        return Buffer.from(d.content, d.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+      }
+      lastErr = new Error(`${filePath} 在分支 ${b} 上不是可读文件或超出大小限制`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error(`无法读取 ${fullName}/${filePath}`);
 }
 
 function screen(rows) {

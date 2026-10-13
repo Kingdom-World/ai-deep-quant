@@ -73,6 +73,14 @@ function CrossSectionLab() {
         textStyle: { color: '#94a3b8' },
       });
     }
+    // 🔴 cleanup 必须 dispose（2026-10-13 修，原实现只置 null 不 dispose ⇒ 泄漏）
+    //   本 Tab 是条件渲染（normTab === '' 时才挂载）⇒ 每次切走都会卸载，
+    //   若不 dispose，canvas + WebGL 上下文 + 内部 resize 监听会一直累积。
+    //   顺序与 ExperimentsTab.tsx:488-489 的既有正确写法对齐：先 dispose 后置 null。
+    return () => {
+      chartInst.current?.dispose();
+      chartInst.current = null;
+    };
   }, [result]);
 
   const run = async () => {

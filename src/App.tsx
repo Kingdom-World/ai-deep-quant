@@ -20,6 +20,7 @@ import AgentReportPage from './pages/AgentReportPage';
 import NewsPage from './pages/NewsPage';
 import LoginPage from './pages/LoginPage';
 import LegalPage from './pages/LegalPage';
+import NotFoundPage from './pages/NotFoundPage';
 import ModelStudioPage from './pages/ModelStudioPage';
 import ModelPlazaPage from './pages/ModelPlazaPage';
 import DataQualityPage from './pages/DataQualityPage';
@@ -139,7 +140,12 @@ function App() {
             <Route path="/agents" element={<AgentTeamPage />} />
             <Route path="/agents/report/:id" element={<AgentReportPage />} />
             <Route path="/legal" element={<LegalPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            {/* 未找到页（2026-10-13）：原为 <Navigate to="/" replace /> —— 静默跳回首页会让
+                用户以为"我点错了"或"网站坏了"，且 URL 被改掉、无任何提示。
+                改为显式 404（回显访问路径 + 给出口），把静默失败变成可理解的状态。
+                ⚠️ 仅前端表现变化：后端 SPA 回退仍对所有非 /api GET 返回 index.html(200)，
+                   不改静态托管层（本平台邀请制、无 SEO 需求，不值得为状态码动托管路径）。 */}
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
           {/* 全站页脚（合规基建）：一行风险提示 + /legal 入口，登录后的所有路由统一覆盖 */}
           <AppFooter />

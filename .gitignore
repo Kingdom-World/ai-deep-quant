@@ -89,3 +89,6 @@ scripts/drive.cjs
 
 # ── 另有一批"文件名本身即敏感信息"的本地文件（基础设施/凭据类），
 #    其忽略规则在 .git/info/exclude —— 仅本地生效，文件名不进公开库 ──
+
+# Windows 资源管理器生成的系统文件（避免 git status 噪声）
+desktop.ini

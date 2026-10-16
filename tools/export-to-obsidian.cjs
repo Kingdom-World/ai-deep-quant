@@ -113,8 +113,21 @@ function findSecret(text) {
   return null;
 }
 
+/** 读取已存在笔记的 created 值（沿用首次归档日期）。
+ *  🔴 见 archive 脚本同名函数的注释：`created` 若每次写 new Date()，
+ *    会让每次 --force 更新都把全部笔记的日期改成当天（丢首次日期 + git diff 全量污染）。 */
+function readCreated(dest) {
+  try {
+    if (!fs.existsSync(dest)) return null;
+    const m = fs.readFileSync(dest, 'utf8').match(/^created:\s*(\S+)/m);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 生成一条笔记的 markdown */
-function render(item, titleById) {
+function render(item, titleById, createdAt) {
   const title = safeName(item.title);
   const label = LAYER_LABEL[item.layer] || item.layer;
   const tags = [
@@ -135,7 +148,7 @@ function render(item, titleById) {
   const parts = [
     '---',
     'type: note',
-    `created: ${new Date().toISOString().slice(0, 10)}`,
+    `created: ${createdAt || new Date().toISOString().slice(0, 10)}`,
     `source_id: ${item.id}`,
     `layer: ${label}`,
     'tags:',
@@ -233,7 +246,7 @@ function main() {
       skipped += 1;
       continue;
     }
-    fs.writeFileSync(dest, render(it, titleById), 'utf8');
+    fs.writeFileSync(dest, render(it, titleById, readCreated(dest)), 'utf8');
     written += 1;
   }
 

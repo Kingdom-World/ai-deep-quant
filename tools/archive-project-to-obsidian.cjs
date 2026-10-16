@@ -162,13 +162,33 @@ function resolveDep(fromRel, spec) {
   return null;
 }
 
-function render(rec) {
+/**
+ * 读取已存在笔记的 created 值（沿用首次归档日期）。
+ *
+ * 🔴 为什么需要（2026-10-16 修）：`created` 原本每次都写 new Date()，
+ *   于是**每次 --force 更新都会把所有笔记的日期改成当天** ——
+ *   既丢失"这篇是什么时候首次归档的"，又让 git diff 全量污染
+ *   （186 个文件全部变更，真实改动被淹没）。
+ *   ⚠️ 这条在"要频繁更新第二大脑"的工作流下会反复触发，故必须修。
+ *   ⇒ 只有在**首次创建**时写入今天；更新时沿用原值。
+ */
+function readCreated(dest) {
+  try {
+    if (!fs.existsSync(dest)) return null;
+    const m = fs.readFileSync(dest, 'utf8').match(/^created:\s*(\S+)/m);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function render(rec, createdAt) {
   const header = extractHeader(rec.src);
   const exports = extractExports(rec.src);
   const parts = [
     '---',
     'type: module',
-    `created: ${new Date().toISOString().slice(0, 10)}`,
+    `created: ${createdAt || new Date().toISOString().slice(0, 10)}`,
     `path: ${rec.rel.split(path.sep).join('/')}`,
     `layer: ${rec.layer}`,
     `lines: ${rec.lines}`,
@@ -293,7 +313,7 @@ function main() {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const dest = path.join(dir, `${nameOf.get(r.rel)}.md`);
 
-    const md = render(r);
+    const md = render(r, readCreated(dest));   // 沿用首次归档日期（见 readCreated 注释）
     const secret = findSecret(md);   // 🔴 与 scan-secrets.sh 口径一致：扫 md 内容
     if (secret) {
       console.log(`  ⛔ 拒绝：${nameOf.get(r.rel)} —— 命中【${secret.name}】于第 ${secret.line} 行（不回显内容）`);

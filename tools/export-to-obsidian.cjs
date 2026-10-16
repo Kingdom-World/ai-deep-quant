@@ -118,6 +118,10 @@ function render(item, titleById) {
   const title = safeName(item.title);
   const label = LAYER_LABEL[item.layer] || item.layer;
   const tags = [
+    // 🔴 统一项目标签（2026-10-16 方案A）：见 archive 脚本同名注释。
+    //   ⚠️ 标签表示「关联」而非「独占」—— Obsidian 标签可多值，
+    //   将来若这些知识也服务别的项目，再加一个项目标签即可，不会绑死。
+    '项目/AI深度量化平台',
     `知识/${label}`,
     ...(Array.isArray(item.tags) ? item.tags : []),
   ].map((t) => `  - ${safeTag(t)}`).filter((line, i, arr) => arr.indexOf(line) === i);

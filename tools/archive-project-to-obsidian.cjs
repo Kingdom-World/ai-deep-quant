@@ -173,6 +173,10 @@ function render(rec) {
     `layer: ${rec.layer}`,
     `lines: ${rec.lines}`,
     'tags:',
+    // 🔴 统一项目标签（2026-10-16 方案A）：让"项目全貌"可跨文件夹聚合 ——
+    //   模块档案在 10-Projects、知识笔记在 20-Knowledge，靠文件夹永远看不全，
+    //   靠标签 + Dataview 才能"从一个入口看到项目全部资产"。
+    `  - 项目/AI深度量化平台`,
     `  - 模块/${rec.layer}`,
     `  - ${rec.base}`,
     '---',

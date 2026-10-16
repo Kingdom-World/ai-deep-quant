@@ -34,11 +34,19 @@ function fail(summary, extra = {}) {
 }
 
 /**
+ * 数字呈现辅助：无效值统一显示 `--`。
+ * 🔴 为什么需要：直接插值会让 `NaN` / `undefined` / `null` 混进给模型的文本，
+ *   模型可能把它们当作真实观测值复述出去。宁可显示 `--` 也不显示假数字。
+ */
+const fmtNum = (v, digits = 2) =>
+  typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : '--';
+
+/**
  * 创建工具箱
- * @param deps { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct }
+ * @param deps { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct, listExperiments }
  */
 function createToolbox(deps = {}) {
-  const { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct } = deps;
+  const { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct, listExperiments } = deps;
 
   const tools = [
     {
@@ -333,6 +341,67 @@ function createToolbox(deps = {}) {
           r.items.map((e) => ({ id: e.id, category: e.category, title: e.title, body: e.body, source: e.source, tags: e.tags })),
           // 知识条目是随代码版本管理的静态内容，指纹用 title 集合表达"内容版本"
           fingerprint.build({ params: { query: q, category: cat || null }, data: { source: 'knowledge', adjust: 'none', lastDate: null } }),
+        );
+      },
+    },
+
+    {
+      name: 'list_experiments',
+      desc: '查询历史回测实验记录（可按标的 / 策略过滤，默认取最近 10 条），返回每次实验的时间、标的、策略、参数与关键指标。用于回答「之前跑过哪些回测」「某标的历史表现如何」这类需要纵览历史的问题——这类问题不该用 run_backtest 重跑一遍。',
+      params: [
+        { name: 'symbol', type: 'string', required: false, default: '' },
+        { name: 'strategy', type: 'string', required: false, default: '' },
+        { name: 'limit', type: 'number', required: false, default: 10 },
+      ],
+      async run({ symbol, strategy, limit }) {
+        if (!listExperiments) return fail('实验记录模块未接入');
+        // 上限 30：实验行会原文进模型上下文，不设上限会挤掉推理空间
+        const n = Math.max(1, Math.min(Number(limit) || 10, 30));
+        const sym = String(symbol || '').trim();
+        const stg = String(strategy || '').trim();
+        const rows = listExperiments(n, {
+          symbol: sym || undefined,
+          strategy: stg || undefined,
+        });
+        if (!rows.length) {
+          return fail(
+            sym || stg
+              ? `没有符合条件的实验记录（标的=${sym || '不限'}，策略=${stg || '不限'}）。可放宽过滤条件；若确实还没跑过，先调用 run_backtest。`
+              : '还没有任何实验记录。先调用 run_backtest 跑一次回测，之后就能在这里查到。',
+          );
+        }
+
+        // ⚠️ 口径（已核实 src/pages/research/ExperimentsTab.tsx:295）：
+        //   totalReturn / annualized / maxDrawdownPct / winRate 等**已是百分数**
+        //   （12.34 表示 12.34%），前端直接拼 `%` ⇒ 这里**不得再乘 100**。
+        //   sharpe / sortino / calmar 是无单位的倍数，原值呈现。
+        const lines = rows.map((r, i) => {
+          const m = r.metrics || {};
+          const bits = [
+            `总收益=${fmtNum(m.totalReturn)}%`,
+            `年化=${fmtNum(m.annualized)}%`,
+            `最大回撤=${fmtNum(m.maxDrawdownPct)}%`,
+          ];
+          if (m.sharpe !== undefined) bits.push(`夏普=${fmtNum(m.sharpe)}`);
+          if (m.tradeCount !== undefined) bits.push(`交易数=${m.tradeCount}`);
+          const range = r.range ? `${r.range.start || '?'}~${r.range.end || '?'}` : '区间未记录';
+          const day = typeof r.ts === 'string' ? r.ts.slice(0, 10) : '日期未知';
+          return `${i + 1}. [${day}] ${r.symbol} · ${r.strategy} · 参数 ${JSON.stringify(r.params || {})} · ${bits.join(' ')} · ${range}`;
+        });
+
+        return ok(
+          `共取到 ${rows.length} 条历史实验（新的在前）：\n${lines.join('\n')}\n\n【引用要求】引用任何数值时必须指明来自哪一次实验（用上面的序号 + 日期）；不同实验的数值不得相加、平均或跨实验比较后当作同一口径的结论——它们可能用了不同策略与区间。`,
+          // ⚠️ 显式剔除 equityThumb：那是给图表用的缩略曲线，
+          //   对模型叙述无用，且 200 点 × N 条会大量占用上下文。
+          rows.map((r) => ({
+            ts: r.ts, symbol: r.symbol, strategy: r.strategy,
+            params: r.params, market: r.market, range: r.range,
+            metrics: r.metrics, note: r.note || '',
+          })),
+          fingerprint.build({
+            params: { symbol: sym || null, strategy: stg || null, limit: n },
+            data: { source: 'experiments-log', adjust: 'none', lastDate: null },
+          }),
         );
       },
     },

@@ -16,7 +16,10 @@ const { ROLES, BOUNDARIES } = require('../agents/roles.cjs');
 
 /** P3 试点启用的工具（其余工具未注入依赖，启用只会产生"未接入"失败） */
 //   M1 追加 knowledge_search：知识库是平台口径的权威源，模型涉及定义/口径时必须先查。
-const ENABLED_TOOLS = ['get_klines', 'run_backtest', 'run_param_scan', 'eval_factors', 'factor_ic', 'knowledge_search'];
+//   P3 追加 list_experiments：让助手能"读历史"而非重跑——这是 QuantGPT 的定义能力
+//   （见 plans/master-plan.md Phase 3：读实验/因子/报告），此前 8 个工具全在单标的层，
+//   没有一个是读 Phase 1/2 产物的。
+const ENABLED_TOOLS = ['get_klines', 'run_backtest', 'run_param_scan', 'eval_factors', 'factor_ic', 'knowledge_search', 'list_experiments'];
 
 const TOOL_RULES = [
   '【输出格式规则 · 本次会话以本节为准，铁律第 5 条在本会话临时失效】',
@@ -38,7 +41,7 @@ const TOOL_RULES = [
 
 /**
  * 创建 Alpha 研究执行器
- * @param deps { fetchKlines, marketOf, priceLimitPct } —— 由 index.cjs 注入在线抓取能力
+ * @param deps { fetchKlines, marketOf, priceLimitPct, listExperiments } —— 由 index.cjs 注入
  * @returns (question, chat) => runResearch(...)
  */
 function createAlphaRunner(deps = {}) {
@@ -48,6 +51,7 @@ function createAlphaRunner(deps = {}) {
     fetchNews: null, // P3 试点未接资讯
     marketOf: deps.marketOf,
     priceLimitPct: deps.priceLimitPct,
+    listExperiments: deps.listExperiments ?? null, // P3：读历史实验记录
   });
   const toolbox = {
     spec: full.spec.filter((t) => ENABLED_TOOLS.includes(t.name)),

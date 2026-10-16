@@ -462,6 +462,9 @@ app.post('/api/agent/research', async (req, res) => {
       fetchKlines: (code, count) => quoteGateway.fetchDailyRows(code, count, 'qfq'),
       marketOf: (code) => marketOf(code),
       priceLimitPct: (code, name) => priceLimitPct(code, name),
+      // P3（Phase 3 QuantGPT）：注入「读历史实验记录」——
+      //   此前工具全在单标的层，没有一个能读 Phase 1/2 产物（实验/因子/报告）。
+      listExperiments: (limit, filters) => experiments.list(limit, filters),
     });
 
     const r = await runner(question, (msgs, opts) => cloudMod.chat(msgs, opts));

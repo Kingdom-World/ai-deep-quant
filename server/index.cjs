@@ -465,6 +465,17 @@ app.post('/api/agent/research', async (req, res) => {
       // P3（Phase 3 QuantGPT）：注入「读历史实验记录」——
       //   此前工具全在单标的层，没有一个能读 Phase 1/2 产物（实验/因子/报告）。
       listExperiments: (limit, filters) => experiments.list(limit, filters),
+      // P3：注入「读历史报告」。
+      //   🔴 归属检查必须在这一层做：reportstore.getReport 只按 id 取、**不校验归属**，
+      //     归属判断在路由层完成（见 /api/agents/report/:id 的 `r.uid !== broker.uidOf(req)`）。
+      //     若工具直接暴露 getReport，等于给 AI 开了一条绕过路由权限的读报告通道。
+      //     ⇒ 与既有路由保持同口径：不属于当前请求者的报告，一律视为不存在。
+      getReport: async (id) => {
+        const rep = await agentReportStore.getReport(id);
+        if (!rep || rep.uid !== broker.uidOf(req)) return null;
+        return rep;
+      },
+      listReports: (opts) => agentReportStore.listReports({ ...opts, uid: broker.uidOf(req) }),
     });
 
     const r = await runner(question, (msgs, opts) => cloudMod.chat(msgs, opts));

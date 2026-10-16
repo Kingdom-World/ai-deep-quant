@@ -43,10 +43,16 @@ const fmtNum = (v, digits = 2) =>
 
 /**
  * 创建工具箱
- * @param deps { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct, listExperiments }
+ * @param deps { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct,
+ *               listExperiments, getReport, listReports }
+ *   ⚠️ getReport / listReports 是 async（reportstore 全函数 async，
+ *      漏 await 会拿到 Promise 而非数据 —— 见 reportstore.cjs 头注释的 Serverless 教训）
  */
 function createToolbox(deps = {}) {
-  const { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct, listExperiments } = deps;
+  const {
+    fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct,
+    listExperiments, getReport, listReports,
+  } = deps;
 
   const tools = [
     {
@@ -401,6 +407,116 @@ function createToolbox(deps = {}) {
           fingerprint.build({
             params: { symbol: sym || null, strategy: stg || null, limit: n },
             data: { source: 'experiments-log', adjust: 'none', lastDate: null },
+          }),
+        );
+      },
+    },
+
+    {
+      name: 'read_report',
+      desc: '读取历史 Agent 团队报告。不带 id 时列出最近的报告清单（标的 / 模式 / 结论 / 时间）；带 id 时返回该报告的最终结论、团队评分与降级情况。用于回答「之前对某标的的团队结论是什么」「上次分析是否降级」——不该为了回答这类问题重新跑一遍团队分析。',
+      params: [
+        { name: 'id', type: 'string', required: false, default: '' },
+        { name: 'symbol', type: 'string', required: false, default: '' },
+        { name: 'limit', type: 'number', required: false, default: 10 },
+      ],
+      async run({ id, symbol, limit }) {
+        const rid = String(id || '').trim();
+        const sym = String(symbol || '').trim();
+
+        // ── 模式 A：按 id 读单份（**只给结论层，不给 stages 全文**）──
+        //    实测单份完整 trace 最大 24.8KB，原样回灌会挤爆上下文；
+        //    而结论层的 final 仅约 200 字符 —— 这才是模型叙述所需。
+        if (rid) {
+          if (!getReport) return fail('报告存储模块未接入');
+          let r = null;
+          try {
+            r = await getReport(rid); // ⚠️ 必须 await：漏了会拿到 Promise 而非 trace
+          } catch (e) {
+            return fail(`读取报告失败：${(e && e.message ? e.message : '未知错误').slice(0, 80)}`);
+          }
+          if (!r) return fail(`未找到报告 ${rid}。可去掉 id 再调用一次，列出可用报告。`);
+
+          const f = r.final || {};
+          const dg = r.degraded || {};
+          const when = typeof r.ranAt === 'string' ? r.ranAt.slice(0, 16).replace('T', ' ') : '时间未知';
+          const lines = [
+            `报告 ${rid}`,
+            `标的：${r.symbol || '?'}${r.name ? ` ${r.name}` : ''} · 模式：${r.mode || '?'} · 生成：${when}`,
+          ];
+          if (typeof r.price === 'number') lines.push(`当时价格：${fmtNum(r.price)}`);
+          lines.push(
+            `团队结论：${f.decision || '（未给出）'}` +
+            (typeof f.teamScore === 'number' ? ` · 团队评分 ${fmtNum(f.teamScore)}` : ''),
+          );
+          if (f.note) lines.push(`结论说明：${f.note}`);
+          // 🔴 降级必须显式（平台铁律：禁止静默降级）。
+          //   实测 degraded 有**三种形态**（核对了全部 18 份历史报告）：
+          //     ① 字段缺失（8 份，早于降级标注上线）—— 缺失 ≠ 未降级！
+          //        必须如实说"无法判断"，否则等于把未知当成了"没问题"。
+          //     ② {degraded,llm,rule,seats,total}（6 份）—— 常规形态
+          //     ③ 同②再加 reason（4 份）—— 如"云端大模型未配置"，
+          //        此时 total/rule 可能为 0，按②的模板会渲染成
+          //        「0 个角色中 0 个兜底」这种误导表述。
+          if (!r.degraded) {
+            lines.push('（该报告生成于降级标注上线之前，未记录降级信息 —— 无法判断各角色是否全部由模型完成；引用时请说明这一不确定性。）');
+          } else if (dg.degraded) {
+            if (dg.reason) {
+              lines.push(`⚠️【该报告有降级】原因：${dg.reason} —— 引用其结论时必须说明这一可靠性边界。`);
+            } else {
+              const seats = Array.isArray(dg.seats) && dg.seats.length ? `（${dg.seats.join('、')}）` : '';
+              lines.push(
+                `⚠️【该报告有降级】${dg.total == null ? '?' : dg.total} 个角色中 ${dg.rule == null ? '?' : dg.rule} 个由规则引擎兜底${seats}` +
+                ' —— 引用其结论时必须一并说明这一可靠性边界，不得当作全部由模型完成的分析。',
+              );
+            }
+          } else {
+            lines.push('该报告全部角色均由模型完成，未见降级。');
+          }
+          if (r.disclaimer) lines.push(r.disclaimer);
+
+          return ok(
+            lines.join('\n'),
+            {
+              id: rid, symbol: r.symbol, name: r.name, mode: r.mode, ranAt: r.ranAt,
+              price: r.price, final: f, degraded: dg,
+            },
+            fingerprint.build({
+              params: { id: rid },
+              data: { source: 'agent-report', adjust: 'none', lastDate: null },
+            }),
+          );
+        }
+
+        // ── 模式 B：列出历史报告 ──
+        if (!listReports) return fail('报告存储模块未接入');
+        const n = Math.max(1, Math.min(Number(limit) || 10, 30));
+        let rows = [];
+        try {
+          rows = await listReports({ symbol: sym || undefined, limit: n });
+        } catch (e) {
+          return fail(`读取报告列表失败：${(e && e.message ? e.message : '未知错误').slice(0, 80)}`);
+        }
+        if (!Array.isArray(rows) || !rows.length) {
+          return fail(
+            sym
+              ? `没有 ${sym} 的历史报告。可先发起一次团队分析（/api/agents/analyze）再回来查。`
+              : '还没有任何 Agent 团队报告。先发起一次团队分析，之后就能在这里查到。',
+          );
+        }
+        const listLines = rows.map((r, i) => {
+          const day = typeof r.ranAt === 'string' ? r.ranAt.slice(0, 10) : '--';
+          return `${i + 1}. [${day}] ${r.id} · ${r.symbol || '?'}${r.name ? ` ${r.name}` : ''} · 模式 ${r.mode || '?'} · 结论「${r.decision || '?'}」`;
+        });
+        return ok(
+          `共 ${rows.length} 份历史报告（新的在前）：\n${listLines.join('\n')}\n\n若要某份的完整结论与降级情况，再用 read_report 并带上它的 id。`,
+          rows.map((r) => ({
+            id: r.id, symbol: r.symbol, name: r.name, mode: r.mode,
+            decision: r.decision, ranAt: r.ranAt,
+          })),
+          fingerprint.build({
+            params: { symbol: sym || null, limit: n },
+            data: { source: 'agent-report-index', adjust: 'none', lastDate: null },
           }),
         );
       },

@@ -44,14 +44,14 @@ const fmtNum = (v, digits = 2) =>
 /**
  * 创建工具箱
  * @param deps { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct,
- *               listExperiments, getReport, listReports }
- *   ⚠️ getReport / listReports 是 async（reportstore 全函数 async，
- *      漏 await 会拿到 Promise 而非数据 —— 见 reportstore.cjs 头注释的 Serverless 教训）
+ *               listExperiments, getReport, listReports, accountSnapshot }
+ *   ⚠️ getReport / listReports / accountSnapshot 是 async（漏 await 会拿到 Promise）
+ *   ⚠️ accountSnapshot 在注入层绑定当前用户（组合数据按 uid 隔离）
  */
 function createToolbox(deps = {}) {
   const {
     fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct,
-    listExperiments, getReport, listReports,
+    listExperiments, getReport, listReports, accountSnapshot,
   } = deps;
 
   const tools = [
@@ -517,6 +517,92 @@ function createToolbox(deps = {}) {
           fingerprint.build({
             params: { symbol: sym || null, limit: n },
             data: { source: 'agent-report-index', adjust: 'none', lastDate: null },
+          }),
+        );
+      },
+    },
+
+    {
+      name: 'get_portfolio',
+      desc: '读取模拟盘组合状态与暴露：账户（总资产 / 现金 / 累计与当日盈亏 / 回撤熔断等级）、持仓明细（数量 / 成本 / 现价 / 市值 / 占总资产比 / 浮动盈亏）与集中度。用于回答「我现在的持仓结构如何」「集中度是否过高」「现在还能开新仓吗」——不该让用户自己去翻页面。⚠️ 口径提示：现价取自行情快照，该层在行情不可用时会退回成本价，此时浮盈会显示为 0，不要据此断言"没有涨跌"。',
+      params: [
+        { name: 'top', type: 'number', required: false, default: 10 },
+      ],
+      async run({ top }) {
+        if (!accountSnapshot) return fail('模拟盘模块未接入');
+        let s = null;
+        try {
+          s = await accountSnapshot(); // ⚠️ async：注入层已绑定当前用户
+        } catch (e) {
+          return fail(`读取组合失败：${(e && e.message ? e.message : '未知错误').slice(0, 80)}`);
+        }
+        if (!s || typeof s !== 'object') return fail('未取到组合状态');
+
+        const n = Math.max(1, Math.min(Number(top) || 10, 30));
+        const total = Number(s.totalAssets) || 0;
+        const pctOf = (v) => (total > 0 ? (Number(v) || 0) / total * 100 : 0);
+        // 按市值降序 —— 「暴露」的意义就在于先看到占大头的那几个
+        const pos = [...(s.positions || [])].sort(
+          (a, b) => (Number(b.marketValue) || 0) - (Number(a.marketValue) || 0),
+        );
+
+        const lines = [];
+        lines.push(
+          `总资产 ¥${fmtNum(s.totalAssets)} · 现金 ¥${fmtNum(s.cash)}（可用 ¥${fmtNum(s.availableCash)}，占 ${fmtNum(pctOf(s.cash))}%）` +
+          ` · 持仓市值 ¥${fmtNum(s.marketValue)}（占 ${fmtNum(pctOf(s.marketValue))}%）`,
+        );
+        lines.push(`累计盈亏 ¥${fmtNum(s.totalPnl)}（${fmtNum(s.totalPnlPct)}%）· 当日 ¥${fmtNum(s.todayPnl)}`);
+        // 熔断等级决定"能不能开新仓"，是组合状态里最该被模型知道的一条
+        const lv = Number(s.ddLevel) || 0;
+        lines.push(
+          `回撤 ${fmtNum(s.drawdownPct)}%（峰值 ¥${fmtNum(s.peakAssets)}）· 回撤熔断等级 L${lv}` +
+          (lv >= 2
+            ? '【已锁定：新的开仓会被拒绝，可卖出减仓】'
+            : lv === 1
+              ? '【L1：禁止新开仓，可卖出减仓】'
+              : '（正常，可开新仓）'),
+        );
+
+        if (!pos.length) {
+          lines.push('当前无持仓（全部为现金）。');
+        } else {
+          lines.push('');
+          lines.push(`持仓 ${pos.length} 只（按市值降序）：`);
+          for (const [i, p] of pos.slice(0, n).entries()) {
+            const w = pctOf(p.marketValue);
+            const lock = Number(p.qty) - Number(p.sellableQty || p.qty);
+            lines.push(
+              `${i + 1}. ${p.symbol}${p.name ? ` ${p.name}` : ''} · ${p.qty} 股 · 成本 ${fmtNum(p.avgCost)} → 现价 ${fmtNum(p.lastPrice)}` +
+              ` · 市值 ¥${fmtNum(p.marketValue)}（占 ${fmtNum(w)}%）· 浮盈 ¥${fmtNum(p.unrealizedPnl)}（${fmtNum(p.unrealizedPct)}%）` +
+              (lock > 0 ? ` · 可卖 ${p.sellableQty} 股（T+1 或挂单冻结 ${lock} 股）` : ''),
+            );
+          }
+          if (pos.length > n) lines.push(`（另有 ${pos.length - n} 只未列出，可调大 top 参数）`);
+
+          const top1 = pctOf(pos[0].marketValue);
+          const top3 = pos.slice(0, 3).reduce((a, p) => a + pctOf(p.marketValue), 0);
+          lines.push('');
+          lines.push(`集中度：最大持仓 ${fmtNum(top1)}% · 前三大合计 ${fmtNum(top3)}% · 持仓只数 ${pos.length}`);
+          lines.push(
+            '【引用要求】以上为当前快照的事实陈述；集中度高低是否合适取决于用户策略口径，' +
+            '不要替用户下"该减仓 / 该分散"的结论，除非用户明确要求评估。',
+          );
+        }
+
+        return ok(
+          lines.join('\n'),
+          {
+            totalAssets: s.totalAssets, cash: s.cash, availableCash: s.availableCash,
+            marketValue: s.marketValue, totalPnl: s.totalPnl, totalPnlPct: s.totalPnlPct,
+            todayPnl: s.todayPnl, drawdownPct: s.drawdownPct, peakAssets: s.peakAssets,
+            ddLevel: lv, riskLocked: !!s.riskLocked,
+            positionCount: pos.length,
+            // 只给前 n 只；**不含 equity / orders**（前者最多 500 条、后者最多 100 条）
+            positions: pos.slice(0, n),
+          },
+          fingerprint.build({
+            params: { top: n },
+            data: { source: 'paper-account', adjust: 'none', lastDate: null },
           }),
         );
       },

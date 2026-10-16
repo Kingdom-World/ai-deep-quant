@@ -476,6 +476,11 @@ app.post('/api/agent/research', async (req, res) => {
         return rep;
       },
       listReports: (opts) => agentReportStore.listReports({ ...opts, uid: broker.uidOf(req) }),
+      // P3：注入「读组合暴露」。
+      //   🔴 组合数据按 uid 隔离 ⇒ 必须在注入层绑定当前请求者（与 /api/paper/account 同口径）。
+      //   broker.accountSnapshot 内部已接行情并处理了降级（行情不可用时退回成本价），
+      //   故这里无需再关心行情可用性。
+      accountSnapshot: () => broker.accountSnapshot(broker.uidOf(req)),
     });
 
     const r = await runner(question, (msgs, opts) => cloudMod.chat(msgs, opts));

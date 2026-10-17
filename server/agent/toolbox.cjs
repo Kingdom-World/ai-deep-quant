@@ -22,6 +22,9 @@ const { runBacktest } = require('../quant.cjs');
 const paramscan = require('../paramscan.cjs');
 const factoreval = require('../factoreval.cjs');
 const crosssect = require('../crosssect.cjs');
+// P3：因子表达式白名单引擎（parseExpression / inferDirection / OPS / 上限常量）
+//   ⚠️ 纯函数模块、无 IO —— 顶部 require 安全（与 factoreval/crosssect 同款）
+const factorexpr = require('../factorexpr.cjs');
 const knowledgeBase = require('../knowledge.cjs');
 
 /** 统一的成功返回 */
@@ -604,6 +607,103 @@ function createToolbox(deps = {}) {
             params: { top: n },
             data: { source: 'paper-account', adjust: 'none', lastDate: null },
           }),
+        );
+      },
+    },
+
+    {
+      name: 'list_factors',
+      desc: '列出平台可用的预置因子与因子表达式规则：预置因子（名称 / 窗口 / 方向）、可用算子及语义、窗口与复杂度上限、表达式示例。用于回答「有哪些因子可用」「mom20 是什么意思」「因子表达式该怎么写」。',
+      params: [],
+      async run() {
+        const wins = (crosssect && crosssect.FACTOR_WINDOWS) || {};
+        const names = Object.keys(wins);
+        const defaults = (factoreval && factoreval.DEFAULT_FACTORS) || [];
+        const revOps = (factorexpr && factorexpr.REVERSAL_OPS) || new Set();
+
+        const lines = [];
+        lines.push(`预置因子 ${names.length} 个（窗口单位：交易日）：`);
+        for (const name of names) {
+          // 方向只看算子前缀：rev* 为反向，其余按动量叙述；**不评价"值大值小"**（那是策略口径）
+          const isRev = revOps.has(String(name).replace(/\d+$/, ''));
+          lines.push(`- ${name}（${wins[name]} 日）· ${isRev ? '反向（对窗口收益取负）' : '动量（窗口收益率）'}`);
+        }
+        if (defaults.length) {
+          lines.push('');
+          lines.push(`默认评估集：${defaults.join(' / ')}`);
+        }
+
+        lines.push('');
+        lines.push('因子表达式（白名单 AST 解析，**不是 eval**）：');
+        const opNames = (factorexpr && factorexpr.OPS) ? Object.keys(factorexpr.OPS) : [];
+        lines.push(`- 算子（${opNames.length}）：${opNames.map((o) => `${o}(n)`).join(' / ')}（n 为窗口，单位交易日）`);
+        lines.push('- 支持四则运算 + - * /、括号、数字常数与负号；不支持函数自定义、条件、循环、字段直接读取');
+        lines.push(
+          `- 上限：窗口 ≤ ${factorexpr.MAX_WINDOW}、AST 深度 ≤ ${factorexpr.MAX_DEPTH}、表达式长度 ≤ ${factorexpr.MAX_LEN} 字符`,
+        );
+        lines.push('- 示例：`mom60 - mom20`、`vol20 * -1`、`(mom20 + mom60) / 2`');
+        lines.push('');
+        lines.push('【方向判定规则（刻意保守）】只含 mom 类 → momentum；只含 rev 类 → reversal；');
+        lines.push('两类同时出现、或同类相减（如 `mom60 - mom20`）、或含 vol/turnover/amount/lowvol/bias/volratio');
+        lines.push('等非线性算子 → **方向不定**（宁可不判，也不猜错方向）。');
+        lines.push('');
+        lines.push('【下一步】想验证某个因子有没有预测力 → 用 factor_ic；想试表达式是否合法 → 用 check_factor_expr。');
+
+        return ok(
+          lines.join('\n'),
+          {
+            factors: names.map((n) => ({ name: n, window: wins[n], reversal: revOps.has(String(n).replace(/\d+$/, '')) })),
+            defaults,
+            ops: opNames,
+            limits: { maxWindow: factorexpr.MAX_WINDOW, maxDepth: factorexpr.MAX_DEPTH, maxLen: factorexpr.MAX_LEN },
+          },
+          fingerprint.build({ params: {}, data: { source: 'factor-catalog', adjust: 'none', lastDate: null } }),
+        );
+      },
+    },
+
+    {
+      name: 'check_factor_expr',
+      desc: '校验因子表达式是否合法（白名单 AST 解析，**只做语法与白名单检查、不计算任何数值**）：返回用到的算子、所需最大窗口、方向推断，以及不合法时的具体原因。用于回答「我这个表达式能写吗」「为什么这个因子表达式报错」。',
+      params: [
+        { name: 'expr', type: 'string', required: true },
+      ],
+      async run({ expr }) {
+        const src = String(expr || '').trim();
+        if (!src) return fail('expr 不能为空，例如 `mom60 - mom20`');
+        const r = factorexpr.parseExpression(src);
+        if (!r.ok) {
+          return fail(
+            `表达式不合法：${r.error}\n` +
+            '可用算子：' + Object.keys(factorexpr.OPS).map((o) => `${o}(n)`).join(' / ') +
+            `；窗口 ≤ ${factorexpr.MAX_WINDOW}，长度 ≤ ${factorexpr.MAX_LEN} 字符。`,
+          );
+        }
+        const dir = factorexpr.inferDirection(r.meta, r.ast);
+        const dirText =
+          dir === 'momentum' ? 'momentum（动量）'
+            : dir === 'reversal' ? 'reversal（反转）'
+              : '不定（含反向与动量的混合、或同类相减、或非线性算子 —— 平台刻意不猜方向）';
+
+        const lines = [
+          `表达式合法 ✅  ${r.normalized}`,
+          `- 用到的算子：${r.meta.ops.map((o) => `${o}()`).join(' / ')}`,
+          `- 所需最大窗口：${r.meta.maxWindow} 个交易日（构造截面时需前置至少这么多根 K 线热身）`,
+          `- 方向推断：${dirText}`,
+          r.meta.hasReversal ? '- 含反向算子（rev）：对窗口收益取负' : '',
+          '',
+          '【重要】本工具**只校验语法与白名单，不计算任何数值** —— 它不能告诉你这个因子有没有用。',
+          '要验证预测力请用 factor_ic（会给出 IC / ICIR / t / p 与分层单调性）；',
+          '要验证稳健性请用 eval_factors（含逐年稳定性）。',
+        ].filter(Boolean);
+
+        return ok(
+          lines.join('\n'),
+          {
+            expr: r.normalized, ops: r.meta.ops, maxWindow: r.meta.maxWindow,
+            hasReversal: !!r.meta.hasReversal, direction: dir || null,
+          },
+          fingerprint.build({ params: { expr: r.normalized }, data: { source: 'factor-expr', adjust: 'none', lastDate: null } }),
         );
       },
     },

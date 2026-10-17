@@ -125,7 +125,13 @@ test('工具箱契约完整：参数均声明 name 与 type（模型按位置传
   assert.ok(tb.tools.length >= 6, `工具数 ${tb.tools.length} 少于基线 6`);
   for (const t of tb.tools) {
     assert.ok(t.name && t.desc, `${t.name} 缺少名称或描述`);
-    assert.ok(Array.isArray(t.params) && t.params.length > 0, `${t.name} 无参数声明`);
+    // ⚠️ 2026-10-17 修正：原断言要求 `params.length > 0`，那是**过度约束** ——
+    //   它写于只有 5 个"有参工具"的时候，但**无参工具是合法的设计**
+    //   （如 `list_factors` 只读静态常量，不需要任何入参）。
+    //   真正要守的是"参数必须声明 name/type"（模型按位置传参，顺序即签名），
+    //   对无参工具不存在签名问题。
+    //   ⇒ 不为了满足测试而给无参工具硬塞参数（那是"为测试而设计"）。
+    assert.ok(Array.isArray(t.params), `${t.name} 的 params 必须是数组（可为空）`);
     for (const p of t.params) assert.ok(p.name && p.type, `${t.name} 的参数缺 name/type`);
   }
   // spec 必须保持 params 顺序

@@ -218,7 +218,11 @@ function render(rec, createdAt) {
     '## 元信息',
     '',
     `- 行数：${rec.lines}`,
-    `- 归档时间：${new Date().toISOString().slice(0, 10)}`,
+    // 🔴 必须沿用 createdAt（2026-10-17 修）：这里原是 new Date()，
+    //   于是每次 --force 都会让 186 篇的「归档时间」全部变成当天 ⇒ 全量 diff。
+    //   昨天只修了 frontmatter 的 created、**漏了正文这一行** —— 同一个 bug 的第二处。
+    //   ⇒ 教训：修"随时间变化的字段"时要**全文件搜日期写法**，不能只改看得见的那一处。
+    `- 归档时间：${createdAt || new Date().toISOString().slice(0, 10)}`,
     `- 仓库路径：\`${rec.rel.split(path.sep).join('/')}\``,
     '',
   );

@@ -49,14 +49,15 @@ const fmtNum = (v, digits = 2) =>
 /**
  * 创建工具箱
  * @param deps { fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct,
- *               listExperiments, getReport, listReports, accountSnapshot }
- *   ⚠️ getReport / listReports / accountSnapshot 是 async（漏 await 会拿到 Promise）
+ *               listExperiments, getReport, listReports, accountSnapshot, listUniverse }
+ *   ⚠️ getReport / listReports / accountSnapshot / listUniverse 可能是 async（漏 await 会拿到 Promise）
  *   ⚠️ accountSnapshot 在注入层绑定当前用户（组合数据按 uid 隔离）
+ *   ⚠️ listUniverse 返回全市场标的列表（供组合暴露的基准对比）
  */
 function createToolbox(deps = {}) {
   const {
     fetchQuote, fetchKlines, fetchNews, marketOf, priceLimitPct,
-    listExperiments, getReport, listReports, accountSnapshot,
+    listExperiments, getReport, listReports, accountSnapshot, listUniverse,
   } = deps;
 
   const tools = [
@@ -715,8 +716,9 @@ function createToolbox(deps = {}) {
       desc: '计算当前模拟盘组合在各因子上的暴露（按持仓**市值加权**），并报告覆盖率与复权降级情况。用于回答「我的组合偏向什么风格」「动量暴露多高」「这个组合是追涨还是抄底」。需要先有持仓；只读，不改任何状态。',
       params: [
         { name: 'factors', type: 'string', required: false, default: '' },
+        { name: 'benchmark', type: 'boolean', required: false, default: true },
       ],
-      async run({ factors }) {
+      async run({ factors, benchmark }) {
         if (!accountSnapshot) return fail('模拟盘模块未接入');
         if (!fetchKlines) return fail('行情模块未接入');
 
@@ -748,8 +750,36 @@ function createToolbox(deps = {}) {
         });
         if (!r.ok) return fail(r.error || '暴露计算失败');
 
+        // ── 基准对比（可选增强）──
+        //   为什么需要：只说「动量暴露 +2.54%」读者无法判断高低，必须有参照系。
+        //   🔴 基准失败**不得**让主结果失败（它是增强项），但必须如实标注不可用。
+        let bench = null;
+        let benchNote = '';
+        if (benchmark !== false) {
+          if (typeof listUniverse !== 'function') {
+            benchNote = '基准不可用（未注入全市场标的列表）';
+          } else {
+            try {
+              const pool = await listUniverse();
+              bench = await exposure.computeBenchmark({
+                symbols: pool, factors: list,
+                getKlines: (symbol, count) => fetchKlines(symbol, count),
+                maxSymbols: 20, // 每只都要取 K 线，20 只已是请求时长与代表性的折中
+              });
+              if (!bench.ok) benchNote = `基准不可用（${bench.error || '未知原因'}）`;
+            } catch (e) {
+              benchNote = `基准计算失败（${(e && e.message ? e.message : '未知错误').slice(0, 60)}）`;
+            }
+          }
+        }
+
         // 小数 → 百分数展示（引擎原值是小数：0.1439 = 14.39%）
         const pct = (v) => (typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : '--');
+        const benchOf = (factor) => {
+          if (!bench || !bench.ok) return null;
+          const b = bench.factors.find((x) => x.factor === factor);
+          return b && b.ok ? b : null;
+        };
         const lines = [
           `组合因子暴露（${r.positionCount} 只持仓，总市值 ¥${fmtNum(r.totalValue)}）`,
           '',
@@ -760,7 +790,16 @@ function createToolbox(deps = {}) {
             continue;
           }
           const cov = f.coverage >= 0.9999 ? '全覆盖' : `覆盖率 ${(f.coverage * 100).toFixed(0)}%`;
-          lines.push(`- ${f.factor}：${pct(f.exposure)}（${cov}${f.failed ? `，${f.failed} 只未能计算` : ''}）`);
+          const b = benchOf(f.factor);
+          // 相对暴露用**百分点(pp)**：它是两个百分数之差，写成 % 会与"比值"混淆
+          const rel = b
+            ? `｜基准 ${pct(b.median)}（中位数，n=${b.count}）｜相对 ${(f.exposure - b.median) * 100 >= 0 ? '+' : ''}${((f.exposure - b.median) * 100).toFixed(2)}pp`
+            : '';
+          lines.push(`- ${f.factor}：${pct(f.exposure)}（${cov}${f.failed ? `，${f.failed} 只未能计算` : ''}）${rel}`);
+        }
+        if (benchNote) {
+          lines.push('');
+          lines.push(`（${benchNote}）`);
         }
 
         // 逐仓贡献：只在"覆盖率不足"时展开，否则太啰嗦
@@ -786,7 +825,9 @@ function createToolbox(deps = {}) {
         lines.push(
           '【口径说明】① 因子值为**小数**（0.1439 = 14.39%）；② 按持仓市值加权，' +
           'normalize 到有效权重；③ rev 类因子在引擎内已自动取负（数值上 = −mom）；' +
-          '④ 这是**事实陈述**，暴露高低是否合适取决于你的策略口径 —— 不要替用户下"该调仓"的结论，除非用户明确要求评估。',
+          '④ 相对暴露用**百分点 pp**（两个百分数之差，不是比值）；' +
+          '⑤ 基准为全市场等距抽样 20 只的**中位数**（不受单只极端值干扰）；' +
+          '⑥ 这是**事实陈述**，暴露高低是否合适取决于你的策略口径 —— 不要替用户下"该调仓"的结论，除非用户明确要求评估。',
         );
 
         return ok(

@@ -146,4 +146,91 @@ async function computeExposure({ positions, factors, getKlines }) {
   };
 }
 
-module.exports = { computeExposure, requiredRows };
+/**
+ * 计算**基准**（全市场）在各因子上的暴露，供组合做相对比较。
+ *
+ * 为什么需要它：只说「组合动量暴露 +2.54%」读者无法判断高低 ——
+ * 必须有个参照系（市场平均是多少）。这就是"基准对比"。
+ *
+ * 🔴 口径纪律：
+ *   ① **与组合侧完全相同**的实现（parseExpression + withAdjustedPrices + evalOnStock）——
+ *      若基准另写一套算法，两边的数就不可比，结论全废。
+ *   ② **等距抽样**而非取前 N 只：归档按代码排序，前 N 只几乎全是沪市 6000xx，
+ *      会引入系统性偏差（板块/市值结构失真）。
+ *   ③ 同样**不把算不出的当 0**：只对有效值统计，并报告有效样本数。
+ *   ④ 给 **中位数** 而不只均值：单只极端值（如暴涨小盘）会把均值拉偏。
+ *
+ * @param {object} opts
+ * @param {string[]} opts.symbols 候选标的（全市场池）
+ * @param {string[]} opts.factors 因子列表
+ * @param {(symbol:string,count:number)=>Promise<Array>} opts.getKlines
+ * @param {number} [opts.maxSymbols=20] 抽样上限（每只都要取 K 线，过多会拖慢请求）
+ * @returns {Promise<{ok:boolean, sampleSize:number, factors:Array, error?:string}>}
+ */
+async function computeBenchmark({ symbols, factors, getKlines, maxSymbols = 20 }) {
+  const pool = (Array.isArray(symbols) ? symbols : []).filter(Boolean);
+  if (!pool.length) return { ok: false, error: '基准标的池为空', factors: [], sampleSize: 0 };
+  if (typeof getKlines !== 'function') return { ok: false, error: '未注入行情能力（getKlines）', factors: [], sampleSize: 0 };
+
+  // 等距抽样：从 pool 里均匀取 maxSymbols 只（覆盖全池，而非只取前排）
+  const cap = Math.max(1, Math.min(Number(maxSymbols) || 20, pool.length));
+  const picked = [];
+  if (cap >= pool.length) {
+    picked.push(...pool);
+  } else {
+    const step = pool.length / cap;
+    for (let i = 0; i < cap; i += 1) picked.push(pool[Math.floor(i * step)]);
+  }
+
+  const list = (Array.isArray(factors) && factors.length ? factors : ['mom20', 'mom60', 'rev20', 'rev60'])
+    .map((f) => String(f || '').trim())
+    .filter(Boolean);
+
+  const out = [];
+  for (const factor of list) {
+    const req = requiredRows(factor);
+    if (!req.ok) {
+      out.push({ factor, ok: false, error: req.error, count: 0 });
+      continue;
+    }
+    const vals = [];
+    for (const sym of picked) {
+      try {
+        const rows = await getKlines(sym, req.need);
+        if (!Array.isArray(rows) || rows.length < req.need) continue;
+        crosssect.withAdjustedPrices(rows); // 与组合侧同一实现、同样不传 factors
+        const v = factorexpr.evalOnStock(req.ast, rows, rows.length - 1);
+        if (v !== null && Number.isFinite(v)) vals.push(v);
+      } catch {
+        /* 单只失败不影响基准 —— 基准本来就是统计量，少一两只不致命 */
+      }
+    }
+    if (!vals.length) {
+      out.push({ factor, ok: false, error: '抽样内所有标的都无法计算该因子', count: 0 });
+      continue;
+    }
+    vals.sort((a, b) => a - b);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const mid = vals.length % 2
+      ? vals[Math.floor(vals.length / 2)]
+      : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2;
+    out.push({
+      factor,
+      ok: true,
+      mean,                       // 等权均值
+      median: mid,                // 中位数（更抗极端值）
+      count: vals.length,         // 有效样本数
+      poolSize: picked.length,    // 抽样总数
+    });
+  }
+
+  const usable = out.filter((f) => f.ok);
+  return {
+    ok: usable.length > 0,
+    sampleSize: picked.length,
+    factors: out,
+    error: usable.length ? undefined : '基准样本内所有因子都无法计算',
+  };
+}
+
+module.exports = { computeExposure, requiredRows, computeBenchmark };

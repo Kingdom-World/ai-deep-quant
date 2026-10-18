@@ -21,7 +21,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
 
-const { computeExposure, requiredRows } = require(path.join(__dirname, '..', 'server', 'paper', 'exposure.cjs'));
+const { computeExposure, requiredRows, computeBenchmark } = require(path.join(__dirname, '..', 'server', 'paper', 'exposure.cjs'));
 const { createToolbox } = require(path.join(__dirname, '..', 'server', 'agent', 'toolbox.cjs'));
 
 /** 单调上涨 n 根（mom = 正） */
@@ -188,11 +188,12 @@ function makeTb({ snapshot = null, klines = null } = {}) {
 }
 const toolOf = (tb) => tb.tools.find((t) => t.name === 'get_factor_exposure');
 
-test('工具契约：params 正确，desc 说明"需要持仓"与"只读"', () => {
+test('工具契约：params 正确（factors + benchmark），desc 说明"需要持仓"与"只读"', () => {
   const spec = makeTb().spec.find((s) => s.name === 'get_factor_exposure');
   assert.ok(spec);
-  assert.deepStrictEqual(spec.params.map((p) => p.name), ['factors']);
+  assert.deepStrictEqual(spec.params.map((p) => p.name), ['factors', 'benchmark']);
   assert.strictEqual(spec.params[0].required, false);
+  assert.strictEqual(spec.params[1].type, 'boolean');
   assert.match(spec.desc, /持仓/);
   assert.match(spec.desc, /只读/);
 });
@@ -258,4 +259,109 @@ test('工具：返回带 dataFingerprint（供编排层幂等判定）', async (
   const r = await toolOf(tb).run({ factors: 'mom20' });
   assert.ok(r.dataFingerprint, '应带指纹');
   assert.strictEqual(r.dataFingerprint.data.adjust, 'qfq', '口径必须标为前复权');
+});
+
+// ── 基准对比（P4 第二轮）──────────────────────────────────────
+test('基准：🔴 等距抽样而非取前 N 只（避免板块系统性偏差）', async () => {
+  // 构造 100 只标的，名称按序排列；若实现取"前 20 只"，则抽样集合必然都是 sym-00..19
+  const symbols = Array.from({ length: 100 }, (_, i) => `sym-${String(i).padStart(3, '0')}`);
+  const seen = [];
+  const r = await computeBenchmark({
+    symbols, factors: ['mom20'], maxSymbols: 20,
+    getKlines: async (sym) => { seen.push(sym); return rising(80); },
+  });
+  assert.strictEqual(r.sampleSize, 20);
+  assert.strictEqual(seen.length, 20);
+  // 等距抽样应**覆盖整个区间**，而不是只集中在头部
+  const idx = seen.map((s) => Number(s.slice(4))).sort((a, b) => a - b);
+  assert.ok(idx[idx.length - 1] >= 80, `抽样最大下标应接近池尾（≥80），实际 ${idx[idx.length - 1]}`);
+  assert.ok(idx[0] <= 20, `抽样最小下标应接近池头（≤20），实际 ${idx[0]}`);
+});
+
+test('基准：🔴 用中位数（单只极端值不得拉偏）', async () => {
+  // 9 只正常上涨 + 1 只暴涨 10 倍 ⇒ 均值会被明显拉高，中位数基本不受影响
+  const symbols = Array.from({ length: 10 }, (_, i) => `s${i}`);
+  const r = await computeBenchmark({
+    symbols, factors: ['mom20'], maxSymbols: 10,
+    getKlines: async (sym) => {
+      if (sym === 's0') {
+        // 暴涨：最后一根变成 100 倍
+        const rows = rising(80);
+        rows[rows.length - 1].close = 1000;
+        return rows;
+      }
+      return rising(80);
+    },
+  });
+  const f = r.factors[0];
+  assert.strictEqual(f.ok, true);
+  assert.ok(f.median < f.mean, `中位数 ${f.median} 应小于被极端值拉高的均值 ${f.mean}`);
+  assert.ok(Math.abs(f.median - f.mean) > 1e-6, '两者应有可观测差异，否则本用例没有判别力');
+});
+
+test('基准：缺值不按 0 计（只统计能算出的，并报告有效样本数）', async () => {
+  const r = await computeBenchmark({
+    symbols: ['good1', 'good2', 'bad1'],
+    factors: ['mom20'], maxSymbols: 3,
+    getKlines: async (sym) => (sym.startsWith('bad') ? rising(5) : rising(80)),
+  });
+  const f = r.factors[0];
+  assert.strictEqual(f.count, 2, '只应有 2 只有效样本');
+  assert.strictEqual(f.poolSize, 3);
+  assert.ok(f.mean > 0, '若把缺值当 0，均值会被拉低');
+});
+
+test('基准：空池 / 未注入 getKlines ⇒ 明确失败', async () => {
+  const a = await computeBenchmark({ symbols: [], factors: ['mom20'], getKlines: async () => [] });
+  assert.strictEqual(a.ok, false);
+  assert.match(a.error, /标的池为空/);
+  const b = await computeBenchmark({ symbols: ['A'], factors: ['mom20'] });
+  assert.strictEqual(b.ok, false);
+  assert.match(b.error, /getKlines/);
+});
+
+test('基准：单只取数失败不影响整体（统计量少一两只不致命）', async () => {
+  const r = await computeBenchmark({
+    symbols: ['ok1', 'ok2', 'boom'],
+    factors: ['mom20'], maxSymbols: 3,
+    getKlines: async (sym) => { if (sym === 'boom') throw new Error('超时'); return rising(80); },
+  });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.factors[0].count, 2);
+});
+
+test('🔴 工具层：基准不可用时**不拖垮主结果**，但必须标注', async () => {
+  const tb = createToolbox({
+    accountSnapshot: async () => ({ positions: [{ symbol: 'A', marketValue: 100000 }] }),
+    fetchKlines: async () => rising(80),
+    // 不注入 listUniverse ⇒ 基准不可用
+  });
+  const r = await tb.tools.find((t) => t.name === 'get_factor_exposure').run({});
+  assert.strictEqual(r.ok, true, '基准缺失不得让暴露本身失败');
+  assert.match(r.summary, /基准不可用/, '但必须如实标注');
+});
+
+test('工具层：基准可用时给出"相对 pp"（不是比值）', async () => {
+  // 组合：1 只上涨票；基准：全部下跌票 ⇒ 相对应为正
+  const tb = createToolbox({
+    accountSnapshot: async () => ({ positions: [{ symbol: 'UP', marketValue: 100000 }] }),
+    fetchKlines: async (sym) => (sym === 'UP' ? rising(80) : falling(80)),
+    listUniverse: () => ['D1', 'D2', 'D3', 'D4'],
+  });
+  const r = await tb.tools.find((t) => t.name === 'get_factor_exposure').run({ factors: 'mom20' });
+  assert.strictEqual(r.ok, true);
+  assert.match(r.summary, /基准 /, '应给出基准值');
+  assert.match(r.summary, /相对 \+[\d.]+pp/, '相对暴露用百分点 pp，且为正');
+  assert.match(r.summary, /百分点 pp/, '口径说明要解释 pp 的含义');
+});
+
+test('工具层：benchmark=false 可关闭基准（省掉 20 次取数）', async () => {
+  let called = 0;
+  const tb = createToolbox({
+    accountSnapshot: async () => ({ positions: [{ symbol: 'A', marketValue: 100000 }] }),
+    fetchKlines: async () => { called += 1; return rising(80); },
+    listUniverse: () => ['D1', 'D2', 'D3'],
+  });
+  await tb.tools.find((t) => t.name === 'get_factor_exposure').run({ factors: 'mom20', benchmark: false });
+  assert.strictEqual(called, 1, '关闭基准后只应取持仓自己的 K 线');
 });

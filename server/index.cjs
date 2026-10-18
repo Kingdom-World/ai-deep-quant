@@ -481,6 +481,21 @@ app.post('/api/agent/research', async (req, res) => {
       //   broker.accountSnapshot 内部已接行情并处理了降级（行情不可用时退回成本价），
       //   故这里无需再关心行情可用性。
       accountSnapshot: () => broker.accountSnapshot(broker.uidOf(req)),
+      // P4：全市场标的列表（归档目录枚举）—— 供组合暴露做**基准对比**。
+      //   为什么在注入层做：归档目录与可用性依赖运行环境（本地有、Vercel 无），
+      //   toolbox 不该知道这些。失败时返回空数组 ⇒ 工具标注"基准不可用"，
+      //   **不让基准问题拖垮主结果**（暴露本身仍可算）。
+      listUniverse: () => {
+        try {
+          const crosssect = require('./crosssect.cjs');
+          return fs
+            .readdirSync(crosssect.resolveArchiveDir())
+            .filter((f) => f.endsWith('.json'))
+            .map((f) => f.replace(/\.json$/, ''));
+        } catch {
+          return [];
+        }
+      },
     });
 
     const r = await runner(question, (msgs, opts) => cloudMod.chat(msgs, opts));

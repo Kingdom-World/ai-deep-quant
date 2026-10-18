@@ -56,6 +56,8 @@ function createAlphaRunner(deps = {}) {
     listReports: deps.listReports ?? null, // P3：列历史报告（async）
     // P3：读组合暴露 —— 注入层需绑定当前用户（组合数据按 uid 隔离）
     accountSnapshot: deps.accountSnapshot ?? null,
+    // P4：全市场标的列表（供组合暴露做基准对比；缺省则基准不可用，不影响主结果）
+    listUniverse: deps.listUniverse ?? null,
   });
   const toolbox = {
     spec: full.spec.filter((t) => ENABLED_TOOLS.includes(t.name)),

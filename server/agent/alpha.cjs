@@ -19,7 +19,7 @@ const { ROLES, BOUNDARIES } = require('../agents/roles.cjs');
 //   P3 追加 list_experiments：让助手能"读历史"而非重跑——这是 QuantGPT 的定义能力
 //   （见 plans/master-plan.md Phase 3：读实验/因子/报告），此前 8 个工具全在单标的层，
 //   没有一个是读 Phase 1/2 产物的。
-const ENABLED_TOOLS = ['get_klines', 'run_backtest', 'run_param_scan', 'eval_factors', 'factor_ic', 'knowledge_search', 'list_experiments', 'read_report', 'get_portfolio', 'list_factors', 'check_factor_expr'];
+const ENABLED_TOOLS = ['get_klines', 'run_backtest', 'run_param_scan', 'eval_factors', 'factor_ic', 'knowledge_search', 'list_experiments', 'read_report', 'get_portfolio', 'list_factors', 'check_factor_expr', 'get_factor_exposure'];
 
 const TOOL_RULES = [
   '【输出格式规则 · 本次会话以本节为准，铁律第 5 条在本会话临时失效】',

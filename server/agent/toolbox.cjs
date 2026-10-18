@@ -26,6 +26,8 @@ const crosssect = require('../crosssect.cjs');
 //   ⚠️ 纯函数模块、无 IO —— 顶部 require 安全（与 factoreval/crosssect 同款）
 const factorexpr = require('../factorexpr.cjs');
 const knowledgeBase = require('../knowledge.cjs');
+// P4：组合因子暴露（PortfolioPilot 基石）—— 纯计算模块，内部复用 factorexpr 与 crosssect
+const exposure = require('../paper/exposure.cjs');
 
 /** 统一的成功返回 */
 function ok(summary, data, fp, extra = {}) {
@@ -704,6 +706,105 @@ function createToolbox(deps = {}) {
             hasReversal: !!r.meta.hasReversal, direction: dir || null,
           },
           fingerprint.build({ params: { expr: r.normalized }, data: { source: 'factor-expr', adjust: 'none', lastDate: null } }),
+        );
+      },
+    },
+
+    {
+      name: 'get_factor_exposure',
+      desc: '计算当前模拟盘组合在各因子上的暴露（按持仓**市值加权**），并报告覆盖率与复权降级情况。用于回答「我的组合偏向什么风格」「动量暴露多高」「这个组合是追涨还是抄底」。需要先有持仓；只读，不改任何状态。',
+      params: [
+        { name: 'factors', type: 'string', required: false, default: '' },
+      ],
+      async run({ factors }) {
+        if (!accountSnapshot) return fail('模拟盘模块未接入');
+        if (!fetchKlines) return fail('行情模块未接入');
+
+        let snap = null;
+        try {
+          snap = await accountSnapshot();
+        } catch (e) {
+          return fail(`读取组合失败：${(e && e.message ? e.message : '未知错误').slice(0, 80)}`);
+        }
+        if (!snap || typeof snap !== 'object') return fail('未取到组合状态');
+
+        const positions = (snap.positions || [])
+          .filter((p) => Number(p.marketValue) > 0)
+          .map((p) => ({ symbol: p.symbol, marketValue: Number(p.marketValue) }));
+        if (!positions.length) {
+          return fail('当前无持仓（或持仓市值为 0），无法计算组合暴露。先用 run_backtest 或模拟盘下单建立持仓。');
+        }
+
+        // 因子列表：逗号/空格分隔；空则用默认四因子
+        const list = String(factors || '')
+          .split(/[,，\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const r = await exposure.computeExposure({
+          positions,
+          factors: list,
+          getKlines: (symbol, count) => fetchKlines(symbol, count),
+        });
+        if (!r.ok) return fail(r.error || '暴露计算失败');
+
+        // 小数 → 百分数展示（引擎原值是小数：0.1439 = 14.39%）
+        const pct = (v) => (typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : '--');
+        const lines = [
+          `组合因子暴露（${r.positionCount} 只持仓，总市值 ¥${fmtNum(r.totalValue)}）`,
+          '',
+        ];
+        for (const f of r.factors) {
+          if (!f.ok) {
+            lines.push(`- ${f.factor}：无法计算（${f.error || '未知原因'}）`);
+            continue;
+          }
+          const cov = f.coverage >= 0.9999 ? '全覆盖' : `覆盖率 ${(f.coverage * 100).toFixed(0)}%`;
+          lines.push(`- ${f.factor}：${pct(f.exposure)}（${cov}${f.failed ? `，${f.failed} 只未能计算` : ''}）`);
+        }
+
+        // 逐仓贡献：只在"覆盖率不足"时展开，否则太啰嗦
+        const partial = r.factors.filter((f) => f.ok && f.failed > 0);
+        if (partial.length) {
+          lines.push('');
+          lines.push('【为什么覆盖率不是 100%】以下标的在对应因子上无法计算，已**从加权中剔除**（不按 0 计，否则暴露会被系统性稀释）：');
+          for (const f of partial) {
+            const skips = f.contributions.filter((c) => c.value === null);
+            lines.push(`- ${f.factor}：${skips.map((c) => `${c.symbol}（${c.skip}）`).join('；')}`);
+          }
+        }
+
+        if (r.adjFallbackSymbols && r.adjFallbackSymbols.length) {
+          lines.push('');
+          lines.push(
+            `⚠️ 价格口径降级：${r.adjFallbackSymbols.join('、')} 未取到复权因子、用原始收盘价计算 —— ` +
+            '若这些标的期间有分红拆股，因子值可能与复权口径有偏差。',
+          );
+        }
+
+        lines.push('');
+        lines.push(
+          '【口径说明】① 因子值为**小数**（0.1439 = 14.39%）；② 按持仓市值加权，' +
+          'normalize 到有效权重；③ rev 类因子在引擎内已自动取负（数值上 = −mom）；' +
+          '④ 这是**事实陈述**，暴露高低是否合适取决于你的策略口径 —— 不要替用户下"该调仓"的结论，除非用户明确要求评估。',
+        );
+
+        return ok(
+          lines.join('\n'),
+          {
+            totalValue: r.totalValue,
+            positionCount: r.positionCount,
+            factors: r.factors.map((f) => ({
+              factor: f.factor, exposure: f.exposure, coverage: f.coverage, failed: f.failed,
+              contributions: f.contributions,
+            })),
+            coverage: r.coverage,
+            adjFallbackSymbols: r.adjFallbackSymbols,
+          },
+          fingerprint.build({
+            params: { factors: list.join(',') || 'default', n: positions.length },
+            data: { source: 'paper-exposure', adjust: 'qfq', lastDate: null },
+          }),
         );
       },
     },

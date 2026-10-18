@@ -172,6 +172,17 @@ const GOLDEN = [
     expect: (r) => /扫描|组/.test(r.summary),
     rationale: '"扫参数看稳健性"要的是孤峰/平原判定，不是单次回测的收益数字',
   },
+  {
+    id: 'factor-exposure',
+    question: '我这个组合偏向什么风格？动量暴露多高？',
+    tool: 'get_factor_exposure',
+    args: {},
+    descMustMention: ['暴露', '加权'],
+    expect: (r) => /因子暴露/.test(r.summary) && /覆盖/.test(r.summary),
+    rationale:
+      '组合"风格/暴露"要按持仓市值加权各标的的因子值；与 get_portfolio（只给持仓结构）不同 —— ' +
+      '这是 Phase 4 与 Phase 3 的意图边界，最容易混',
+  },
 ];
 
 /**

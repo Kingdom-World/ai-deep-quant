@@ -245,4 +245,64 @@ function runBacktest(klines, strategy, fast, slow, capital, market = 'CN', opts 
   return result;
 }
 
-module.exports = { smaSeries, rsiSeries, runBacktest };
+/**
+ * 从净值序列计算绩效指标 —— **绩效口径的单一实现**（P4「年化/波动/回撤并入统一口径」）
+ *
+ *   与 runBacktest 内联计算**同口径**：
+ *   · 年化：几何复利 `(final/capital)^(1/years) − 1`，years = max(条数/252, 0.25)
+ *   · 波动：日收益总体标准差 × √252（百分数）
+ *   · Sharpe / Sortino：无风险利率按 2%（与 annualized 同为百分数口径相除）
+ *   · Calmar：年化 / 最大回撤百分数；回撤用峰值追踪 `(peak−value)/peak`
+ *   ⚠️ 与 runBacktest 内联值的差异仅源于净值取整（equity 存 2 位小数，<0.01%），
+ *      故 runBacktest 暂不改调此函数（避免无谓回归）；组合级（paper）一律走这里。
+ *      后续若合并两处，应让 runBacktest 改调本函数并以测试兜底。
+ *
+ * @param equity {{value:number}[]} 净值序列（至少 1 条；date 可选）
+ * @param capital {number} 初始资金
+ * @returns {object|null} 指标集（序列无效时返回 null）
+ */
+function equityMetrics(equity, capital) {
+  if (!Array.isArray(equity) || equity.length < 2 || !(capital > 0)) return null;
+  const values = equity.map((e) => Number(e && e.value)).filter((v) => Number.isFinite(v) && v > 0);
+  if (values.length < 2) return null;
+
+  const n = values.length;
+  const finalValue = values[n - 1];
+  const totalReturn = (finalValue / capital - 1) * 100;
+  const years = Math.max(n / 252, 0.25);
+  const annualized = (Math.pow(finalValue / capital, 1 / years) - 1) * 100;
+
+  // 日收益（与 runBacktest 同口径：相邻净值之比 − 1）
+  const rets = [];
+  for (let i = 1; i < values.length; i++) rets.push(values[i] / values[i - 1] - 1);
+  const meanRet = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const std = Math.sqrt(rets.reduce((a, b) => a + (b - meanRet) ** 2, 0) / rets.length);
+  const annualVol = std * Math.sqrt(252) * 100;
+  const sharpe = annualVol > 0 ? +((annualized - 2) / annualVol).toFixed(2) : null;
+  const downside = rets.filter((r) => r < 0);
+  const downDev = downside.length
+    ? Math.sqrt(downside.reduce((a, b) => a + b * b, 0) / downside.length) * Math.sqrt(252) * 100
+    : 0;
+  const sortino = downDev > 0 ? +((annualized - 2) / downDev).toFixed(2) : null;
+
+  // 最大回撤（峰值追踪，与 runBacktest 同式）
+  let peak = capital;
+  let maxDrawdownPct = 0;
+  for (const v of values) {
+    peak = Math.max(peak, v);
+    const dd = (peak - v) / peak;
+    if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+  }
+  const calmar = maxDrawdownPct > 0 ? +(annualized / (maxDrawdownPct * 100)).toFixed(2) : null;
+
+  return {
+    totalReturn: +totalReturn.toFixed(2),       // 累计收益 %
+    annualized: +annualized.toFixed(2),         // 年化收益 %
+    annualVol: +annualVol.toFixed(2),           // 年化波动 %
+    sharpe, sortino, calmar,
+    maxDrawdownPct: +(maxDrawdownPct * 100).toFixed(2), // 最大回撤 %
+    days: n,
+  };
+}
+
+module.exports = { smaSeries, rsiSeries, runBacktest, equityMetrics };

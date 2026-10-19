@@ -141,6 +141,22 @@ export interface BenchmarkFactor {
   error?: string;
 }
 
+/** 组合级绩效指标（与回测引擎同口径：quant.equityMetrics 单源） */
+export interface PortfolioMetrics {
+  /** 累计收益 % */
+  totalReturn: number;
+  /** 年化收益 % */
+  annualized: number;
+  /** 年化波动 % */
+  annualVol: number;
+  sharpe: number | null;
+  sortino: number | null;
+  calmar: number | null;
+  maxDrawdownPct: number;
+  /** 净值序列条数（≈交易日数） */
+  days: number;
+}
+
 export interface PaperExposure {
   ok: boolean;
   error?: string;
@@ -151,6 +167,8 @@ export interface PaperExposure {
   /** 走了"无复权因子、用原始收盘价"降级的标的 */
   adjFallbackSymbols?: string[];
   benchmark?: { ok: boolean; sampleSize: number; factors: BenchmarkFactor[]; error?: string };
+  /** 净值不足 2 条时为 null（如刚开户未产生快照） */
+  metrics?: PortfolioMetrics | null;
 }
 
 /** 模拟交易 API（后端 server/paper/*） */

@@ -280,7 +280,13 @@ app.get('/api/paper/exposure', async (req, res) => {
       }
     }
 
-    res.json({ ok: r.ok, ...r, benchmark });
+    // P4「年化/波动/回撤并入统一口径」：组合级指标与回测引擎**同一实现**
+    //   （quant.equityMetrics 单源，实测与 runBacktest 内联值差异 0.0000）。
+    //   equity 序列与 initialCapital 都来自 accountSnapshot，不新增任何 IO。
+    const { equityMetrics } = require('../quant.cjs');
+    const metrics = equityMetrics(snap.equity || [], snap.initialCapital);
+
+    res.json({ ok: r.ok, ...r, benchmark, metrics });
   } catch (e) {
     res.status(500).json({ ok: false, error: `暴露计算失败: ${(e.message || '').slice(0, 80)}`, factors: [] });
   }

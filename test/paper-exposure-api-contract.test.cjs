@@ -96,3 +96,68 @@ test('契约：无持仓时仍返回 ok:false + error（页面能展示原因而
   assert.strictEqual(typeof api.error, 'string');
   assert.ok(Array.isArray(api.factors), '即使失败也要给空数组，页面才能安全 map');
 });
+
+// ── 绩效指标单源口径（P4「年化/波动/回撤并入统一口径」）──────────
+const { runBacktest, equityMetrics } = require(path.join(__dirname, '..', 'server', 'quant.cjs'));
+
+test('🔴 单源口径：equityMetrics 与 runBacktest 内联值必须一致（差异仅净值取整）', () => {
+  const rows = Array.from({ length: 260 }, (_, i) => ({
+    date: `2025-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+    open: 10 + i * 0.05, high: 10.1 + i * 0.05, low: 9.9 + i * 0.05,
+    close: 10 + i * 0.05 + (i % 7) * 0.03, volume: 1e6,
+  }));
+  const bt = runBacktest(rows, 'ma', 5, 20, 100000);
+  const m = equityMetrics(bt.equity, 100000);
+  assert.ok(m, 'equityMetrics 应产出指标');
+  const pairs = [
+    ['annualized', bt.annualized], ['annualVol', bt.annualVol],
+    ['sharpe', bt.sharpe], ['maxDrawdownPct', bt.maxDrawdownPct], ['totalReturn', bt.totalReturn],
+  ];
+  for (const [k, expected] of pairs) {
+    assert.ok(Math.abs(m[k] - expected) < 0.05,
+      `指标「${k}」口径分叉：equityMetrics=${m[k]} vs 回测内联=${expected} —— 组合级与回测将给出两套数字`);
+  }
+});
+
+test('契约：metrics 字段齐全（对齐 PortfolioMetrics）', () => {
+  const rows = Array.from({ length: 60 }, (_, i) => ({ value: 100000 + i * 100 }));
+  const m = equityMetrics(rows, 100000);
+  for (const k of ['totalReturn', 'annualized', 'annualVol', 'sharpe', 'sortino', 'calmar', 'maxDrawdownPct', 'days']) {
+    assert.ok(k in m, `metrics 缺少「${k}」—— 前端指标卡会空白`);
+  }
+  // 边界：净值不足 2 条 ⇒ null（前端按空处理）
+  assert.strictEqual(equityMetrics([{ value: 100000 }], 100000), null);
+  assert.strictEqual(equityMetrics([], 100000), null);
+});
+
+// ── 组合级绩效指标（P4「年化/波动/回撤并入统一口径」）─────────────
+
+test('指标：equityMetrics 与 runBacktest 内联计算同口径（差异仅净值取整）', () => {
+  const rows = Array.from({ length: 260 }, (_, i) => ({
+    date: `2025-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+    open: 10 + i * 0.05, high: 10.1 + i * 0.05, low: 9.9 + i * 0.05,
+    close: 10 + i * 0.05 + (i % 7) * 0.03, volume: 1e6,
+  }));
+  const bt = runBacktest(rows, 'ma', 5, 20, 100000);
+  const m = equityMetrics(bt.equity, 100000);
+  assert.ok(m, '应产出指标');
+  const diff = Math.abs(bt.annualized - m.annualized)
+    + Math.abs(bt.annualVol - m.annualVol)
+    + Math.abs((bt.sharpe || 0) - (m.sharpe || 0))
+    + Math.abs(bt.maxDrawdownPct - m.maxDrawdownPct);
+  assert.ok(diff < 0.05, `两处口径差异 ${diff} 过大 —— "并入统一口径"失败，存在两套算法`);
+});
+
+test('指标：字段齐全（对齐前端 PortfolioMetrics）', () => {
+  const equity = Array.from({ length: 100 }, (_, i) => ({ value: 100000 * (1 + i * 0.001 + (i % 5) * 0.0003) }));
+  const m = equityMetrics(equity, 100000);
+  for (const k of ['totalReturn', 'annualized', 'annualVol', 'sharpe', 'sortino', 'calmar', 'maxDrawdownPct', 'days']) {
+    assert.ok(k in m, `缺字段「${k}」—— 前端会显示空白`);
+  }
+});
+
+test('指标：净值不足 / 资金为 0 ⇒ 返回 null（不抛异常，路由降级为 metrics:null）', () => {
+  assert.strictEqual(equityMetrics([{ value: 1 }], 100000), null);
+  assert.strictEqual(equityMetrics([{ value: 1 }, { value: 2 }], 0), null);
+  assert.strictEqual(equityMetrics(null, 100000), null);
+});

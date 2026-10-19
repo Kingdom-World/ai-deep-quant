@@ -121,6 +121,45 @@ export default function ExposurePanel() {
             </tbody>
           </table>
 
+          {/* 组合级绩效指标（与回测引擎同口径：quant.equityMetrics 单源） */}
+          {data.metrics && (
+            <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '12px' }}>
+              <span style={{ background: '#1e293b', borderRadius: '6px', padding: '4px 8px', color: '#e2e8f0' }}>
+                年化 <b style={{ color: data.metrics.annualized >= 0 ? '#4ade80' : '#f87171' }}>{data.metrics.annualized.toFixed(2)}%</b>
+              </span>
+              <span style={{ background: '#1e293b', borderRadius: '6px', padding: '4px 8px', color: '#e2e8f0' }}>
+                年化波动 {data.metrics.annualVol.toFixed(2)}%
+              </span>
+              <span style={{ background: '#1e293b', borderRadius: '6px', padding: '4px 8px', color: '#e2e8f0' }}>
+                Sharpe {data.metrics.sharpe ?? '—'}
+              </span>
+              <span style={{ background: '#1e293b', borderRadius: '6px', padding: '4px 8px', color: '#e2e8f0' }}>
+                最大回撤 <b style={{ color: '#fbbf24' }}>{data.metrics.maxDrawdownPct.toFixed(2)}%</b>
+              </span>
+              <span style={{ background: '#1e293b', borderRadius: '6px', padding: '4px 8px', color: '#64748b' }}>
+                样本 {data.metrics.days} 个交易日
+              </span>
+            </div>
+          )}
+
+          {/* 组合级绩效指标（与回测引擎同口径：quant.equityMetrics） */}
+          {data.metrics && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '10px', fontSize: '12px' }}>
+              {[
+                ['年化', `${data.metrics.annualized >= 0 ? '+' : ''}${data.metrics.annualized.toFixed(2)}%`],
+                ['年化波动', `${data.metrics.annualVol.toFixed(2)}%`],
+                ['Sharpe', data.metrics.sharpe === null ? '—' : String(data.metrics.sharpe)],
+                ['最大回撤', `-${data.metrics.maxDrawdownPct.toFixed(2)}%`],
+                ['样本', `${data.metrics.days} 日`],
+              ].map(([label, val]) => (
+                <div key={label} style={{ background: '#1e293b', borderRadius: '8px', padding: '6px 10px' }}>
+                  <span style={{ color: '#64748b' }}>{label}</span>
+                  <span style={{ color: '#e2e8f0', fontWeight: 600, marginLeft: '6px' }}>{val}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 覆盖率不足：必须解释"为什么"与"谁被剔除" */}
           {data.factors.some((f) => f.ok && f.failed > 0) && (
             <div style={{ marginTop: '10px', fontSize: '12px', color: '#fbbf24', lineHeight: 1.7 }}>

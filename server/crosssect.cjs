@@ -841,4 +841,8 @@ module.exports = {
   withAdjustedPrices,
   FACTOR_WINDOWS,
   REVERSAL_FACTORS,
+  // P5：供逐根回放引擎（server/replay.cjs）复用 —— 保持"归档加载/日期对齐/价格取数"单源，
+  //     回放引擎只新写执行层（这正是要对照的东西），选股与前置口径零分叉。
+  loadUniverseCached,
+  buildContext,
 };

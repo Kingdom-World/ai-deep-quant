@@ -259,9 +259,12 @@ function runBacktest(klines, strategy, fast, slow, capital, market = 'CN', opts 
  *
  * @param equity {{value:number}[]} 净值序列（至少 1 条；date 可选）
  * @param capital {number} 初始资金
+ * @param bars {number} [可选] 年化用的交易日数，默认取 equity.length。
+ *   ⚠️ crosssect 传入的是**强平前**的 equity.length（而 finalEquity 多一条强平记录），
+ *      为与之精确同口径，调用方可显式指定。
  * @returns {object|null} 指标集（序列无效时返回 null）
  */
-function equityMetrics(equity, capital) {
+function equityMetrics(equity, capital, bars) {
   if (!Array.isArray(equity) || equity.length < 2 || !(capital > 0)) return null;
   const values = equity.map((e) => Number(e && e.value)).filter((v) => Number.isFinite(v) && v > 0);
   if (values.length < 2) return null;
@@ -269,7 +272,7 @@ function equityMetrics(equity, capital) {
   const n = values.length;
   const finalValue = values[n - 1];
   const totalReturn = (finalValue / capital - 1) * 100;
-  const years = Math.max(n / 252, 0.25);
+  const years = Math.max((Number(bars) || n) / 252, 0.25);
   const annualized = (Math.pow(finalValue / capital, 1 / years) - 1) * 100;
 
   // 日收益（与 runBacktest 同口径：相邻净值之比 − 1）

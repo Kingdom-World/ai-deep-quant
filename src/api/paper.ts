@@ -105,9 +105,68 @@ export interface PaperTriggeredAlert {
   at: string;
 }
 
+/** 单只持仓在某因子上的贡献（value 为 null 表示算不出、已从加权中剔除） */
+export interface ExposureContribution {
+  symbol: string;
+  weight: number;
+  value: number | null;
+  /** value 为 null 时的原因（如「K 线不足（8 < 26）」） */
+  skip?: string;
+}
+
+/** 单个因子在组合上的暴露 */
+export interface FactorExposure {
+  factor: string;
+  ok: boolean;
+  /** 小数口径：0.1439 = 14.39% */
+  exposure: number | null;
+  /** 0..1，参与加权的权重占比 */
+  coverage: number;
+  failed: number;
+  contributions: ExposureContribution[];
+  error?: string;
+}
+
+/** 基准（全市场抽样）里单个因子的统计量 */
+export interface BenchmarkFactor {
+  factor: string;
+  ok: boolean;
+  mean: number;
+  /** 中位数（更抗极端值） */
+  median: number;
+  /** 有效样本数 */
+  count: number;
+  /** 抽样总数 */
+  poolSize: number;
+  error?: string;
+}
+
+export interface PaperExposure {
+  ok: boolean;
+  error?: string;
+  totalValue?: number;
+  positionCount?: number;
+  factors: FactorExposure[];
+  coverage?: { min: number; byFactor: Record<string, number> };
+  /** 走了"无复权因子、用原始收盘价"降级的标的 */
+  adjFallbackSymbols?: string[];
+  benchmark?: { ok: boolean; sampleSize: number; factors: BenchmarkFactor[]; error?: string };
+}
+
 /** 模拟交易 API（后端 server/paper/*） */
 export const paperApi = {
   getAccount: () => apiGet<PaperAccount>('/paper/account'),
+  /**
+   * 组合因子暴露（P4）。⚠️ 会取持仓 + 20 只基准的 K 线 ⇒ **不要放进轮询**，按需调用。
+   * @param factors 逗号分隔；空则用默认四因子
+   */
+  getExposure: (factors?: string, withBenchmark = true) => {
+    const q = new URLSearchParams();
+    if (factors) q.set('factors', factors);
+    if (!withBenchmark) q.set('benchmark', 'false');
+    const s = q.toString();
+    return apiGet<PaperExposure>(`/paper/exposure${s ? `?${s}` : ''}`);
+  },
   placeOrder: (body: {
     symbol: string;
     name?: string;

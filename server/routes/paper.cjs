@@ -233,6 +233,58 @@ app.post('/api/paper/alerts/clear-triggered', (req, res) => {
   alerts.clearTriggered(broker.uidOf(req));
   res.json({ ok: true });
 });
+
+/**
+ * GET /api/paper/exposure —— 组合因子暴露（P4 · PortfolioPilot）
+ *
+ * ⚠️ **按需调用，不要进 10s 轮询**：每次要取 N 只持仓 + 20 只基准的 K 线，
+ *   塞进轮询会把页面拖慢、也算力浪费。前端应是"点击计算 / 手动刷新"。
+ *
+ * 返回结构与 `get_factor_exposure` 工具同源（都用 paper/exposure.cjs），
+ * 口径一致 —— 避免"AI 说一套、页面显示另一套"。
+ */
+app.get('/api/paper/exposure', async (req, res) => {
+  try {
+    const uid = broker.uidOf(req);
+    const snap = await broker.accountSnapshot(uid);
+    const positions = (snap.positions || [])
+      .filter((p) => Number(p.marketValue) > 0)
+      .map((p) => ({ symbol: p.symbol, marketValue: Number(p.marketValue) }));
+    if (!positions.length) {
+      return res.json({ ok: false, error: '当前无持仓（或持仓市值为 0）', factors: [] });
+    }
+
+    const factors = String(req.query.factors || '')
+      .split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+
+    const exposureMod = require('../paper/exposure.cjs');
+    const klinesOf = (sym, n) => fetchDailyRows(toTencentCode(sym), n, 'qfq');
+
+    const r = await exposureMod.computeExposure({ positions, factors, getKlines: klinesOf });
+
+    // 基准（可选；不可用不影响主结果）
+    let benchmark = null;
+    if (req.query.benchmark !== 'false') {
+      try {
+        const crosssect = require('../crosssect.cjs');
+        const fsMod = require('fs');
+        const dir = crosssect.resolveArchiveDir();
+        const pool = fsMod.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
+        if (pool.length) {
+          benchmark = await exposureMod.computeBenchmark({
+            symbols: pool, factors, getKlines: klinesOf, maxSymbols: 20,
+          });
+        }
+      } catch {
+        benchmark = { ok: false, error: '基准不可用（归档不可读）', factors: [] };
+      }
+    }
+
+    res.json({ ok: r.ok, ...r, benchmark });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: `暴露计算失败: ${(e.message || '').slice(0, 80)}`, factors: [] });
+  }
+});
 }
 
 module.exports = { registerPaperRoutes };

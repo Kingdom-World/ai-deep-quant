@@ -28,6 +28,8 @@ import { detectMarket, pctColor } from '../lib/stock';
 import { getMarketStatus, useMinuteTick } from '../lib/marketHours';
 import { theme } from '../lib/theme';
 import { fmtClock, fmtShort } from '../lib/time';
+// P4：组合因子暴露面板（按需加载，不进轮询）
+import ExposurePanel from './paper/ExposurePanel';
 
 const CARD = {
   backgroundColor: 'rgba(17,24,39,0.6)',
@@ -567,6 +569,11 @@ export default function PaperTradingPage() {
             <div style={{ fontSize: '18px', fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* 因子暴露（P4）：按需点击计算，不随 10s 轮询 */}
+      <div style={{ marginBottom: '16px' }}>
+        <ExposurePanel />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '16px', alignItems: 'start' }}>

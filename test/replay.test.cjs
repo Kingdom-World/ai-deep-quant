@@ -26,7 +26,7 @@ function makeRows(n, base, slope) {
     const px = +(base + i * slope).toFixed(4);
     return {
       date: `2025-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
-      open: px, high: +(px * 1.01).toFixed(4), low: +(px * 0.99).toFixed(4),
+      open: +(px * 0.97).toFixed(4), high: +(px * 1.01).toFixed(4), low: +(px * 0.96).toFixed(4),
       close: px, volume: 1e6,
     };
   });
@@ -81,6 +81,11 @@ test('🔴 全关模式精确复刻截面引擎（换手/费用差 < 0.5%）', (
   const dF = Math.abs(replica.totalFees - legacy.totalFees) / legacy.totalFees * 100;
   assert.ok(dT < 0.5, `换手差 ${dT.toFixed(3)}% 过大 —— 全关模式未能复刻截面引擎，对照失去意义`);
   assert.ok(dF < 0.5, `费用差 ${dF.toFixed(3)}% 过大`);
+  // 🔴 终值也必须对齐（2026-10-20 加）：初版期末强平误用**开盘价**，
+  //   换手/费用都几乎一致（0.01%），但终值差 4.39% ——
+  //   只断言换手/费用会漏掉这类「价源错误」，必须单独钉终值。
+  const dV = (Math.abs(replica.finalValue - legacy.finalValue) / legacy.finalValue) * 100;
+  assert.ok(dV < 0.5, `终值差 ${dV.toFixed(3)}% 过大 —— 期末强平必须与截面引擎同价源（close）`);
 });
 
 test('🔴 rebalance 开关真的生效：精确模式产生更多成交（再平衡换手）', () => {

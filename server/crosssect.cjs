@@ -367,6 +367,7 @@ function runCrossBacktest(opts = {}) {
     capital,
     slippage,
     slippageModel,
+    finalSlippage: opts.finalSlippage === true,
     factorLabel: factor,
     factorKind: resolved.kind,
     factorExprMeta: resolved.exprMeta ?? null,
@@ -553,10 +554,16 @@ function simulateWithCrossSection(cfg) {
     benchmark.push({ date, value: bCnt ? +(capital * (bSum / bCnt)).toFixed(2) : capital });
   }
 
-  // 期末强平（最后收盘价，计价惯例不加滑点）
+  // 期末强平（最后收盘价）
+  //   默认按**计价惯例不加滑点**（mark-to-market 不计交易冲击；历史结果不受影响）；
+  //   finalSlippage=true 时按真实卖出计滑点 —— 与 replay 引擎的 finalSlippage 开关对齐，
+  //   使两引擎可在同一口径下精确对照（否则「复刻」永远差一点）。
+  //   ⚠️ 若将来把本参数暴露到 modelrun，**必须同时纳入指纹**（它影响数值）。
+  const finalSlipMul = cfg.finalSlippage === true ? 1 - slippage : 1;
   for (const [code, h] of holdings) {
-    const px = priceAt(code, lastDate, 'close', true);
-    if (px === null) continue;
+    const rawPx = priceAt(code, lastDate, 'close', true);
+    if (rawPx === null) continue;
+    const px = rawPx * finalSlipMul;
     const v = h.qty * px;
     const fee = calcFees('CN', 'sell', v).total;
     cash += v - fee;
@@ -582,6 +589,7 @@ function simulateWithCrossSection(cfg) {
     capital,
     slippage,
     slippageModel,
+    finalSlippage: cfg.finalSlippage === true,
     range: { start: startDate, end: lastDate, bars: equity.length },
     rebalances,
     fills,
@@ -830,6 +838,7 @@ function runWithCrossSection(crossSection, opts = {}) {
     capital,
     slippage,
     slippageModel,
+    finalSlippage: opts.finalSlippage === true,
     factorLabel: opts.factorLabel || 'composite',
     factorKind: 'composite',
     factorExprMeta: opts.factorExprMeta ?? null,

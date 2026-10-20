@@ -238,10 +238,25 @@ function runReplay(opts = {}) {
   }
 
   // 期末强平（口径分档：finalSlippage=true 计滑点 = 消除简化③）
-  //   与截面引擎对齐：`equity` 保留**强平前**的逐日序列，另给 `finalEquity`（强平后现金）；
+  //   🔴 必须与截面引擎**同价源**：按最后交易日**收盘价**（close），不是开盘价。
+  //      （首版误用了 sellAll，其取 open ⇒ 与截面引擎终值差最多 4%+，看起来像账本错误。）
+  //   与截面引擎对齐：不做涨跌停守卫（计价惯例，非真实委托）；
+  //   `equity` 保留**强平前**的逐日序列，另给 `finalEquity`（强平后现金）；
   //   metrics 用 [`...equity`, {强平后}] 计算，但年化年限仍取强平前的条数（同 crosssect 的 bars）。
   const lastDate = dates[dates.length - 1];
-  for (const code of [...holdings.keys()]) sellAll(code, lastDate, sw.finalSlippage);
+  const finalSlipMul = sw.finalSlippage ? 1 - slippage : 1;
+  for (const [code, qty] of [...holdings.entries()]) {
+    const rawPx = priceAt(code, lastDate, 'close', true);
+    if (rawPx === null) continue;
+    const px = rawPx * finalSlipMul;
+    const value = qty * px;
+    const fee = calcFees('CN', 'sell', value).total;
+    cash += value - fee;
+    totalFees += fee;
+    turnover += value;
+    fills += 1;
+    holdings.delete(code);
+  }
   const finalEquity = [...equity, { date: lastDate, value: +cash.toFixed(2) }];
 
   return {

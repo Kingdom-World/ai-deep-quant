@@ -259,13 +259,31 @@ test('守卫：非法表达式回显解析原因，不静默回退到默认因�
 
 // ── 7. 回归：预置因子行为未被改动 ────────────────────────────
 
-test('回归：预置因子仍走 preset 路径且数值不变', () => {
+test('回归：预置因子仍走 preset 路径且数值不变（选股行为未变）', () => {
   if (!hasRealArchive) return skipReal('预置因子回归');
-  const r = crosssect.runCrossBacktest({ factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000 });
+  // 🔴 用**历史滑点口径**（buyOnly）跑 ⇒ 必须精确复现旧值。
+  //   2026-10-20 修了卖出侧滑点（旧实现从不乘 (1−slippage)，收益被高估），
+  //   这条断言的价值在于证明：**变的是执行成本口径，不是选股逻辑**。
+  const r = crosssect.runCrossBacktest({
+    factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000, slippageModel: 'buyOnly',
+  });
   assert.strictEqual(r.factorKind, 'preset');
   assert.strictEqual(r.factorExprMeta, null, '预置因子不应有表达式元数据');
-  assert.strictEqual(r.totalReturn, -73.02, '预置 mom20 的净值与接入表达式前应一致');
+  assert.strictEqual(r.totalReturn, -73.02, '预置 mom20 的净值与接入表达式前应一致（buyOnly 口径）');
   assert.strictEqual(r.fills, 3469);
+  assert.strictEqual(r.slippageModel, 'buyOnly', '结果须标注所用滑点口径');
+});
+
+test('滑点口径修正：默认双边滑点使收益低于历史口径（不再高估）', () => {
+  if (!hasRealArchive) return skipReal('滑点口径修正');
+  const base = { factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000 };
+  const legacy = crosssect.runCrossBacktest({ ...base, slippageModel: 'buyOnly' });
+  const fixed = crosssect.runCrossBacktest(base); // 默认 both
+  assert.strictEqual(fixed.slippageModel, 'both', '默认应为双边滑点');
+  assert.ok(fixed.totalReturn < legacy.totalReturn,
+    `双边滑点应使收益更低（不再高估）：旧 ${legacy.totalReturn} vs 新 ${fixed.totalReturn}`);
+  // 同一笔成交价更低 ⇒ 换手金额应更小（同一 qty 下）
+  assert.ok(fixed.turnover < legacy.turnover, '卖出价扣滑点后，成交额应更小');
 });
 
 test('回归：预置因子方向分判保持不变（mom20 → 相反、rev20 → 一致）', () => {

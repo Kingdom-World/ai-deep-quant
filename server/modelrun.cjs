@@ -28,7 +28,8 @@ const crosssect = require('./crosssect.cjs');
 const xform = require('./modelxform.cjs');
 
 /** 引擎版本：账本/口径发生任何语义变化时必须递增（指纹的一部分） */
-const ENGINE_VERSION = 'crosssect-m1.0';
+// 2026-10-20：滑点口径修正（卖出侧此前未计滑点）⇒ 提升版本；历史复现用 slippageModel:'buyOnly'
+const ENGINE_VERSION = 'crosssect-m1.1';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -157,6 +158,8 @@ function fingerprint(model, result, opts = {}) {
       rebalanceEvery: result ? result.rebalanceEvery : null,
       capital: result ? result.capital : null,
       slippage: result ? result.slippage : null,
+      // slippageModel 影响数值 ⇒ 必须进指纹，否则会「同指纹不同结果」
+      slippageModel: result ? (result.slippageModel || 'both') : null,
       ...(opts.startDate ? { startDate: opts.startDate } : {}),
       ...(opts.endDate ? { endDate: opts.endDate } : {}),
     },
@@ -199,6 +202,7 @@ function runModel(inputModel, opts = {}) {
     rebalanceEvery: ms.rebalanceBars(model.backtest.rebalance),
     capital: opts.capital,
     slippage: opts.slippage,
+    slippageModel: opts.slippageModel,
     startDate: opts.startDate,
     endDate: opts.endDate,
     /** 按需索取未抽稀的完整净值（因果性检验要逐点可比；默认不返回，避免响应体膨胀 5 倍） */

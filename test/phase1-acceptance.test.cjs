@@ -97,26 +97,48 @@ const MODEL = {
 
 // ── 黄金样本：由合成归档完全决定，跨机器可复现 ──
 const GOLDEN = {
-  engineVersion: 'crosssect-m1.0',
-  fingerprint: 'f1f96686db51cd2e70d2dc8595422e73bfa0686e2501cbb619e8e25458c28f97',
+  engineVersion: 'crosssect-m1.1',
+  fingerprint: '5bab18a26c36a70a64bd8f4c27c786bbbcd1e1a22efb0fe2805b062a1dc1eaea',
   universeSize: 8,
   benchmarkUniverse: 8,
   range: { start: '2025-03-27', end: '2025-10-07', bars: 139 },
   rebalances: 7,
   fills: 9,
-  totalReturn: 92.74,
-  annualized: 228.59,
+  totalReturn: 92.69,
+  annualized: 228.42,
   maxDrawdownPct: 0.08,
-  sharpe: 112.54,
+  sharpe: 112.3,
   benchmarkReturn: 70.25,
-  totalFees: 2267.24,
+  totalFees: 2266.83,
   feeRatePct: 0.057,
-  turnover: 3989825.9,
-  finalValue: 1927428.44,
+  turnover: 3989293.07,
+  finalValue: 1926896.01,
   ic: { icMean: 0.369048, icStd: 0.169533, icir: 2.176846, icPositiveRate: 1, n: 6, t: 5.3942, degraded: false },
   equityLen: 29,
   equityFirst: { date: '2025-03-27', value: 1000740.62 },
-  equityLast: { date: '2025-10-07', value: 1927428.44 },
+  equityLast: { date: '2025-10-07', value: 1926896.01 },
+};
+
+/**
+ * 历史口径锚（2026-10-20 · 滑点口径修正的配套）
+ *
+ * 修了「卖出侧从未计滑点」这个缺陷后，默认数值必然变化（收益下调）。
+ * 但历史回测结果必须**仍可复现** —— 否则所有旧结论都变成不可回溯的黑箱。
+ * 故保留旧 GOLDEN 作为本锚：用 `slippageModel: 'buyOnly'` 跑必须精确命中它。
+ *
+ * 这条断言的价值：它把「口径修正」与「引擎行为漂移」区分开 ——
+ * 若哪天有人改了选股/账本逻辑，这条会红，而修口径时它应保持绿。
+ */
+const GOLDEN_LEGACY = {
+  totalReturn: 92.74,
+  annualized: 228.59,
+  sharpe: 112.54,
+  maxDrawdownPct: 0.08,
+  totalFees: 2267.24,
+  turnover: 3989825.9,
+  finalValue: 1927428.44,
+  fills: 9,
+  rebalances: 7,
 };
 
 const EPS = 1e-6;
@@ -173,6 +195,28 @@ test('验收② 回测：跑通且全部关键数值命中黄金样本', () => {
   assert.deepStrictEqual(s.equity[0], GOLDEN.equityFirst);
   assert.deepStrictEqual(s.equity[s.equity.length - 1], GOLDEN.equityLast);
   assert.ok(s.benchmark.length > 0, '基准序列必须存在（前端虚线依赖）');
+});
+
+// ── 验收②b 历史口径可复现（滑点口径修正的配套）────────────────
+test('验收②b 历史口径可复现：slippageModel=buyOnly 精确命中旧黄金样本', () => {
+  const r = runModel(MODEL, { slippageModel: 'buyOnly' });
+  assert.strictEqual(r.ok, true, `${r.stage}: ${r.error}`);
+  const s = r.result;
+  assert.strictEqual(s.slippageModel, 'buyOnly', '结果须标注所用滑点口径');
+  closeTo(s.totalReturn, GOLDEN_LEGACY.totalReturn, 'totalReturn(legacy)');
+  closeTo(s.annualized, GOLDEN_LEGACY.annualized, 'annualized(legacy)');
+  closeTo(s.sharpe, GOLDEN_LEGACY.sharpe, 'sharpe(legacy)');
+  closeTo(s.maxDrawdownPct, GOLDEN_LEGACY.maxDrawdownPct, 'maxDrawdownPct(legacy)');
+  closeTo(s.totalFees, GOLDEN_LEGACY.totalFees, 'totalFees(legacy)');
+  closeTo(s.turnover, GOLDEN_LEGACY.turnover, 'turnover(legacy)');
+  closeTo(s.finalValue, GOLDEN_LEGACY.finalValue, 'finalValue(legacy)');
+  assert.strictEqual(s.fills, GOLDEN_LEGACY.fills);
+  assert.strictEqual(s.rebalances, GOLDEN_LEGACY.rebalances);
+  // 🔴 关键证据：选股结果与滑点口径**无关** —— IC 必须与新黄金样本完全一致。
+  //   这证明本次变更只动了执行成本，没有动因子/排序/调仓逻辑。
+  closeTo(s.ic.icMean, GOLDEN.ic.icMean, 'ic.icMean（选股不受滑点口径影响）');
+  closeTo(s.ic.icir, GOLDEN.ic.icir, 'ic.icir');
+  assert.strictEqual(s.ic.n, GOLDEN.ic.n);
 });
 
 // ── 验收③ 复现承诺：同模型重跑逐字段一致 ──────────────────────

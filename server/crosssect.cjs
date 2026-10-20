@@ -352,6 +352,7 @@ function runCrossBacktest(opts = {}) {
   const rebalanceEvery = Math.max(1, Math.min(Number(opts.rebalanceEvery) || 20, 250));
   const capital = Math.max(Number(opts.capital) || 1_000_000, 10_000);
   const slippage = Math.min(Math.max(Number(opts.slippage ?? 0.001), 0), 0.05);
+  const slippageModel = opts.slippageModel === 'buyOnly' ? 'buyOnly' : 'both';
   const ctx = buildContext(universe, factorWin, opts);
   if (ctx.error) return ctx;
 
@@ -365,6 +366,7 @@ function runCrossBacktest(opts = {}) {
     rebalanceEvery,
     capital,
     slippage,
+    slippageModel,
     factorLabel: factor,
     factorKind: resolved.kind,
     factorExprMeta: resolved.exprMeta ?? null,
@@ -388,6 +390,7 @@ function runCrossBacktest(opts = {}) {
 function simulateWithCrossSection(cfg) {
   const {
     ctx, universe, crossSection, isRevFactor, factorWin, topN, rebalanceEvery, capital, slippage,
+    slippageModel = 'both',
     factorLabel, factorKind, factorExprMeta, emptyGuard,
     /** 额外返回**未抽稀**的完整净值序列（`equityFull`）。
      *  ⚠️ 默认 false：抽稀是给前端的，完整序列点数约 5 倍，只该被「需要逐点比对」的场景按需索取
@@ -476,7 +479,10 @@ function simulateWithCrossSection(cfg) {
         const px = priceAt(code, date, 'open', true); // 成交价用复权口径（与估值同源）
         if (px === null) continue;
         const h = holdings.get(code);
-        const value = h.qty * px;
+        // 🔴 卖出侧滑点（2026-10-20 修）：旧实现此处从不乘 (1−slippage)，与上方注释矛盾，
+        //    导致收益被系统性高估（少扣一半滑点）。slippageModel='buyOnly' 可复刻旧口径。
+        const execPx = slippageModel === 'buyOnly' ? px : px * (1 - slippage);
+        const value = h.qty * execPx;
         const fee = calcFees('CN', 'sell', value).total;
         cash += value - fee;
         totalFees += fee;
@@ -575,6 +581,7 @@ function simulateWithCrossSection(cfg) {
     universeSize: universe.size,
     capital,
     slippage,
+    slippageModel,
     range: { start: startDate, end: lastDate, bars: equity.length },
     rebalances,
     fills,
@@ -805,6 +812,7 @@ function runWithCrossSection(crossSection, opts = {}) {
   const rebalanceEvery = Math.max(1, Math.min(Number(opts.rebalanceEvery) || 20, 250));
   const capital = Math.max(Number(opts.capital) || 1_000_000, 10_000);
   const slippage = Math.min(Math.max(Number(opts.slippage ?? 0.001), 0), 0.05);
+  const slippageModel = opts.slippageModel === 'buyOnly' ? 'buyOnly' : 'both';
 
   const emptyGuard = makeEmptyCrossSectionGuard(opts.factorLabel || 'composite');
   const crossSectionGuarded = emptyGuard.wrap(crossSection);
@@ -821,6 +829,7 @@ function runWithCrossSection(crossSection, opts = {}) {
     rebalanceEvery,
     capital,
     slippage,
+    slippageModel,
     factorLabel: opts.factorLabel || 'composite',
     factorKind: 'composite',
     factorExprMeta: opts.factorExprMeta ?? null,

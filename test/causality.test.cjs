@@ -215,6 +215,42 @@ test('engine：默认不返回未抽稀序列；rawEquity=true 才返回，且�
   assert.strictEqual(lastThin.value, full[full.length - 1].value, '末点值应等于期末强平后的终值');
 });
 
+test('🔴 单因子入口 runCrossBacktest 也必须透传 rawEquity（曾恒为 undefined）', () => {
+  // 为什么单独锁：上面的用例只走 runModel（模型入口 ⇒ runWithCrossSection），
+  // 单因子入口 runCrossBacktest 曾**完全没有**把 rawEquity 传进 simulateWithCrossSection
+  // ⇒ rawEquity=true 时 equityFull 恒 undefined，且没有任何用例覆盖到（静默丢字段）。
+  const dir = makeArchive();
+  const base = { factor: 'mom20', topN: 5, rebalanceEvery: 20, capital: 1_000_000, slippage: 0.001 };
+
+  const off = withArchive(dir, () => crosssect.runCrossBacktest({ ...base }));
+  assert.strictEqual(off.error, undefined, off.error);
+  assert.strictEqual(off.equityFull, undefined, '默认不得返回完整序列（响应体会膨胀约 5 倍）');
+
+  const on = withArchive(dir, () => crosssect.runCrossBacktest({ ...base, rawEquity: true }));
+  assert.strictEqual(on.error, undefined, on.error);
+  assert.ok(
+    Array.isArray(on.equityFull),
+    '🔴 rawEquity=true 时单因子入口也必须返回 equityFull（曾因未透传而恒为 undefined）',
+  );
+  assert.ok(on.equityFull.length > on.equity.length, '完整序列点数应多于抽稀序列');
+  assert.strictEqual(on.equity.length, off.equity.length, '开不开 rawEquity 不得改变抽稀序列本身');
+  assert.strictEqual(on.finalValue, off.finalValue, '开不开 rawEquity 不得改变任何数值（它只是返回字段开关）');
+  assert.strictEqual(
+    on.equityFull[on.equityFull.length - 1].value,
+    on.equity[on.equity.length - 1].value,
+    '完整序列末点应等于抽稀序列末点（都是期末强平后的终值）',
+  );
+  // 跨入口同账本：两条入口共用 simulateWithCrossSection ⇒ 完整序列长度必须一致
+  const viaModel = withArchive(dir, () => runWithCrossSection(makeCausalCrossSection(), {
+    topN: 5, rebalanceEvery: 20, capital: 1_000_000, slippage: 0.001, factorWin: 20, rawEquity: true,
+  }));
+  assert.strictEqual(
+    on.equityFull.length,
+    viaModel.equityFull.length,
+    '两条入口共用同一账本 ⇒ 完整序列长度应一致（不一致说明单因子入口的数据轴分叉了）',
+  );
+});
+
 test('🔴 结构约定：完整序列末两点**同日**（期末强平追加点），比对前必须剥离', () => {
   const dir = makeArchive();
   const b = withArchive(dir, () => runModel(MODEL(), { topN: 5, rawEquity: true }));

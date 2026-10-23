@@ -351,7 +351,10 @@ export default function BacktestPage() {
             </button>
           </div>
           <p style={{ fontSize: '12px', color: '#475569', margin: '12px 0 0' }}>
-            {STRATEGIES.find((s) => s.key === strategy)?.desc} · 含 0.1% 双边手续费 · 基于真实历史日 K
+            {/* ⚠️ 2026-10-23：原写「含 0.1% 双边手续费」——那是**已废弃**的平坦费率口径，
+                现行费率是 fees.cjs 的分项费率（佣金万2.5 保底5元 + 卖出印花税万5 + 过户费万0.1 双边）。
+                界面文字也是口径的一份副本（单一源纪律），不得再抄具体数值 ⇒ 只写"按分项费率计费"。 */}
+            {STRATEGIES.find((s) => s.key === strategy)?.desc} · 按 A 股分项费率计费（佣金/印花税/过户费）· 基于真实历史日 K
           </p>
         </section>
 

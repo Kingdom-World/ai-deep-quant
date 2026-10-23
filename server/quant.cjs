@@ -133,7 +133,11 @@ function runBacktest(klines, strategy, fast, slow, capital, market = 'CN', opts 
       } else {
         const price = +(rawOpen * (1 - slippage)).toFixed(4);
         const fee = calcFees(mkt, 'sell', shares * price).total;
-        cash = +(shares * price - fee).toFixed(2);
+        // 🔴 2026-10-23 修：原为 `cash = 卖出净额`（**覆盖**），把整手买入后残余的现金丢弃了。
+        //    买入分支是 `cash - value - fee`（保留残余，正确），两侧不对称 ⇒ 每卖一次丢一次残余。
+        //    实测：本金 10 万、残余约 4251 元（≈本金 4.25%），4 笔交易后终值被低估约 15%
+        //    （93672.75 vs 正确 ≈108005）。故改为累加，与买入分支对称。
+        cash = +(cash + shares * price - fee).toFixed(2);
         totalFees += fee;
         turnover += shares * price;
         trades.push({
@@ -197,7 +201,10 @@ function runBacktest(klines, strategy, fast, slow, capital, market = 'CN', opts 
   const downside = rets.filter((r) => r < 0);
   const downDev = downside.length ? Math.sqrt(downside.reduce((a, b) => a + b * b, 0) / downside.length) * Math.sqrt(252) * 100 : 0;
   const sortino = downDev > 0 ? +((annualized - 2) / downDev).toFixed(2) : null;
-  const calmar = maxDrawdownPct > 0 ? +(annualized / maxDrawdownPct).toFixed(2) : null;
+  // 🔴 2026-10-23 修：原为 `annualized / maxDrawdownPct`，而本处的 maxDrawdownPct 是**小数**（0.35），
+  //    与绩效单一源 equityMetrics（下）的 `annualized / (maxDrawdownPct * 100)` 相差 **100 倍**
+  //    ⇒ 前端「卡玛比率 ≥ 1 判绿」（BacktestPage.tsx）几乎恒绿。量纲对齐：年化% / 回撤%。
+  const calmar = maxDrawdownPct > 0 ? +(annualized / (maxDrawdownPct * 100)).toFixed(2) : null;
   const grossWin = trades.filter((t) => t.pnlPct > 0).reduce((a, t) => a + t.pnlPct, 0);
   const grossLoss = Math.abs(trades.filter((t) => t.pnlPct <= 0).reduce((a, t) => a + t.pnlPct, 0));
   const profitFactor = grossLoss > 0 ? +(grossWin / grossLoss).toFixed(2) : trades.length ? null : null;
@@ -253,8 +260,10 @@ function runBacktest(klines, strategy, fast, slow, capital, market = 'CN', opts 
  *   · 波动：日收益总体标准差 × √252（百分数）
  *   · Sharpe / Sortino：无风险利率按 2%（与 annualized 同为百分数口径相除）
  *   · Calmar：年化 / 最大回撤百分数；回撤用峰值追踪 `(peak−value)/peak`
- *   ⚠️ 与 runBacktest 内联值的差异仅源于净值取整（equity 存 2 位小数，<0.01%），
- *      故 runBacktest 暂不改调此函数（避免无谓回归）；组合级（paper）一律走这里。
+ *   ⚠️ 2026-10-23 更正：此处原写「与 runBacktest 内联值的差异仅源于净值取整（<0.01%）」——
+ *      **该说明本身是错的**：内联值把最大回撤当**小数**相除 ⇒ Calmar 差整整 100 倍，
+ *      而这句"差异可忽略"的注释把它掩盖成了"正常差异"（注释掩盖缺陷的典型）。
+ *      现已对齐为「年化% / 回撤%」，差异才真的只剩净值取整。
  *      后续若合并两处，应让 runBacktest 改调本函数并以测试兜底。
  *
  * @param equity {{value:number}[]} 净值序列（至少 1 条；date 可选）

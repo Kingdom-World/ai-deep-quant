@@ -368,6 +368,12 @@ function runCrossBacktest(opts = {}) {
     slippage,
     slippageModel,
     finalSlippage: opts.finalSlippage === true,
+    /** 与 runWithCrossSection 同形：单因子入口同样要能按需索取未抽稀序列。
+     *  ⚠️ 2026-10-23 修：此前本入口根本没有透传 rawEquity ⇒ rawEquity=true 时
+     *     equityFull 恒为 undefined（静默丢字段，不是"返回了抽稀版"）。
+     *     依赖完整净值做逐点比对的调用方若走单因子入口，会拿到 undefined 而误判。
+     *     口径未变（同一账本），故不升 ENGINE_VERSION。 */
+    rawEquity: opts.rawEquity === true,
     factorLabel: factor,
     factorKind: resolved.kind,
     factorExprMeta: resolved.exprMeta ?? null,

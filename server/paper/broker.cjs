@@ -8,7 +8,9 @@
 //     或次一交易日（闭市挂出=隔夜委托），过期由撮合循环自动撤销
 // ─────────────────────────────────────────────────────────────
 const { PaperStore } = require('./store.cjs');
-const { fillMarketOrder, tryFillLimitOrder, nowISO, priceLimitPct } = require('./matcher.cjs');
+// 🔴 2026-10-23：涨跌停价改用 matcher.limitPrices（单一实现），不再在本文件手抄
+//    `prevClose × (1 ± pct/100)`。手抄=第二份价源：任一侧改板块/ST 判定即静默分叉。
+const { fillMarketOrder, tryFillLimitOrder, nowISO, limitPrices } = require('./matcher.cjs');
 const { preTradeCheck } = require('./risk.cjs');
 const { calcFees, marketOf } = require('./fees.cjs');
 const { canFill, canQueue, sessionLabel } = require('./sessions.cjs');
@@ -241,15 +243,16 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
 
   // ── A股涨跌停校验：限价超出前一收盘价的涨跌停板即为无效委托 ──
   if (type === 'limit' && market === 'CN' && quote?.prevClose) {
-    const pct = priceLimitPct(symbol, name || quote?.name);
-    const upper = +(quote.prevClose * (1 + pct / 100)).toFixed(2);
-    const lower = +(quote.prevClose * (1 - pct / 100)).toFixed(2);
-    if (side === 'buy' && limitPrice > upper) {
-      return reject(`买入限价 ${limitPrice} 超出涨停价 ${upper}（${quote.prevClose} × ${1 + pct / 100}），委托无效`);
+    const lp = limitPrices(symbol, name || quote?.name, quote.prevClose);
+    if (lp) {
+      if (side === 'buy' && limitPrice > lp.upper) {
+        return reject(`买入限价 ${limitPrice} 超出涨停价 ${lp.upper}（${quote.prevClose} × ${1 + lp.pct / 100}），委托无效`);
+      }
+      if (side === 'sell' && limitPrice < lp.lower) {
+        return reject(`卖出限价 ${limitPrice} 低于跌停价 ${lp.lower}（${quote.prevClose} × ${1 - lp.pct / 100}），委托无效`);
+      }
     }
-    if (side === 'sell' && limitPrice < lower) {
-      return reject(`卖出限价 ${limitPrice} 低于跌停价 ${lower}（${quote.prevClose} × ${1 - pct / 100}），委托无效`);
-    }
+    // lp 为 null（prevClose 无效）⇒ 跳过校验，与 matcher 的行为一致（不擅自放行也不伪造价格）
   }
 
   const order = {

@@ -3,7 +3,16 @@
 // ─────────────────────────────────────────────────────────────
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { smaSeries, rsiSeries, runBacktest } = require('../server/quant.cjs');
+const { smaSeries, rsiSeries, runBacktest, equityMetrics } = require('../server/quant.cjs');
+const { calcFees } = require('../server/paper/fees.cjs');
+
+/** 按整手规则复算「首笔买入」的股数与残余现金（与引擎 buySharesFor 同规则） */
+function buyPlan(capital, price) {
+  let qty = Math.floor(capital / (price * 100)) * 100;
+  while (qty > 0 && capital < qty * price + calcFees('CN', 'buy', qty * price).total) qty -= 100;
+  const fee = calcFees('CN', 'buy', qty * price).total;
+  return { qty, fee, residual: capital - qty * price - fee };
+}
 
 /** 构造合成 K 线：closes 由函数生成，open=close-0.5，high/low 包络 */
 function makeKlines(closes) {
@@ -100,4 +109,42 @@ test('资金足够但条件从未触发：note 说明无信号', () => {
 test('数据不足 30 根返回 error', () => {
   const r = runBacktest(makeKlines(Array.from({ length: 10 }, () => 100)), 'ma', 5, 20, 100000);
   assert.ok(r.error);
+});
+
+test('🔴 卖出必须累加现金：整手买入的残余现金不得被丢弃', () => {
+  // 为什么锁：卖出分支曾写成 `cash = 卖出净额`（**覆盖**），把整手买入后残余的现金丢弃。
+  //    买入分支是 `cash − 成交额 − 费用`（保留残余），两侧不对称 ⇒ 每卖一次丢一次残余。
+  //    实测残余约本金 4.25%，多轮买卖后终值被低估约 15% —— 而 buyhold 用例没有卖出，故从不暴露。
+  const closes = Array.from({ length: 200 }, (_, i) => +(100 + 8 * Math.sin(i / 9)).toFixed(2));
+  const r = runBacktest(makeKlines(closes), 'ma', 5, 20, 100000, 'CN', { slippage: 0 });
+  assert.ok(!r.error, r.error);
+
+  const t = r.trades.find((x) => !x.forced);
+  assert.ok(t, '应至少有一笔非强平的卖出');
+  const idx = r.equity.findIndex((e) => e.date === t.exitDate);
+  assert.ok(idx >= 0, '找不到卖出日的净值点');
+
+  const plan = buyPlan(100000, t.entryPrice);
+  assert.ok(plan.residual > 1000, `构造的用例必须留有可观的残余现金（实测 ${plan.residual.toFixed(2)}）`);
+  const netProceeds = plan.qty * t.exitPrice - calcFees('CN', 'sell', plan.qty * t.exitPrice).total;
+  // 卖出后空仓 ⇒ 当日净值 = 现金 = 残余 + 卖出净额（若是覆盖写法，残余就没了）
+  assert.ok(
+    Math.abs(r.equity[idx].value - (plan.residual + netProceeds)) < 0.05,
+    `卖出日净值应等于「残余现金 + 卖出净额」：got ${r.equity[idx].value}，expect ≈ ${(plan.residual + netProceeds).toFixed(2)}`,
+  );
+});
+
+test('卡玛比率量纲：必须与绩效单一源 equityMetrics 一致（曾差 100 倍）', () => {
+  // 为什么锁：runBacktest 内联的 calmar 曾把「回撤小数」当分母（annualized / 0.35），
+  //    而 equityMetrics（单一源）用回撤百分数 ⇒ 相差 100 倍，前端「≥1 判绿」几乎恒绿。
+  const closes = Array.from({ length: 200 }, (_, i) => +(100 + 8 * Math.sin(i / 9)).toFixed(2));
+  const r = runBacktest(makeKlines(closes), 'ma', 5, 20, 100000);
+  assert.ok(!r.error, r.error);
+  const m = equityMetrics(r.equity, 100000, r.equity.length);
+  assert.ok(r.calmar != null && m.calmar != null, '两处都应算出 calmar');
+  assert.ok(
+    Math.abs(r.calmar - m.calmar) < 0.05,
+    `内联 calmar 与单一源应一致（差异只应来自净值取整）：runBacktest=${r.calmar} equityMetrics=${m.calmar}`,
+  );
+  assert.ok(r.calmar < 100, `calmar 是无量纲倍数，量纲对齐后不应出现 ${r.calmar} 这种量级`);
 });

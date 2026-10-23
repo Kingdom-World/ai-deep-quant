@@ -210,12 +210,36 @@ function runModel(inputModel, opts = {}) {
   });
   if (result.error) return { ok: false, stage: 'engine', error: result.error };
 
+  // 🔴 显式披露（2026-10-23）：`backtest.fees:false` 目前**不生效** ——
+  //    回测账本（crosssect.simulateWithCrossSection）没有费用开关，calcFees（费用单一源）无条件计入。
+  //    此前这是"静默忽略"：建模页能选「不计费」，跑出来却照样计费，用户无从察觉。
+  //    纪律：不支持的开关必须**说出来**（显式降级），不许悄悄按默认值算。
+  //    为什么不在引擎里加 fees 开关：那会让"影响数值的参数"多一个维度 ⇒ 指纹口径变更、
+  //    历史实验全部变成"旧指纹"，属重大口径变更，须单独立项并升 ENGINE_VERSION。
+  const notices = [];
+  if (model.backtest && model.backtest.fees === false) {
+    notices.push(
+      '模型配置 backtest.fees=false 当前**未生效**：回测账本的费用开关尚未实现，'
+      + '结果仍按 fees.cjs 分项费率全额计费。请勿按「零成本」口径解读本结果。',
+    );
+  }
+  // groups 同理未生效，但只在"与实际持仓数不一致"时才提示 ——
+  // 默认 groups=5 与默认 topN=5 恰好相同，若无条件提示会让 notices 变成噪音（噪音=被习惯性忽略）。
+  const effectiveTopN = opts.topN ?? 5;
+  if (model.backtest && Number.isFinite(model.backtest.groups) && model.backtest.groups !== effectiveTopN) {
+    notices.push(
+      `模型配置 backtest.groups=${model.backtest.groups} 当前**未生效**：回测持仓数只由运行参数 topN`
+      + `（本次 ${effectiveTopN}）决定。`,
+    );
+  }
+
   return {
     ok: true,
     model,
     engineVersion: ENGINE_VERSION,
     plan: composite.plan,
     fingerprint: fingerprint(model, result, opts),
+    notices: notices.length ? notices : null,
     result,
   };
 }

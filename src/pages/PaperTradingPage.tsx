@@ -500,7 +500,8 @@ export default function PaperTradingPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '18px 0 0' }}>
         <h1 style={{ fontSize: '20px', margin: 0 }}>💰 模拟交易</h1>
         <span style={{ fontSize: '12px', color: '#64748b' }}>
-          100 万虚拟资金 · 真实行情撮合 · 佣金万2.5（最低5元）+ 卖出印花税万5 · 数据 10 秒刷新
+          {/* 2026-10-23：原文案漏了过户费（万0.1 双边），与 fees.cjs 不一致 */}
+          100 万虚拟资金 · 真实行情撮合 · 佣金万2.5（最低5元）+ 卖出印花税万5 + 过户费万0.1（双边）· 数据 10 秒刷新
         </span>
         <span
           title={mktStatus.detail}

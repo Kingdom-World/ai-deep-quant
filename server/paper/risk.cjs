@@ -19,7 +19,19 @@ function preTradeCheck({ order, account, positions, latestPrices }) {
   // 总资产 = 现金 + 持仓按最新价估值
   let marketValue = 0;
   for (const p of positions) {
-    const px = latestPrices[p.symbol] || p.avgCost;
+    const px = latestPrices[p.symbol];
+    // 🔴 2026-10-25 修：原为 `latestPrices[p.symbol] || p.avgCost`。
+    //    调用方（broker.valuationOf）已用 **null 明确表示「不可估值」**，这里若再兜回成本价，
+    //    等于把刚刚拆掉的 fail-open 原样装回去 —— 资产×数量的分母重新变回虚高值，
+    //    单笔 20% / 单标的 30% 两道限制再次失效。
+    //    · 买入 ⇒ 拒绝（总资产不可信，比例判断无意义）
+    //    · 卖出 ⇒ 跳过该项（卖出减少敞口，不依赖「现在值多少」判断安全性）
+    if (px == null) {
+      if (order.side === 'buy') {
+        return { ok: false, reason: `持仓 ${p.symbol} 无可用行情，无法估算总资产，暂不接受新开仓` };
+      }
+      continue;
+    }
     marketValue += p.qty * px;
   }
   const totalAssets = account.cash + marketValue;

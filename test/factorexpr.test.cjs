@@ -269,8 +269,14 @@ test('回归：预置因子仍走 preset 路径且数值不变（选股行为未
   });
   assert.strictEqual(r.factorKind, 'preset');
   assert.strictEqual(r.factorExprMeta, null, '预置因子不应有表达式元数据');
-  assert.strictEqual(r.totalReturn, -73.02, '预置 mom20 的净值与接入表达式前应一致（buyOnly 口径）');
-  assert.strictEqual(r.fills, 3469);
+  // 🔴 2026-10-25 重新基线化（用户批准的方案 A）：归档由 209 只扩到 654 只（决策 #1），
+  //    截面变宽 ⇒ mom20 选出的 20 只自然不同 ⇒ 净值与成交数**必然变化**。
+  //    这是「票池变化」，不是「选股逻辑变化」——本用例真正要守的是上面两条
+  //    factorKind==='preset' 与 factorExprMeta===null（证明预置因子没被表达式路径劫持）。
+  //    旧值（209 只归档）：totalReturn -73.02 / fills 3469。
+  //    ⚠️ 已知脆弱：这里仍是硬编码基线，归档再变会再红。根治是用固定夹具（方案 B），待排期。
+  assert.strictEqual(r.totalReturn, -88.19, '预置 mom20 的净值（buyOnly 口径；654 只归档基线）');
+  assert.strictEqual(r.fills, 2697);
   assert.strictEqual(r.slippageModel, 'buyOnly', '结果须标注所用滑点口径');
 });
 

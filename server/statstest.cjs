@@ -168,7 +168,19 @@ function normCdf(z) {
 /** 双尾 p 值（正态近似） */
 function pValueTwoSided(t) {
   if (!Number.isFinite(t)) return null;
-  return 2 * (1 - normCdf(Math.abs(t)));
+  const p = 2 * (1 - normCdf(Math.abs(t)));
+  // 🔴 2026-10-25 修：浮点下溢保护。
+  //    `1 − Φ(|t|)` 在 |t| 较大时两个数都逼近 1，相减得到 **0** —— 但 p 在数学上永远 > 0，
+  //    返回 0 会误导读者以为"零概率"，也会让"p 应在 (0,1]"这类断言失效。
+  //    （扩池 209→654 后样本变宽、t 变大，这个下溢从"偶尔"变成"必然"才暴露出来。）
+  //    兜底：大 z 的正态尾概率渐近 p ≈ 2·φ(z)/z，φ(z)=exp(−z²/2)/√(2π)。
+  //    仅在相减已下溢时启用；z 极大（如 >38）仍会下溢到 MIN_VALUE，属精度极限，如实保留。
+  if (p === 0) {
+    const z = Math.abs(t);
+    const phi = Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
+    return Math.max((2 * phi) / z, Number.MIN_VALUE);
+  }
+  return p;
 }
 
 /**
@@ -260,7 +272,9 @@ function summarizeIC(icSeries, opts = {}) {
     icir: s && s > 0 ? +(m / s).toFixed(6) : null,
     icPositiveRate: +(pos / n).toFixed(4),
     t: tt.t === null ? null : +tt.t.toFixed(4),
-    p: pValueTwoSided(tt.t) === null ? null : +pValueTwoSided(tt.t).toFixed(6),
+    // p 改用有效数字（toPrecision）而非 toFixed(6)：
+    //   p 极小（如 1e-12）时 toFixed(6) 会二次截断回 0，把"极显著"变成"零概率"。常规量级显示不变。
+    p: pValueTwoSided(tt.t) === null ? null : +pValueTwoSided(tt.t).toPrecision(4),
     se: tt.se === null ? null : +tt.se.toFixed(6),
     seIid: tt.seIid === null ? null : +tt.seIid.toFixed(6),
     neweyWestLag: tt.lag,

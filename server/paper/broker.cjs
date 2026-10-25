@@ -74,6 +74,26 @@ async function latestPrice(symbol) {
   }
 }
 
+// ── 持仓估值口径（单一实现）────────────────────────────────────────
+// 🔴 2026-10-25 修：原代码在 6 处直接写 `q?.price || p.avgCost`，即行情不可用时回退**成本价**。
+//    这是错的：avgCost 记录的是「你当初多少钱买的」，与「它现在值多少钱」无关。
+//    后果不止显示偏差，而是**两处风控失效**（fail-open = 拿不到数据就假装安全）：
+//      · 回撤熔断用总资产算净值 ⇒ 股价腰斩而行情不可用时，市值仍按成本计 ⇒ 净值不跌
+//        ⇒ 回撤永远达不到阈值 ⇒ **熔断永不触发**（最危险的一种失效：沉默地失效）
+//      · preTradeCheck 用总资产做分母算单笔 20% / 单标的 30% 上限
+//        ⇒ 分母虚高 ⇒ **比例限制形同虚设**
+//    故此处统一为三级口径：实时价 > 前收（同属市场事实） > 不可估值（返回 null，
+//    绝不填成本价）。是否据此拒绝交易由调用方决策（见 placeOrder 的 fail-closed）。
+function valuationOf(quote) {
+  if (quote && Number.isFinite(quote.price) && quote.price > 0) {
+    return { price: quote.price, source: 'live' };
+  }
+  if (quote && Number.isFinite(quote.prevClose) && quote.prevClose > 0) {
+    return { price: quote.prevClose, source: 'prevClose' };
+  }
+  return { price: null, source: 'unknown' };
+}
+
 /** 释放订单冻结（撤单/过期/成交/拒单后调用；幂等，字段清零防重复释放） */
 function releaseOrderReservation(uid, order) {
   if (!order.reservedCash && !order.reservedQty) return;
@@ -275,17 +295,35 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
   // 风控前置校验（用最新行情估算总资产；现金按「扣除挂单冻结后的可用额」口径）
   const availCash = +(acc.cash - (acc.reservedCash || 0)).toFixed(2);
   const latestPrices = {};
+  const unpriced = []; // 连前收都拿不到的标的 ⇒ 总资产不可信 ⇒ 由下方 fail-closed 拦住新开仓
   for (const p of positions) {
     const q = await latestPrice(p.symbol);
-    latestPrices[p.symbol] = q?.price || p.avgCost;
+    const v = valuationOf(q);
+    // 不可估值即 null —— 绝不填 avgCost（为什么不填：见 valuationOf 顶部注释）
+    latestPrices[p.symbol] = v.price;
+    if (v.price == null) unpriced.push(p.symbol);
   }
 
   // ── 回撤熔断（评审 P2-2）：以账户净值高水位为基准的两级事中风控 ──
   //   L1（回撤 ≥ PAPER_DD_HALT，默认 10%）：禁止新开仓（买入拒绝），卖出减仓放行
   //   L2（回撤 ≥ PAPER_DD_LOCK，默认 15%）：账户锁定（riskLocked），仅可卖出，需手动解锁
   //   PAPER_RISK_OFF=1 可整体停用。解除方式：净值回升自动降级，或 POST /api/paper/unlock 重置基准。
-  if (String(process.env.PAPER_RISK_OFF || '') !== '1') {
-    const marketValue = positions.reduce((s, p) => s + p.qty * (latestPrices[p.symbol] || p.avgCost), 0);
+  // ⚠️ 无法可靠估值时，**本轮不判定**熔断 —— 介于两种错法之间的第三条路：
+  //    · 若按成本价兜底 ⇒ 净值虚高 ⇒ 该触发时不触发（**沉默地失效，最危险**）
+  //    · 若把无行情持仓市值记 0 ⇒ 净值骤降 ⇒ 误触发，把正常交易挡在外面
+  //    取而代之：承认此刻不知道，跳过本轮判定 —— 不更新高水位，也不解除既有等级。
+  //    （买入已由上方 fail-closed 拦住，故此处跳过不会放行原本该拦的买单。）
+  const ddSkipped = unpriced.length > 0;
+  if (ddSkipped) {
+    logEvent(
+      uid,
+      `回撤熔断本轮跳过判定：持仓 ${unpriced.join('、')} 无可用行情，无法可靠估算净值` +
+        `（保持既有 L${acc.ddLevel || 0}，不更新高水位）`,
+    );
+  }
+  if (String(process.env.PAPER_RISK_OFF || '') !== '1' && !ddSkipped) {
+    // 此分支下 unpriced 必为空 ⇒ latestPrices 全为有效价，无需再兜底 avgCost
+    const marketValue = positions.reduce((s, p) => s + p.qty * latestPrices[p.symbol], 0);
     const totalAssets = +(availCash + marketValue).toFixed(2);
     const halt = Math.max(Number(process.env.PAPER_DD_HALT) || 0.10, 0.01);
     const lock = Math.max(Number(process.env.PAPER_DD_LOCK) || 0.15, halt + 0.01);
@@ -309,6 +347,23 @@ async function placeOrderInner(uid, { symbol, name, side, type, qty, limitPrice,
           '（可卖出减仓；净值回升自动降级，或 POST /api/paper/unlock 重置基准）',
       );
     }
+  }
+
+  // 🔴 估值不可得 ⇒ 不接受新开仓（fail-closed，2026-10-25 新增）
+  //    为什么不放行：preTradeCheck 的「单笔 ≤ 总资产 20% / 单标的 ≤ 总资产 30%」分母都是总资产，
+  //    而此刻总资产本身不可信 ⇒ 比例判断失去意义，放行 = 绕过风控。
+  //    为什么卖出放行：卖出是**减少**敞口，且不需要依赖「现在值多少钱」来判断是否安全。
+  //    ⚠️ 必须放在 preTradeCheck **之前**：晚一步的话，带着 null 的分母已经参与过计算了。
+  if (unpriced.length && side === 'buy') {
+    const reason =
+      `持仓 ${unpriced.join('、')} 当前无可用行情（实时价与前收均不可得），无法可靠估算总资产；` +
+      '为避免基于失真的总资产做出仓促的判断，暂不接受新开仓（卖出不受影响）。';
+    order.status = 'rejected';
+    order.reason = reason;
+    store.state.orders[uid].unshift(order);
+    const persist = await store.persistUid(uid);
+    logEvent(uid, `拒单 ${side} ${symbol} ×${qty}: ${reason}`);
+    return { ok: false, error: reason, order, persisted: persist.persisted };
   }
 
   const risk = preTradeCheck({ order, account: { ...acc, cash: availCash }, positions, latestPrices });
@@ -575,4 +630,7 @@ async function accountSnapshot(uid) {
   };
 }
 
-module.exports = { init, placeOrder, cancelOrder, resetAccount, unlockAccount, withAccountLock, runMatcher, maybeRunMatcher, accountSnapshot, logEvent, store, uidOf };
+// valuationOf 一并导出，供测试直接断言：它是持仓估值的**唯一**口径实现，
+// 「行情缺失时不回退成本价」这条规则由它承载。之所以要能单测：该函数**只接收 quote、
+// 不接收 position**，签名上就拿不到 avgCost —— 这是刻意的，等于从类型层面堵死了回退成本价。
+module.exports = { init, placeOrder, cancelOrder, resetAccount, unlockAccount, withAccountLock, runMatcher, maybeRunMatcher, accountSnapshot, logEvent, store, uidOf, valuationOf };

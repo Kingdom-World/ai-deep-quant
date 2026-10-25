@@ -92,7 +92,7 @@ function runReplay(opts = {}) {
   const sellAll = (code, date, withSlip = true) => {
     const rawOpen = priceAt(code, date, 'open');
     if (rawOpen === null) return false;
-    const prevClose = priceAt(code, dates[rowIndexSafe(date) - 1] ?? date, 'close');
+    const prevClose = prevCloseOf(code, date);
     if (marketOf(code) === 'CN' && prevClose !== null) {
       const lp = limitPrices(code, null, prevClose);
       if (lp && rawOpen <= lp.lower) { blockedLimitDown += 1; return false; }
@@ -112,19 +112,28 @@ function runReplay(opts = {}) {
     return true;
   };
 
-  /** rowIndexSafe：dates 轴上的下标（供取 prevDate；找不到返回 0） */
-  function rowIndexSafe(date) {
-    return _dateIdx.get(date) ?? 0;
-  }
   const _dateIdx = new Map();
   dates.forEach((d, i) => _dateIdx.set(d, i));
+
+  // ── 前收盘价（单一口径）────────────────────────────────────────
+  // 🔴 2026-10-25 修：原先 sellAll 与 buyTo **各写一套**取「前收」的方式：
+  //    · sellAll：`dates[rowIndexSafe(date) - 1] ?? date` —— rowIndexSafe 找不到时返回 0
+  //      ⇒ dates[-1] === undefined ⇒ `?? date` ⇒ **拿当日收盘价充当「前收」**（首日必中）
+  //    · buyTo：`_dateIdx.get(date)`，`di > 0` 才取，否则 null ⇒ 取不到就跳过涨跌停守卫
+  //    两者口径不一致，且 sellAll 那条是 fail-open：涨跌停的上/下限基准被换成当日价，
+  //    于是「跌停封板卖不出」的判定会失真（本该拒绝的卖出被放行）。
+  //    统一为：没有真实的前一交易日 ⇒ 返回 null（不施加涨跌停守卫），
+  //    **绝不拿当日价冒充前收** —— 这与 broker 的估值修复是同一条纪律。
+  const prevCloseOf = (code, date) => {
+    const di = _dateIdx.get(date);
+    return di > 0 ? priceAt(code, dates[di - 1], 'close') : null;
+  };
 
   const buyTo = (code, date, amount) => {
     // 涨跌停守卫：开盘涨停买不进（rawOpen 与 limitPrices 同口径，均为真实价）
     const rawOpen = priceAt(code, date, 'open');
     if (rawOpen === null) return 0;
-    const di = _dateIdx.get(date);
-    const prevClose = di > 0 ? priceAt(code, dates[di - 1], 'close') : null;
+    const prevClose = prevCloseOf(code, date);
     if (marketOf(code) === 'CN' && prevClose !== null) {
       const lp = limitPrices(code, null, prevClose);
       if (lp && rawOpen >= lp.upper) { blockedLimitUp += 1; return 0; }

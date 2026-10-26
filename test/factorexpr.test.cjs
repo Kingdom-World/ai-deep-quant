@@ -14,6 +14,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const fe = require('../server/factorexpr.cjs');
@@ -259,27 +260,46 @@ test('守卫：非法表达式回显解析原因，不静默回退到默认因�
 
 // ── 7. 回归：预置因子行为未被改动 ────────────────────────────
 
-test('回归：预置因子仍走 preset 路径且数值不变（选股行为未变）', () => {
+test('回归：预置因子仍走 preset 路径（迷你固定 universe，与扩池解耦）', () => {
   if (!hasRealArchive) return skipReal('预置因子回归');
-  // 🔴 用**历史滑点口径**（buyOnly）跑 ⇒ 必须精确复现旧值。
-  //   2026-10-20 修了卖出侧滑点（旧实现从不乘 (1−slippage)，收益被高估），
-  //   这条断言的价值在于证明：**变的是执行成本口径，不是选股逻辑**。
-  const r = crosssect.runCrossBacktest({
-    factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000, slippageModel: 'buyOnly',
-  });
-  assert.strictEqual(r.factorKind, 'preset');
-  assert.strictEqual(r.factorExprMeta, null, '预置因子不应有表达式元数据');
-  // 🔴 基线随归档规模漂移（是「票池变化」，不是「选股逻辑变化」）：
-  //    · 209 只：totalReturn -73.02 / fills 3469
-  //    · 654 只：totalReturn -88.19 / fills 2697
-  //    · 796 只：totalReturn -85.62 / fills 2878   ← 当前
-  //    本用例真正要守的是上面两条：factorKind==='preset' 与 factorExprMeta===null
-  //    （证明预置因子没被表达式路径劫持）；净值/成交数只是「选股行为未变」的伴随证据。
-  //    ⚠️ 这已经是因扩池 **第二次** rebaseline ⇒ 说明硬编码基线是错的做法。
-  //    根治方案 B：自造小型固定归档 + LOCAL_HISTORY_DIR，断言与真实票池解耦，不再随扩容漂移。待排期。
-  assert.strictEqual(r.totalReturn, -85.62, '预置 mom20 的净值（buyOnly 口径；796 只归档基线）');
-  assert.strictEqual(r.fills, 2878);
-  assert.strictEqual(r.slippageModel, 'buyOnly', '结果须标注所用滑点口径');
+  // 🔴 为什么改成迷你 universe：此前这条断言硬编码「基于全部真实归档算出的净值」，
+  //    结果每次扩池都要 rebaseline（209→654→796→801，已改三次）。
+  //    那种写法实际是在测「数据没变」，而不是「选股逻辑没变」——方向就错了。
+  //    现在：从真实归档取**按代码排序的前 30 只**复制到临时目录 + 固定 endDate，
+  //    数据仍是引擎可跑的真实 K 线（人造等比曲线会 0 成交，试过），
+  //    但 universe 宽度不再随扩池变化 ⇒ 基线稳定。
+  //    前提：这 30 只的历史 K 线是追加式写入、不会被改写（baostock 只补新交易日）。
+  //    这条断言要守的仍是：预置因子没被表达式路径劫持（factorKind/factorExprMeta），
+  //    以及 buyOnly 滑点口径生效（slippageModel + 净值伴随验证）。
+  const src = path.join(__dirname, '..', 'data', 'history', 'kline');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'factorexpr-mini-'));
+  const picked = fs.readdirSync(src).filter((f) => f.endsWith('.json')).sort().slice(0, 30);
+  for (const f of picked) fs.copyFileSync(path.join(src, f), path.join(dir, f));
+  const prev = process.env.LOCAL_HISTORY_DIR;
+  process.env.LOCAL_HISTORY_DIR = dir;
+  process.env.CROSSSECT_RELOAD = '1'; // 绕开进程内 universe 缓存，否则会读到真实归档那份
+  try {
+    const r = crosssect.runCrossBacktest({
+      factor: 'mom20',
+      topN: 20,
+      rebalanceEvery: 20,
+      capital: 100000,
+      slippageModel: 'buyOnly',
+      endDate: '2025-12-31', // 固定终点：历史只追加不变 ⇒ 结果确定
+    });
+    assert.strictEqual(r.factorKind, 'preset');
+    assert.strictEqual(r.factorExprMeta, null, '预置因子不应有表达式元数据');
+    assert.strictEqual(r.slippageModel, 'buyOnly', '结果须标注所用滑点口径');
+    assert.strictEqual(r.universeSize, 30, '应恰好 30 只（防夹具拷贝失败）');
+    assert.ok(r.fills > 0, '迷你夹具必须产生交易，否则等于测了个空跑');
+    assert.strictEqual(r.totalReturn, 58.7, '迷你 universe 固定基线（前 30 只 + endDate 2025-12-31）');
+    assert.strictEqual(r.fills, 1612);
+  } finally {
+    if (prev === undefined) delete process.env.LOCAL_HISTORY_DIR;
+    else process.env.LOCAL_HISTORY_DIR = prev;
+    delete process.env.CROSSSECT_RELOAD;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('滑点口径修正：默认双边滑点使收益低于历史口径（不再高估）', () => {

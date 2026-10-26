@@ -43,6 +43,7 @@ KLINE_DIR = os.path.join(ROOT, "data", "history", "kline")
 FIN_DIR = os.path.join(ROOT, "data", "history", "finance")
 POOL_FILE = os.path.join(ROOT, "data", "history", "pool.json")
 META_FILE = os.path.join(ROOT, "data", "history", "_meta.json")
+RETRY_FILE = os.path.join(ROOT, "data", "history", "_retry.json")
 CALENDAR_FILE = os.path.join(ROOT, "data", "calendar.json")
 
 SLEEP_BETWEEN_CALLS = 0.25
@@ -118,6 +119,30 @@ def sync_calendar() -> list:
     atomic_write_json(CALENDAR_FILE, payload)
     print(f"[sync] 交易日历 OK：{len(days)} 个交易日（{start} ~ {end}）")
     return days
+
+
+# ─────────────────────── 1b. 重试队列 ───────────────────────
+MAX_RETRY = 3  # 连续失败达此次数则移出队列（多半退市/长期停牌，反复重试无意义）
+
+
+def load_retry() -> dict:
+    """读重试队列。兼容旧格式（纯数组）与新格式（{code: 失败次数}）。"""
+    doc = read_json(RETRY_FILE, {})
+    if isinstance(doc, list):
+        return {str(c): 0 for c in doc}
+    if isinstance(doc, dict):
+        out = {}
+        for k, v in doc.items():
+            try:
+                out[str(k)] = int(v)
+            except (TypeError, ValueError):
+                out[str(k)] = 0
+        return out
+    return {}
+
+
+def save_retry(m: dict) -> None:
+    atomic_write_json(RETRY_FILE, {k: int(v) for k, v in sorted(m.items())})
 
 
 # ─────────────────────────── 2. 股票池 ───────────────────────────
@@ -344,19 +369,26 @@ def main():
         today = date.today().strftime("%Y-%m-%d")
         pool = load_pool(args, trading_days)
         pool_total = len(pool)
+        retry = load_retry()  # 上次失败的票（优先补）
         if args.max_codes and pool_total > args.max_codes:
             cur = read_json(CURSOR_FILE, None)
             start_idx = int((cur or {}).get("next", 0)) % pool_total
-            pool = [pool[(start_idx + i) % pool_total] for i in range(args.max_codes)]
-            # 🔴 2026-10-26 修：cursor 原先在这里就前进（乐观更新），而本批谁失败要到循环结束才知道
-            #    ⇒ 失败的票被**静默跳过**，要等 pool_total/max_codes 轮（约 5 批）后才被重试。
-            #    改为循环结束后按「连续成功前缀」写回（见下方），保证失败票下轮必定重试。
-            print(f"[sync] 轮转限额：本批 {args.max_codes} 只（起点 {start_idx}，池总 {pool_total}，每日计划任务约 {pool_total // max(args.max_codes,1) + 1} 天轮完）")
+            batch = [pool[(start_idx + i) % pool_total] for i in range(args.max_codes)]
+            # 2026-10-26：重试票**优先占本批名额**（上次失败的先补，再轮到常规轮转）。
+            if retry:
+                pool_set = set(pool)
+                quota = [c for c in retry if c in pool_set][: args.max_codes]
+                picked = set(quota)
+                rest = [c for c in batch if c not in picked][: args.max_codes - len(quota)]
+                pool = quota + rest
+            else:
+                pool = batch
+            print(f"[sync] 轮转限额：本批 {len(pool)} 只（起点 {start_idx}，池总 {pool_total}，重试队列 {len(retry)}，每日计划任务约 {pool_total // max(args.max_codes,1) + 1} 天轮完）")
         print(f"[sync] 股票池：{len(pool)} 只，历史起点 {args.start}")
         quarters = recent_quarters(max(1, min(args.fin_quarters, 8)))
         consec_fail = 0
 
-        completed = 0  # 「连续成功前缀」长度：遇到第一只失败即停，保证游标不会跨过失败票
+        failed_codes = []  # 本批失败的票（写入 _retry.json，下次优先重试）
         for i, code_t in enumerate(pool, 1):
             try:
                 r = sync_kline(code_t, args.start, today)
@@ -364,13 +396,15 @@ def main():
                 ok = not r["status"].startswith("error")
                 if not ok:
                     stats["errors"].append(f"{code_t} kline: {r['status']}")
+                    failed_codes.append(code_t)
+                    retry[code_t] = retry.get(code_t, 0) + 1
                 time.sleep(SLEEP_BETWEEN_CALLS)
                 f = sync_finance(code_t, quarters)
                 stats["finance"][code_t] = f["added"]
                 time.sleep(SLEEP_BETWEEN_CALLS)
                 consec_fail = 0
-                if ok and completed == i - 1:
-                    completed = i
+                if ok:
+                    retry.pop(code_t, None)  # 成功即移出重试队列
                 if i % 20 == 0:
                     print(f"[sync] 进度 {i}/{len(pool)}")
             except Exception as e:
@@ -390,19 +424,24 @@ def main():
                         print(f"[sync] 重连失败: {e2}")
                         break
 
-        # 🔴 2026-10-26：cursor 改为在**循环结束后**按「连续成功前缀」写回。
-        #    原实现选批时就乐观前进 ⇒ 失败票被静默跳过（约 5 批后才重试）。
-        #    现在有失败时只推进到第一只失败之前，失败票下轮自动重试。
+        # 2026-10-26：cursor 在**循环结束后**写回（原为选批时乐观前进 ⇒ 失败票被静默跳过）。
+        #    不采用「连续成功前缀」：实测 374 只缺失散落在 200+ 位置，那样每轮只推进到第一个
+        #    失败点，要跑上百轮。改为：游标正常前进，失败票入 _retry.json 并优先重试。
         if args.max_codes and pool_total > args.max_codes:
-            advance = min(completed, args.max_codes)
             atomic_write_json(CURSOR_FILE, {
-                "next": (start_idx + advance) % pool_total,
+                "next": (start_idx + args.max_codes) % pool_total,
                 "poolTotal": pool_total,
                 "updatedAt": datetime.now().isoformat(timespec="seconds"),
             })
-            if advance < args.max_codes:
-                print(f"[sync] ⚠️ 本批连续成功 {advance}/{args.max_codes} 只（其余见 errors），"
-                      f"游标仅前进 {advance}；失败票下轮自动重试")
+        # 连续失败达阈值 ⇒ 移出队列（退市/长期停牌，反复重试无意义），但如实打印不静默丢
+        dead = [c for c, n in retry.items() if n >= MAX_RETRY]
+        for c in dead:
+            retry.pop(c, None)
+        if dead:
+            print(f"[sync] [WARN] {len(dead)} 只连续失败 {MAX_RETRY} 次，已移出重试队列（多为退市/长期停牌）：{', '.join(dead[:10])}")
+        save_retry(retry)
+        if failed_codes:
+            print(f"[sync] [WARN] 本批失败 {len(failed_codes)} 只；重试队列现有 {len(retry)} 只，下次优先处理")
 
         total_new = sum(stats["kline"].values())
         stats["summary"] = {

@@ -348,23 +348,29 @@ def main():
             cur = read_json(CURSOR_FILE, None)
             start_idx = int((cur or {}).get("next", 0)) % pool_total
             pool = [pool[(start_idx + i) % pool_total] for i in range(args.max_codes)]
-            atomic_write_json(CURSOR_FILE, {"next": (start_idx + args.max_codes) % pool_total, "poolTotal": pool_total, "updatedAt": datetime.now().isoformat(timespec="seconds")})
+            # 🔴 2026-10-26 修：cursor 原先在这里就前进（乐观更新），而本批谁失败要到循环结束才知道
+            #    ⇒ 失败的票被**静默跳过**，要等 pool_total/max_codes 轮（约 5 批）后才被重试。
+            #    改为循环结束后按「连续成功前缀」写回（见下方），保证失败票下轮必定重试。
             print(f"[sync] 轮转限额：本批 {args.max_codes} 只（起点 {start_idx}，池总 {pool_total}，每日计划任务约 {pool_total // max(args.max_codes,1) + 1} 天轮完）")
         print(f"[sync] 股票池：{len(pool)} 只，历史起点 {args.start}")
         quarters = recent_quarters(max(1, min(args.fin_quarters, 8)))
         consec_fail = 0
 
+        completed = 0  # 「连续成功前缀」长度：遇到第一只失败即停，保证游标不会跨过失败票
         for i, code_t in enumerate(pool, 1):
             try:
                 r = sync_kline(code_t, args.start, today)
                 stats["kline"][code_t] = r["newRows"]
-                if r["status"].startswith("error"):
+                ok = not r["status"].startswith("error")
+                if not ok:
                     stats["errors"].append(f"{code_t} kline: {r['status']}")
                 time.sleep(SLEEP_BETWEEN_CALLS)
                 f = sync_finance(code_t, quarters)
                 stats["finance"][code_t] = f["added"]
                 time.sleep(SLEEP_BETWEEN_CALLS)
                 consec_fail = 0
+                if ok and completed == i - 1:
+                    completed = i
                 if i % 20 == 0:
                     print(f"[sync] 进度 {i}/{len(pool)}")
             except Exception as e:
@@ -383,6 +389,20 @@ def main():
                     except Exception as e2:
                         print(f"[sync] 重连失败: {e2}")
                         break
+
+        # 🔴 2026-10-26：cursor 改为在**循环结束后**按「连续成功前缀」写回。
+        #    原实现选批时就乐观前进 ⇒ 失败票被静默跳过（约 5 批后才重试）。
+        #    现在有失败时只推进到第一只失败之前，失败票下轮自动重试。
+        if args.max_codes and pool_total > args.max_codes:
+            advance = min(completed, args.max_codes)
+            atomic_write_json(CURSOR_FILE, {
+                "next": (start_idx + advance) % pool_total,
+                "poolTotal": pool_total,
+                "updatedAt": datetime.now().isoformat(timespec="seconds"),
+            })
+            if advance < args.max_codes:
+                print(f"[sync] ⚠️ 本批连续成功 {advance}/{args.max_codes} 只（其余见 errors），"
+                      f"游标仅前进 {advance}；失败票下轮自动重试")
 
         total_new = sum(stats["kline"].values())
         stats["summary"] = {

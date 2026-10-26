@@ -269,14 +269,16 @@ test('回归：预置因子仍走 preset 路径且数值不变（选股行为未
   });
   assert.strictEqual(r.factorKind, 'preset');
   assert.strictEqual(r.factorExprMeta, null, '预置因子不应有表达式元数据');
-  // 🔴 2026-10-25 重新基线化（用户批准的方案 A）：归档由 209 只扩到 654 只（决策 #1），
-  //    截面变宽 ⇒ mom20 选出的 20 只自然不同 ⇒ 净值与成交数**必然变化**。
-  //    这是「票池变化」，不是「选股逻辑变化」——本用例真正要守的是上面两条
-  //    factorKind==='preset' 与 factorExprMeta===null（证明预置因子没被表达式路径劫持）。
-  //    旧值（209 只归档）：totalReturn -73.02 / fills 3469。
-  //    ⚠️ 已知脆弱：这里仍是硬编码基线，归档再变会再红。根治是用固定夹具（方案 B），待排期。
-  assert.strictEqual(r.totalReturn, -88.19, '预置 mom20 的净值（buyOnly 口径；654 只归档基线）');
-  assert.strictEqual(r.fills, 2697);
+  // 🔴 基线随归档规模漂移（是「票池变化」，不是「选股逻辑变化」）：
+  //    · 209 只：totalReturn -73.02 / fills 3469
+  //    · 654 只：totalReturn -88.19 / fills 2697
+  //    · 796 只：totalReturn -85.62 / fills 2878   ← 当前
+  //    本用例真正要守的是上面两条：factorKind==='preset' 与 factorExprMeta===null
+  //    （证明预置因子没被表达式路径劫持）；净值/成交数只是「选股行为未变」的伴随证据。
+  //    ⚠️ 这已经是因扩池 **第二次** rebaseline ⇒ 说明硬编码基线是错的做法。
+  //    根治方案 B：自造小型固定归档 + LOCAL_HISTORY_DIR，断言与真实票池解耦，不再随扩容漂移。待排期。
+  assert.strictEqual(r.totalReturn, -85.62, '预置 mom20 的净值（buyOnly 口径；796 只归档基线）');
+  assert.strictEqual(r.fills, 2878);
   assert.strictEqual(r.slippageModel, 'buyOnly', '结果须标注所用滑点口径');
 });
 

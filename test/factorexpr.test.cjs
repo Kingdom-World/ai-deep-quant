@@ -26,6 +26,30 @@ function skipReal(name) {
   console.log(`  [skip] ${name}：真实归档不存在（${REAL_DIR}）`);
 }
 
+/**
+ * 用「迷你固定 universe」跑一段逻辑：从真实归档按代码排序取前 n 只复制到临时目录，
+ * 并在调用期间把 LOCAL_HISTORY_DIR 指向它（结束必定还原，不污染同进程其他用例）。
+ * 目的：数据仍是引擎可跑的真实 K 线，但 universe 宽度**不随扩池变化**。
+ */
+function withMiniUniverse(n, fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'factorexpr-mini-'));
+  const picked = fs.readdirSync(REAL_DIR).filter((f) => f.endsWith('.json')).sort().slice(0, n);
+  for (const f of picked) fs.copyFileSync(path.join(REAL_DIR, f), path.join(dir, f));
+  const prevDir = process.env.LOCAL_HISTORY_DIR;
+  const prevReload = process.env.CROSSSECT_RELOAD;
+  process.env.LOCAL_HISTORY_DIR = dir;
+  process.env.CROSSSECT_RELOAD = '1'; // 绕开进程内 universe 缓存
+  try {
+    return fn(picked.length);
+  } finally {
+    if (prevDir === undefined) delete process.env.LOCAL_HISTORY_DIR;
+    else process.env.LOCAL_HISTORY_DIR = prevDir;
+    if (prevReload === undefined) delete process.env.CROSSSECT_RELOAD;
+    else process.env.CROSSSECT_RELOAD = prevReload;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ── 1. 解析器：合法输入 ───────────────────────────────────────
 
 test('解析器：预置式简写与括号式等价（mom20 ≡ mom(20)）', () => {
@@ -304,13 +328,25 @@ test('回归：预置因子仍走 preset 路径（迷你固定 universe，与扩
 
 test('滑点口径修正：默认双边滑点使收益低于历史口径（不再高估）', () => {
   if (!hasRealArchive) return skipReal('滑点口径修正');
-  const base = { factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000 };
-  const legacy = crosssect.runCrossBacktest({ ...base, slippageModel: 'buyOnly' });
-  const fixed = crosssect.runCrossBacktest(base); // 默认 both
+  // 🔴 2026-10-27 改为「固定 30 只」的迷你 universe（不再依赖真实归档规模）：
+  //    原实现跑真实归档（848 只、topN=20 ⇒ 从 848 里挑 20）。滑点一变 ⇒ 可用现金变
+  //    ⇒ 买入手数变 ⇒ **选中的标的也跟着变**，于是「成本更高」与「选股不同」两种效应混在
+  //    一起，净值不再单调 ⇒ 断言在 209 只时恰好成立，扩到 848 只就偶发反向（-87.54 vs -87.56）。
+  //    为什么是 30 只而不是 20：universe 若等于 topN，持仓永不轮换 ⇒ 全程没有卖出
+  //    ⇒ 卖出侧滑点根本没机会生效（实测两者结果完全相同 53.72 vs 53.72）；
+  //    期末强平按设计不加滑点，救不了它。30 只 > topN=20 才有轮换、才有卖出。
+  //    实测该配置下双边滑点稳定更低（58.70 → 52.17），差异来自执行成本而非选股漂移。
+  const endDate = '2025-12-31';
+  const base = { factor: 'mom20', topN: 20, rebalanceEvery: 20, capital: 100000, endDate };
+  const { legacy, fixed } = withMiniUniverse(30, () => ({
+    legacy: crosssect.runCrossBacktest({ ...base, slippageModel: 'buyOnly' }),
+    fixed: crosssect.runCrossBacktest(base), // 默认 both
+  }));
   assert.strictEqual(fixed.slippageModel, 'both', '默认应为双边滑点');
-  assert.ok(fixed.totalReturn < legacy.totalReturn,
-    `双边滑点应使收益更低（不再高估）：旧 ${legacy.totalReturn} vs 新 ${fixed.totalReturn}`);
-  // 同一笔成交价更低 ⇒ 换手金额应更小（同一 qty 下）
+  assert.ok(
+    fixed.totalReturn < legacy.totalReturn,
+    `双边滑点应使收益更低（不再高估）：旧 ${legacy.totalReturn} vs 新 ${fixed.totalReturn}`,
+  );
   assert.ok(fixed.turnover < legacy.turnover, '卖出价扣滑点后，成交额应更小');
 });
 

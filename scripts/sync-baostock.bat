@@ -6,7 +6,9 @@ set ROOT=%~dp0..
 cd /d "%ROOT%"
 if not exist logs mkdir logs
 echo ===== %date% %time% ===== >> logs\baostock-sync.log
-python scripts\sync_baostock.py %* >> logs\baostock-sync.log 2>&1
+rem -u：禁用缓冲。否则重定向到文件时 Python 会攒够 4KB 才落盘，
+rem     长跑期间日志看起来像"什么都没发生"，误导排障（2026-10-29 实际踩过）。
+python -u scripts\sync_baostock.py %* >> logs\baostock-sync.log 2>&1
 if errorlevel 1 (
   echo [sync] FAILED with code %errorlevel% >> logs\baostock-sync.log
   exit /b 1

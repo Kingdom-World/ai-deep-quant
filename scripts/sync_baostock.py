@@ -371,24 +371,49 @@ def main():
         pool_total = len(pool)
         retry = load_retry()  # 上次失败的票（优先补）
         if args.max_codes and pool_total > args.max_codes:
-            cur = read_json(CURSOR_FILE, None)
-            start_idx = int((cur or {}).get("next", 0)) % pool_total
-            batch = [pool[(start_idx + i) % pool_total] for i in range(args.max_codes)]
-            # 2026-10-26：重试票**优先占本批名额**（上次失败的先补，再轮到常规轮转）。
+            # 🔴 2026-10-29：轮转改为「最久未更新优先」，不再按代码顺序 + cursor。
+            #    原因（实测）：按代码顺序排队与新鲜度无关 —— 归档里 771 只停在 4 天前、
+            #    14 只停在 2023 年，却仍在代码顺序后面排着，永远轮不到优先刷新。
+            #    用 kline 文件 mtime 作为「上次成功写入」的代理（缺失票 mtime=0 ⇒ 最优先）。
+            #    为什么不用文件内的最后日期：要解析 4596 个 JSON（约 900MB），每日任务里太慢。
+            def _staleness(code):
+                try:
+                    return os.path.getmtime(os.path.join(KLINE_DIR, code + ".json"))
+                except OSError:
+                    return 0.0
+
+            ordered = sorted(pool, key=_staleness)
+            # 重试票仍优先占名额（失败票先补，再按陈旧度排）
             if retry:
                 pool_set = set(pool)
                 quota = [c for c in retry if c in pool_set][: args.max_codes]
                 picked = set(quota)
-                rest = [c for c in batch if c not in picked][: args.max_codes - len(quota)]
+                rest = [c for c in ordered if c not in picked][: args.max_codes - len(quota)]
                 pool = quota + rest
             else:
-                pool = batch
-            print(f"[sync] 轮转限额：本批 {len(pool)} 只（起点 {start_idx}，池总 {pool_total}，重试队列 {len(retry)}，每日计划任务约 {pool_total // max(args.max_codes,1) + 1} 天轮完）")
+                pool = ordered[: args.max_codes]
+            print(f"[sync] 本批 {len(pool)} 只（最久未更新优先；池总 {pool_total}，重试队列 {len(retry)}，约 {pool_total // max(args.max_codes,1) + 1} 天轮完）")
         print(f"[sync] 股票池：{len(pool)} 只，历史起点 {args.start}")
         quarters = recent_quarters(max(1, min(args.fin_quarters, 8)))
-        consec_fail = 0
-
+        # 🔴 2026-10-29：原实现只在**异常**分支累加 consec_fail；而 baostock 掐连接时
+        #    返回的是 status=error（不抛异常）⇒ 退避永不触发，脚本会一直高频重试，
+        #    实测 2905 次 `WinError 10054` 后直接进黑名单。故两种失败都计数并强制退避。
+        consec_err = 0
         failed_codes = []  # 本批失败的票（写入 _retry.json，下次优先重试）
+
+        def _backoff_and_relogin(reason):
+            nonlocal consec_err
+            print(f"[sync] [WARN] 连续失败 {consec_err} 只（{reason}），退避 180s 后重连 …")
+            time.sleep(180)
+            try:
+                bs.logout()
+                time.sleep(5)
+                lg2 = bs.login()
+                consec_err = 0
+                print(f"[sync] 重连 {lg2.error_code}")
+            except Exception as e2:
+                print(f"[sync] 重连失败: {e2}")
+
         for i, code_t in enumerate(pool, 1):
             try:
                 r = sync_kline(code_t, args.start, today)
@@ -398,39 +423,37 @@ def main():
                     stats["errors"].append(f"{code_t} kline: {r['status']}")
                     failed_codes.append(code_t)
                     retry[code_t] = retry.get(code_t, 0) + 1
+                    consec_err += 1
+                else:
+                    consec_err = 0
+                    retry.pop(code_t, None)  # 成功即移出重试队列
                 time.sleep(SLEEP_BETWEEN_CALLS)
                 f = sync_finance(code_t, quarters)
                 stats["finance"][code_t] = f["added"]
                 time.sleep(SLEEP_BETWEEN_CALLS)
-                consec_fail = 0
-                if ok:
-                    retry.pop(code_t, None)  # 成功即移出重试队列
                 if i % 20 == 0:
                     print(f"[sync] 进度 {i}/{len(pool)}")
+                    # 熔断：跑够 200 只后失败率过半 ⇒ 服务端在掐连接，继续只会加重封禁
+                    if i >= 200 and len(failed_codes) * 2 > i:
+                        print(f"[sync] [WARN] 失败率过半（{len(failed_codes)}/{i}），中止本批以免触发黑名单")
+                        break
+                if consec_err >= 25:
+                    _backoff_and_relogin("可能被服务端掐连接")
             except Exception as e:
-                consec_fail += 1
+                consec_err += 1
                 stats["errors"].append(f"{code_t}: {e}")
                 print(f"[sync] {code_t} 异常: {e}")
-                if consec_fail >= 20:
-                    # 连续失败大概率是连接掉线：重登录一次再继续
-                    print("[sync] 连续失败 20 只，尝试重连 baostock …")
-                    try:
-                        bs.logout()
-                        time.sleep(2)
-                        lg2 = bs.login()
-                        consec_fail = 0
-                        print(f"[sync] 重连 {lg2.error_code}")
-                    except Exception as e2:
-                        print(f"[sync] 重连失败: {e2}")
-                        break
+                if consec_err >= 25:
+                    _backoff_and_relogin("连接异常")
 
         # 2026-10-26：cursor 在**循环结束后**写回（原为选批时乐观前进 ⇒ 失败票被静默跳过）。
         #    不采用「连续成功前缀」：实测 374 只缺失散落在 200+ 位置，那样每轮只推进到第一个
         #    失败点，要跑上百轮。改为：游标正常前进，失败票入 _retry.json 并优先重试。
         if args.max_codes and pool_total > args.max_codes:
             atomic_write_json(CURSOR_FILE, {
-                "next": (start_idx + args.max_codes) % pool_total,
+                "mode": "staleness-first",
                 "poolTotal": pool_total,
+                "batchSize": args.max_codes,
                 "updatedAt": datetime.now().isoformat(timespec="seconds"),
             })
         # 连续失败达阈值 ⇒ 移出队列（退市/长期停牌，反复重试无意义），但如实打印不静默丢

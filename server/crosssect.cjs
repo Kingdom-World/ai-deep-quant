@@ -394,6 +394,71 @@ function runCrossBacktest(opts = {}) {
  *   @param {Function} cfg.crossSection (universe, rowIndex, prevDate) => [{code, mom}]
  *   @param {object} cfg.emptyGuard  makeEmptyCrossSectionGuard 实例（空截面必须显式报错）
  */
+/**
+ * 归档新鲜度披露（2026-10-30 新增）
+ *
+ * 为什么必须有这个字段：
+ *   归档是**增量同步**的，各票最新交易日并不一致。实测曾有 771 只落后 4 个交易日、
+ *   14 只停在 2023-03-23，而回测照常出数 —— 结论里完全看不出这个污点。
+ *   这是「静默」的口径风险：净值、IC、分层都照常算出来，读者无从判断结论的时效边界。
+ *
+ * 设计约束（刻意）：
+ *   · **只披露，不剔除**。剔除陈旧票会改变选股集合 ⇒ 净值与历史结论失去可比性；
+ *     时效判断应交给读者，而不是替读者改口径。
+ *   · lag 用**交易日**计，不用自然日：周五到周一只隔 1 个交易日，用自然日会夸大陈旧度。
+ *   · 只读内存里已加载的 universe，不额外读盘。
+ */
+function computeFreshness(universe, dates, lastDate) {
+  const idxOf = new Map();
+  dates.forEach((d, i) => idxOf.set(d, i));
+  const endIdx = idxOf.has(lastDate) ? idxOf.get(lastDate) : dates.length - 1;
+  const STALE = 5;   // 落后 >5 个交易日视为陈旧
+  const SEVERE = 20; // 落后 >20 个交易日视为严重陈旧
+
+  let staleCount = 0;
+  let severeCount = 0;
+  let latestBar = '';
+  const worst = [];
+
+  for (const [code, rows] of universe) {
+    if (!Array.isArray(rows) || !rows.length) continue;
+    const last = String(rows[rows.length - 1].date || '');
+    if (!last) continue;
+    if (last > latestBar) latestBar = last;
+    const i = idxOf.get(last);
+    // 该票最后日期不在轴上（如早于回测起点）⇒ 按整段轴长度计为严重陈旧
+    const lag = i === undefined ? dates.length : Math.max(0, endIdx - i);
+    if (lag > STALE) {
+      staleCount += 1;
+      if (lag > SEVERE) severeCount += 1;
+      worst.push({ code, last, lagDays: lag });
+    }
+  }
+
+  worst.sort((a, b) => b.lagDays - a.lagDays);
+  const top = worst.slice(0, 3);
+  const ratio = universe.size ? +(staleCount / universe.size).toFixed(4) : 0;
+  const warning =
+    staleCount === 0
+      ? null
+      : `数据陈旧提示：universe 中 ${staleCount} 只（${(ratio * 100).toFixed(1)}%）最新交易日落后回测终点超过 ${STALE} 个交易日` +
+        `，其中 ${severeCount} 只超过 ${SEVERE} 个交易日。最旧：${top[0].code}（${top[0].last}，落后 ${top[0].lagDays} 个交易日）。` +
+        ' 本次回测**未剔除**这些票，结论请结合该时效边界解读。';
+
+  return {
+    asOf: lastDate,
+    latestBar,
+    universeSize: universe.size,
+    staleCount,
+    severeCount,
+    staleRatio: ratio,
+    staleThresholdDays: STALE,
+    severeThresholdDays: SEVERE,
+    worst: top,
+    warning,
+  };
+}
+
 function simulateWithCrossSection(cfg) {
   const {
     ctx, universe, crossSection, isRevFactor, factorWin, topN, rebalanceEvery, capital, slippage,
@@ -592,6 +657,7 @@ function simulateWithCrossSection(cfg) {
     topN,
     rebalanceEvery,
     universeSize: universe.size,
+    dataFreshness: computeFreshness(universe, dates, lastDate),
     capital,
     slippage,
     slippageModel,
@@ -775,6 +841,7 @@ function layerAnalysis(opts = {}) {
     rebalanceEvery,
     range: { start: startDate, end: lastDate, bars: dates.length, periods },
     universeSize: universe.size,
+    dataFreshness: computeFreshness(universe, dates, lastDate),
     layerBasis: '不计费不计滑点（度量因子原始预测力）；层内等权，每调仓期再平衡',
     note: '层号 1 = 因子值最高。层号固定不变，故 mom* 与 rev* 的 strat 方向相反：mom* 买第1层，rev* 买第N层。',
     layers: result,
@@ -868,5 +935,6 @@ module.exports = {
   // P5：供逐根回放引擎（server/replay.cjs）复用 —— 保持"归档加载/日期对齐/价格取数"单源，
   //     回放引擎只新写执行层（这正是要对照的东西），选股与前置口径零分叉。
   loadUniverseCached,
+  computeFreshness,
   buildContext,
 };

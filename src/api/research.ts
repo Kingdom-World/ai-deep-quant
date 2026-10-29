@@ -5,6 +5,32 @@ import { apiGet, apiPost } from './client';
 import type { PaperAccount } from './paper';
 
 /** 15. 研究工作台（横截面回测 / 实验历史 / 一致性报告 / 对账 / 熔断解锁） */
+/**
+ * 归档新鲜度披露（2026-10-30，后端 computeFreshness 产出）
+ *
+ * 为什么要有：归档是增量同步的，各票最新交易日不一致。实测有 38 只停在 2023-03-23
+ * （落后 871 个交易日）却仍参与截面计算。**只披露、不剔除** —— 剔除会改变选股集合，
+ * 使净值与历史结论失去可比性；时效判断交给读者。
+ */
+export interface DataFreshness {
+  /** 回测终点（交易日轴最后一天） */
+  asOf: string;
+  /** universe 中最新的那根 K 线日期 */
+  latestBar: string;
+  universeSize: number;
+  /** 落后超过 staleThresholdDays 个交易日的只数 */
+  staleCount: number;
+  /** 其中落后超过 severeThresholdDays 的只数 */
+  severeCount: number;
+  staleRatio: number;
+  staleThresholdDays: number;
+  severeThresholdDays: number;
+  /** 最陈旧的几只（最多 3），按落后交易日降序 */
+  worst: Array<{ code: string; last: string; lagDays: number }>;
+  /** 人类可读告警；无陈旧时为 null */
+  warning: string | null;
+}
+
 export interface CrossBacktestResult {
   engine: string;
   factor: string;
@@ -16,6 +42,8 @@ export interface CrossBacktestResult {
   topN: number;
   rebalanceEvery: number;
   universeSize: number;
+  /** 数据陈旧度披露（旧响应可能无此字段） */
+  dataFreshness?: DataFreshness;
   capital: number;
   slippage: number;
   range: { start: string; end: string; bars: number };
@@ -194,6 +222,8 @@ export interface LayerAnalysisResult {
   rebalanceEvery?: number;
   range?: { start: string; end: string; bars: number; periods: number };
   universeSize?: number;
+  /** 数据陈旧度披露（旧响应可能无此字段） */
+  dataFreshness?: DataFreshness;
   /** 口径声明原样透传，供 UI 展示（防止前端自行编造口径） */
   layerBasis?: string;
   note?: string;

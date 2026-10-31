@@ -4,6 +4,7 @@
 //   避免"每个 Tab 文件里各复制一份"造成样式漂移。
 // ─────────────────────────────────────────────────────────────
 import type { CSSProperties } from 'react';
+import type { DataFreshness } from '../../api';
 
 export const card: CSSProperties = {
   backgroundColor: 'rgba(15,23,42,0.72)',
@@ -37,6 +38,35 @@ export const td: CSSProperties = { fontSize: 12, color: '#cbd5e1', padding: '6px
 /** A 股习惯：正为红、负为绿、零/空为灰 */
 export const pctColorOf = (v: number | null | undefined) =>
   v === null || v === undefined ? '#94a3b8' : v > 0 ? '#ef4444' : v < 0 ? '#22c55e' : '#94a3b8';
+
+/**
+ * 数据陈旧度告警条（2026-10-30）
+ *
+ * 抽成共享组件的原因：横截面 / 因子评估 / 验证套件三处都要展示同一句话。
+ * 若各写一份，措辞迟早分叉——而这句话是"结论能不能信"的前提，分叉比重复更糟。
+ *
+ * 设计：**只展示，不做任何过滤**。是否剔除陈旧票由后端决定，前端不得自行处理。
+ */
+export function FreshnessNotice({ freshness }: { freshness?: DataFreshness | null }) {
+  const w = freshness?.warning;
+  if (!w) return null;
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: '8px 10px',
+        borderRadius: 6,
+        background: 'rgba(245,158,11,0.10)',
+        border: '1px solid rgba(245,158,11,0.35)',
+        fontSize: 12,
+        color: '#fbbf24',
+        lineHeight: 1.65,
+      }}
+    >
+      ⚠ {w}
+    </div>
+  );
+}
 
 export function Metric({ name, value, color }: { name: string; value: string | number; color?: string }) {
   return (

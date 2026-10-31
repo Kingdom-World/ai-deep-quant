@@ -18,6 +18,7 @@ import {
   type FactorVerdict,
   type LayerAnalysisResult,
 } from '../../api';
+import { FreshnessNotice } from './shared';
 
 const VERDICT_STYLE: Record<FactorVerdict, { bg: string; fg: string }> = {
   稳健: { bg: 'rgba(56,189,248,0.16)', fg: '#38bdf8' },
@@ -314,6 +315,8 @@ function LayerPanel({ data, loading, err, onReload }: {
           </span>
         )}
       </div>
+
+      <FreshnessNotice freshness={data.dataFreshness} />
 
       <div style={{ fontSize: 12, color: theme.color.textFaint, lineHeight: 1.85, marginBottom: 14 }}>
         把全池（{data.universeSize} 只）按因子值排序等分为 {rows.length} 层，

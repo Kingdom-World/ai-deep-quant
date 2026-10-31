@@ -5,6 +5,8 @@
 //   · 类型自 shared/modelspec.mjs 引入，与后端校验器共用同一份定义
 // ─────────────────────────────────────────────────────────────
 import { apiGet, apiPost, apiDelete } from './client';
+// 数据陈旧度类型与「因子研究」域共用一份定义，避免两处结构分叉
+import type { DataFreshness } from './research';
 import type { ModelSpec, NormalizedModel, ValidationIssue } from '../../shared/modelspec.mjs';
 // 分享（Phase 2）：可见性/审核的类型与文案**直接取自状态机模块**，
 //   🔴 不在前端另抄一份标签或动作清单 —— 那样两处会分叉（后端加了动作前端不知道）。
@@ -317,6 +319,8 @@ export interface ValidationReport {
     range: { start: string; end: string; bars: number };
     bars: number;
     universeSize: number;
+    /** 数据陈旧度披露（可选；旧响应无此字段） */
+    dataFreshness?: DataFreshness | null;
     benchmarkUniverse: number;
     rebalances: number;
     equityPointsReturned: number;

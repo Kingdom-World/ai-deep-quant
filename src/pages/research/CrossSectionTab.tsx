@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { researchApi, type CrossBacktestResult } from '../../api';
 import { theme } from '../../lib/theme';
-import { card, sectionTitle, sectionSub, label, input, btn, Metric, pctColorOf } from './shared';
+import { card, sectionTitle, sectionSub, label, input, btn, Metric, pctColorOf, FreshnessNotice } from './shared';
 
 /**
  * 表达式前端**预检**（不替代后端解析）。
@@ -187,24 +187,7 @@ function CrossSectionLab() {
             <Metric name="成交笔数" value={result.fills} />
             <Metric name="费率" value={`${result.feeRatePct}%`} color="#f59e0b" />
           </div>
-          {/* 数据陈旧度披露（2026-10-30）：只披露不剔除，让读者看到结论的时效边界。
-              不放进 Metric 而单独成条：它决定"结论能不能信"，不该与收益指标平级。 */}
-          {result.dataFreshness?.warning && (
-            <div
-              style={{
-                marginTop: 10,
-                padding: '8px 10px',
-                borderRadius: 6,
-                background: 'rgba(245,158,11,0.10)',
-                border: '1px solid rgba(245,158,11,0.35)',
-                fontSize: 12,
-                color: '#fbbf24',
-                lineHeight: 1.65,
-              }}
-            >
-              ⚠ {result.dataFreshness.warning}
-            </div>
-          )}
+          <FreshnessNotice freshness={result.dataFreshness} />
           <div ref={chartRef} style={{ width: '100%', height: 260, marginTop: 12 }} />
           {/* 桥接（R-E）：本页结果不写入实验留痕；追问入口（R-B） */}
           <div style={{ fontSize: 12, color: '#64748b', marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap' }}>

@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { theme } from '../../lib/theme';
 import { modelsApi } from '../../api/models';
+import { FreshnessNotice } from '../research/shared';
 import type {
   ModelSpec,
   ValidationReport,
@@ -451,6 +452,9 @@ export default function ValidationPanel({
               </div>
             </Card>
           )}
+
+          {/* 数据陈旧度：放在所有"可信度"结论之前，读者先看到时效边界 */}
+          <FreshnessNotice freshness={report.sample?.dataFreshness} />
 
           {/* ── 样本外滚动 ── */}
           {wf && (

@@ -825,6 +825,8 @@ function runValidation(model, cfg = {}) {
     range: s.range,
     bars: s.range.bars,
     universeSize: s.universeSize,
+    // 数据陈旧度原样透传（引擎已算，验证报告不再重算，避免两套口径）
+    dataFreshness: s.dataFreshness || null,
     benchmarkUniverse: s.benchmarkUniverse,
     rebalances: s.rebalances,
     equityPointsReturned: s.equity.length,

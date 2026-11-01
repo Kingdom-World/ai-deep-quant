@@ -77,6 +77,8 @@ export interface ModelBacktestResult {
   topN: number;
   rebalanceEvery: number;
   universeSize: number;
+  /** 数据陈旧度披露（可选；旧响应无此字段） */
+  dataFreshness?: DataFreshness | null;
   capital: number;
   slippage: number;
   range: { start: string; end: string; bars: number };

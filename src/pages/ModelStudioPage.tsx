@@ -36,6 +36,7 @@ import {
   type ValidationIssue,
   type ValidationReport,
 } from '../api';
+import { FreshnessNotice } from './research/shared';
 import { theme } from '../lib/theme';
 import ZoneShell from '../components/ZoneShell';
 import PipelineView from './studio/PipelineView';
@@ -1219,6 +1220,8 @@ export default function ModelStudioPage() {
                       <span>池 {run.result.universeSize} 只</span>
                       <span>费用 {fmtNum(run.result.totalFees, 0)}</span>
                     </div>
+                    {/* 数据陈旧度：与"池多大"同屏，避免只有规模没有时效 */}
+                    <FreshnessNotice freshness={run.result.dataFreshness} />
                     <div ref={chartRef} style={{ height: 220, marginTop: 10 }} />
                     <div style={{ ...rowFlex, marginTop: 8, gap: 14, fontSize: 12, color: theme.color.textMuted }}>
                       <span>IC 均值 <code style={{ color: theme.color.accent, fontFamily: MONO }}>{fmtNum(run.result.ic.icMean, 4)}</code></span>

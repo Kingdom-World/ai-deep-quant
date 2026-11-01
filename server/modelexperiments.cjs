@@ -135,6 +135,13 @@ function toRecord(uid, { model, plan, fingerprint, engineVersion, result, modelI
     },
     range: result?.range || null,
     universeSize: result?.universeSize ?? null,
+    /**
+     * 数据陈旧度快照（2026-11-01）。
+     * 为什么必须存进实验记录：对比页要回答"两个实验的差异，有多少来自数据时效"。
+     * 只存 metrics 的话，同一模型在不同时点跑出的差异无法归因；事后也补不回来
+     * （归档会继续变化，无法重建"当时那份数据有多旧"）。
+     */
+    dataFreshness: result?.dataFreshness ?? null,
     ...(downsample(result?.equity) ? { equityThumb: downsample(result.equity) } : {}),
     ...(downsample(result?.benchmark) ? { benchmarkThumb: downsample(result.benchmark) } : {}),
   };

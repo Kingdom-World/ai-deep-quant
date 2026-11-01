@@ -455,6 +455,8 @@ export interface ModelExperimentDoc {
   metrics: ModelExperimentMetrics;
   range: { start: string; end: string; bars: number } | null;
   universeSize: number | null;
+  /** 数据陈旧度快照（可选；早于 2026-11-01 的记录无此字段） */
+  dataFreshness?: DataFreshness | null;
   /** 模型快照（约 1KB）：实验是"复现承诺的载体"，只存指纹则拿不回当时那个模型 */
   modelSnapshot: ModelSpec | null;
   equityThumb?: { d: string; v: number }[];

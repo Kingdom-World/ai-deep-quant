@@ -100,6 +100,28 @@ test('toRecord：超额收益 = 总收益 − 等权基准；基准缺失时为 
   assert.strictEqual(db.metrics.excessReturn, null, '基准缺失时不得算成 +12.5 或 0');
 });
 
+test('dataFreshness：随实验快照落库（对比页要能归因"差异是否来自数据时效"）', async () => {
+  const fresh = {
+    asOf: '2026-10-29',
+    latestBar: '2026-10-29',
+    universeSize: 100,
+    staleCount: 3,
+    severeCount: 1,
+    staleRatio: 0.03,
+    staleThresholdDays: 5,
+    severeThresholdDays: 20,
+    worst: [{ code: 'sh600001', last: '2023-03-23', lagDays: 871 }],
+    warning: '数据陈旧提示：…',
+  };
+  const a = await mx.record('fresh_user', payload('带时效', { result: baseResult({ dataFreshness: fresh }) }));
+  const da = await mx.get(a.id, 'fresh_user');
+  assert.deepStrictEqual(da.dataFreshness, fresh, '必须原样落库：既不能重算，也不能裁剪字段');
+
+  const b = await mx.record('fresh_user', payload('无时效', { result: baseResult({}) }));
+  const db2 = await mx.get(b.id, 'fresh_user');
+  assert.strictEqual(db2.dataFreshness, null, '缺省落库必须是 null（对比页要能区分"当时没采集"与"采集了但没有陈旧"）');
+});
+
 test('toRecord：净值与基准曲线降采样且保留首末（防存储膨胀）', async () => {
   const r = await mx.record('thumb_user', payload('缩略'));
   const d = await mx.get(r.id, 'thumb_user');

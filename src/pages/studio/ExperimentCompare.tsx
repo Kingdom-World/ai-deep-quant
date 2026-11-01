@@ -302,6 +302,19 @@ export default function ExperimentCompare({
                   ['手续费', (d) => fmtNum(d.metrics.totalFees, 0), () => theme.color.text],
                   ['区间', (d) => (d.range ? `${d.range.start}~${d.range.end}` : '—'), () => theme.color.textMuted],
                   ['股票池', (d) => fmtNum(d.universeSize, 0), () => theme.color.textMuted],
+                  // 数据时效（2026-11-01）：与"股票池"相邻——规模和时间必须一起看，
+                  // 池子再大若数据停在几年前，两个实验的差异可能只是数据新旧不同造成的。
+                  [
+                    '数据时效',
+                    (d) =>
+                      !d.dataFreshness
+                        ? '—'
+                        : d.dataFreshness.staleCount
+                          ? `${d.dataFreshness.staleCount} 只陈旧（最旧落后 ${d.dataFreshness.worst?.[0]?.lagDays ?? '?'} 交易日）`
+                          : '全部最新',
+                    (d) =>
+                      d.dataFreshness && d.dataFreshness.staleCount ? theme.color.warn : theme.color.textMuted,
+                  ],
                 ] as [string, (d: ModelExperimentDoc) => string, (d: ModelExperimentDoc) => string][]).map(([label, fmt, colorOf]) => (
                   <tr key={label}>
                     <td style={{ ...td, fontFamily: 'inherit', color: theme.color.textMuted }}>{label}</td>
